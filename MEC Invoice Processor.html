@@ -434,13 +434,21 @@
             <span style="font-size:13px">Connected: <strong id="gmail-connected-email" style="color:#1B2A4A"></strong></span>
             <button onclick="gmailScanInbox()" id="gmail-scan-btn" style="margin-left:8px;background:#1B2A4A;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">🔍 Scan for Invoices</button>
             <label style="font-size:12px;color:#555;margin-left:6px">Last
-              <select id="gmail-days-back" style="font-size:12px;padding:2px 5px;border:1px solid #ccc;border-radius:4px;margin:0 3px">
+              <select id="gmail-days-back" style="font-size:12px;padding:2px 5px;border:1px solid #ccc;border-radius:4px;margin:0 3px" onchange="gmailDaysChanged(this.value)">
+                <option value="7">7 days</option>
+                <option value="10">10 days</option>
+                <option value="14">14 days</option>
                 <option value="30">30 days</option>
                 <option value="60" selected>60 days</option>
                 <option value="90">90 days</option>
                 <option value="180">6 months</option>
+                <option value="custom">Custom…</option>
               </select>
             </label>
+            <input type="number" id="gmail-days-custom" min="1" max="365" placeholder="days"
+              style="display:none;width:60px;font-size:12px;padding:2px 5px;border:1px solid #ccc;border-radius:4px;margin-left:2px"
+              onchange="document.getElementById('gmail-days-back').dataset.custom=this.value"
+              title="Enter number of days to look back">
             <span id="gmail-scan-status" style="font-size:12px;color:#666"></span>
             <button onclick="gmailSignOut()" style="margin-left:auto;background:transparent;color:#888;border:1px solid #ccc;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">Sign out</button>
           </div>
@@ -460,10 +468,10 @@
                   <th style="width:32px"><input type="checkbox" id="gmail-select-all" onchange="gmailToggleAll(this.checked)" title="Select/deselect all importable PDFs" style="cursor:pointer"></th>
                   <th style="width:28px" title="Email type">​</th>
                   <th style="width:24px" title="Starred in Gmail — may already be in progress">⭐</th>
-                  <th>Subject</th>
-                  <th>From</th>
+                  <th style="width:160px">Subject</th>
+                  <th style="width:110px">From</th>
                   <th style="width:80px">Date</th>
-                  <th style="width:120px" title="Is this sender a known contractor in Zoho?">Zoho</th>
+                  <th style="width:160px" title="Matching Zoho contractor + booking payment status">Zoho</th>
                   <th style="width:140px">Attachment</th>
                   <th style="width:95px">Status</th>
                   <th style="width:56px"></th>
@@ -477,7 +485,18 @@
       </div>
 
       <!-- Bookings popover — appears when clicking a Zoho cell in the staging table -->
-      <div id="gmail-bookings-popover" style="display:none;position:fixed;z-index:9999;background:#fff;border:1px solid #D0D8E0;border-radius:8px;padding:12px 14px;min-width:340px;max-width:420px;box-shadow:0 4px 16px rgba(0,0,0,0.15);font-size:12px"></div>
+      <div id="gmail-bookings-popover" style="display:none;position:fixed;z-index:9999;background:#fff;border:1px solid #D0D8E0;border-radius:8px;padding:12px 14px;min-width:360px;max-width:460px;box-shadow:0 4px 16px rgba(0,0,0,0.15);font-size:12px;max-height:80vh;overflow-y:auto"></div>
+
+      <!-- PDF preview overlay -->
+      <div id="gmail-pdf-overlay" onclick="gmailClosePDF()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10000;align-items:center;justify-content:center">
+        <div onclick="event.stopPropagation()" style="position:relative;width:75vw;height:82vh;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.35)">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1B2A4A;color:#fff;font-size:13px;font-weight:600">
+            <span id="gmail-pdf-title">Invoice PDF</span>
+            <button onclick="gmailClosePDF()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px">✕ Close</button>
+          </div>
+          <iframe id="gmail-pdf-frame" style="width:100%;height:calc(100% - 38px);border:none"></iframe>
+        </div>
+      </div>
 
       <div class="mt flex" style="margin-top:20px;padding-top:14px;border-top:1px solid #EEF1F5;">
         <button class="btn btn-primary" onclick="processInvoices()">Process Invoices →</button>
@@ -3881,6 +3900,17 @@ function gmailInit() {
   });
 }
 
+function gmailDaysChanged(val) {
+  const customInput = document.getElementById('gmail-days-custom');
+  if (!customInput) return;
+  if (val === 'custom') {
+    customInput.style.display = 'inline-block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+  }
+}
+
 function gmailSignIn() {
   if (typeof google === 'undefined' || !google.accounts) {
     alert('Google Identity Services is still loading. Please wait a moment and try again.');
@@ -3954,7 +3984,10 @@ async function gmailScanInbox() {
   statusEl.textContent = '';
   gmailStagingItems = [];
 
-  const daysBack = parseInt(document.getElementById('gmail-days-back')?.value || '60', 10);
+  const sel = document.getElementById('gmail-days-back');
+  const daysBack = sel?.value === 'custom'
+    ? parseInt(document.getElementById('gmail-days-custom')?.value || '14', 10)
+    : parseInt(sel?.value || '60', 10);
   const dateFilter = `newer_than:${daysBack}d`;
 
   // Exclusions: Dan Murphy's (AP purchasing, not contractor invoices),
@@ -4062,11 +4095,14 @@ function gmailProcessMessage(msg, expectedType) {
   const senderDisplay = from.replace(/<[^>]+>/g, '').replace(/"/g, '').trim();
   const zohoMatch = typeof matchContractor === 'function' ? matchContractor(senderDisplay, null) : null;
   const zohoBookings = zohoMatch ? gmailFindContractorBookings(senderDisplay, emailDateObj) : [];
-  const unpaidBookings = zohoBookings.filter(b => !b.entertainer.paid);
-  const allPaid = zohoBookings.length > 0 && unpaidBookings.length === 0;
+  const todayMs = Date.now();
+  const pastBookings   = zohoBookings.filter(b => b.booking.eventDate && new Date(b.booking.eventDate+'T23:59:59').getTime() <= todayMs);
+  const futureBookings = zohoBookings.filter(b => !b.booking.eventDate || new Date(b.booking.eventDate+'T23:59:59').getTime() > todayMs);
+  const unpaidBookings = pastBookings.filter(b => !b.entertainer.paid);
+  const allPaid = pastBookings.length > 0 && unpaidBookings.length === 0;
 
   const base = { messageId: msg.id, subject, from, date: dateFormatted, emailDateObj, selected: true, starred,
-    zohoMatch, zohoBookings, unpaidBookings, allPaid };
+    zohoMatch, zohoBookings, pastBookings, futureBookings, unpaidBookings, allPaid };
 
   // Detect remittance/receipt-type emails — flag and uncheck by default
   const suspectWords = /remittance|receipt|payment\s+confirmation|payment\s+advice|paid\s+to\s+you/i;
@@ -4140,19 +4176,24 @@ function gmailRenderStaging() {
       ? `<button onclick="window.open('${item.linkUrl.replace(/'/g,"\\'")}','_blank')" style="font-size:11px;padding:3px 8px;cursor:pointer;background:#E8A020;color:#fff;border:none;border-radius:4px" title="${item.linkUrl}">Open ↗</button>`
       : '';
 
-    // Zoho booking badge — click to open popover listing all bookings
+    // Zoho booking badge — click to open popover listing past/future bookings
     let zohoBadge = '';
     if (item.zohoMatch) {
       const firstName = (item.zohoMatch.name || '').split(' ')[0];
-      const bookingsToShow = item.unpaidBookings.length ? item.unpaidBookings : item.zohoBookings;
-      if (item.allPaid) {
-        zohoBadge = `<button onclick="gmailShowBookings(${idx},event)" style="background:none;border:none;cursor:pointer;color:#C05621;font-size:11px;font-weight:600;padding:0;text-align:left"
-          title="All bookings for ${firstName} appear already paid — click to see list">⚠ ${firstName} — all paid ▾</button>`;
-      } else if (item.unpaidBookings.length > 0) {
+      const pastCount   = (item.pastBookings   || []).length;
+      const futureCount = (item.futureBookings  || []).length;
+      const unpaidCount = item.unpaidBookings.length;
+      if (unpaidCount > 0) {
         zohoBadge = `<button onclick="gmailShowBookings(${idx},event)" style="background:none;border:none;cursor:pointer;color:#1D7A8C;font-size:11px;font-weight:600;padding:0;text-align:left"
-          title="${item.unpaidBookings.length} unpaid booking(s) — click to see list">✓ ${firstName} — ${item.unpaidBookings.length} unpaid ▾</button>`;
+          title="${unpaidCount} unpaid past booking(s) — click to see list">✓ ${firstName} — ${unpaidCount} unpaid ▾</button>`;
+      } else if (item.allPaid) {
+        zohoBadge = `<button onclick="gmailShowBookings(${idx},event)" style="background:none;border:none;cursor:pointer;color:#C05621;font-size:11px;font-weight:600;padding:0;text-align:left"
+          title="All past bookings for ${firstName} appear already paid — click to see list">⚠ ${firstName} — all paid ▾</button>`;
+      } else if (futureCount > 0) {
+        zohoBadge = `<button onclick="gmailShowBookings(${idx},event)" style="background:none;border:none;cursor:pointer;color:#718096;font-size:11px;font-weight:600;padding:0;text-align:left"
+          title="No past bookings found — ${futureCount} upcoming — click to see list">↗ ${firstName} — upcoming ▾</button>`;
       } else {
-        zohoBadge = `<span style="color:#27AE60;font-size:11px">✓ ${firstName} — no bookings</span>`;
+        zohoBadge = `<span style="color:#aaa;font-size:11px">✓ ${firstName} in Zoho</span>`;
       }
     } else {
       zohoBadge = `<span style="color:#aaa;font-size:11px">? Not in Zoho</span>`;
@@ -4174,10 +4215,10 @@ function gmailRenderStaging() {
           onchange="gmailStagingItems[${idx}].selected=this.checked;gmailUpdateSelectAll()"></td>
       <td style="text-align:center">${typeIcon}</td>
       <td style="text-align:center">${starCell}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.subject.replace(/"/g,'&quot;')}">${item.subject}</td>
-      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#666;font-size:12px" title="${item.from.replace(/"/g,'&quot;')}">${fromClean}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.subject.replace(/"/g,'&quot;')}">${item.subject}</td>
+      <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#444;font-size:12px" title="${item.from.replace(/"/g,'&quot;')}">${item.zohoMatch?.name || fromClean}</td>
       <td style="font-size:12px;white-space:nowrap">${item.date}</td>
-      <td>${zohoBadge}</td>
+      <td style="max-width:160px">${zohoBadge}</td>
       <td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.filename}">${item.filename}</td>
       <td>${badge}</td>
       <td style="white-space:nowrap">${previewBtn}${actionCell ? ' ' + actionCell : ''}</td>`;
@@ -4311,40 +4352,50 @@ function gmailShowBookings(idx, evt) {
   }
   _gmailPopoverIdx = idx;
   const item = gmailStagingItems[idx];
-  const displayList = item.unpaidBookings.length ? item.unpaidBookings : item.zohoBookings;
   const contractorName = item.zohoMatch?.name || 'this contractor';
-  const headerColor = item.allPaid ? '#C05621' : '#1D7A8C';
-  const headerText = item.allPaid
-    ? `⚠ All bookings appear paid — ${contractorName}`
-    : `✓ Unpaid bookings — ${contractorName}`;
+  const pastList   = item.pastBookings   || [];
+  const futureList = item.futureBookings || [];
+  const unpaidPast = pastList.filter(b => !b.entertainer.paid);
+
+  function bookingRow(b) {
+    const url = `https://crm.zoho.com/crm/org657079535/tab/Potentials/${b.booking.id}`;
+    const evtDate = b.booking.eventDate
+      ? new Date(b.booking.eventDate+'T12:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short',year:'numeric'})
+      : '—';
+    const cost = b.entertainer.cost != null ? `$${Number(b.entertainer.cost).toLocaleString()}` : '';
+    const dot = b.entertainer.paid
+      ? '<span style="color:#FC8181;font-weight:900" title="Paid in Zoho">●</span>'
+      : '<span style="color:#4ADE80;font-weight:900" title="Not yet paid">●</span>';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f5f5f5">
+      ${dot}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.booking.bookingName || '(unnamed)'}</div>
+        <div style="color:#888;font-size:11px">${evtDate}</div>
+      </div>
+      <span style="color:#555;white-space:nowrap">${cost}</span>
+      <a href="${url}" target="_blank" style="color:#1D7A8C;font-size:11px;text-decoration:none;white-space:nowrap;flex-shrink:0">Zoho ↗</a>
+    </div>`;
+  }
+
+  const headerColor = unpaidPast.length > 0 ? '#1D7A8C' : '#C05621';
+  const headerText = unpaidPast.length > 0
+    ? `${unpaidPast.length} unpaid past booking${unpaidPast.length!==1?'s':''} — ${contractorName}`
+    : pastList.length > 0 ? `✓ All past bookings paid — ${contractorName}` : `${contractorName} — no past bookings`;
 
   let html = `<div style="font-weight:700;font-size:12px;color:${headerColor};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #eee">${headerText}</div>`;
-  if (!displayList.length) {
-    html += `<div style="color:#888">No bookings found in cache.</div>`;
+
+  if (pastList.length === 0) {
+    html += `<div style="color:#888;font-size:12px;margin-bottom:8px">No past events found.</div>`;
   } else {
-    for (const b of displayList.slice(0, 12)) {
-      const url = `https://crm.zoho.com/crm/org657079535/tab/Potentials/${b.booking.id}`;
-      const evtDate = b.booking.eventDate
-        ? new Date(b.booking.eventDate+'T12:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short',year:'numeric'})
-        : '—';
-      const cost = b.entertainer.cost != null ? `$${Number(b.entertainer.cost).toLocaleString()}` : '';
-      const dot = b.entertainer.paid
-        ? '<span style="color:#FC8181;font-weight:900" title="Paid in Zoho">●</span>'
-        : '<span style="color:#4ADE80;font-weight:900" title="Not paid in Zoho">●</span>';
-      html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f5f5f5">
-        ${dot}
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.booking.bookingName || '(unnamed)'}</div>
-          <div style="color:#888;font-size:11px">${evtDate}</div>
-        </div>
-        <span style="color:#555;white-space:nowrap">${cost}</span>
-        <a href="${url}" target="_blank" style="color:#1D7A8C;font-size:11px;text-decoration:none;white-space:nowrap;flex-shrink:0">Open in Zoho ↗</a>
-      </div>`;
-    }
-    if (displayList.length > 12) {
-      html += `<div style="color:#888;font-size:11px;margin-top:6px">+${displayList.length-12} more bookings</div>`;
-    }
+    for (const b of pastList.slice(0, 10)) html += bookingRow(b);
+    if (pastList.length > 10) html += `<div style="color:#888;font-size:11px;margin-top:4px">+${pastList.length-10} more past events</div>`;
   }
+
+  if (futureList.length > 0) {
+    html += `<div style="font-weight:700;font-size:11px;color:#718096;margin:10px 0 6px;padding-top:8px;border-top:1px solid #eee;text-transform:uppercase;letter-spacing:.5px">Upcoming (next ${Math.min(futureList.length,5)})</div>`;
+    for (const b of futureList.slice(0, 5)) html += bookingRow(b);
+  }
+
   html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #eee;text-align:right">
     <button onclick="document.getElementById('gmail-bookings-popover').style.display='none';_gmailPopoverIdx=-1"
       style="font-size:11px;color:#888;background:none;border:none;cursor:pointer">Close ✕</button>
@@ -4379,11 +4430,24 @@ async function gmailPreviewAttachment(idx) {
     const buf = new Uint8Array(bytes.length);
     for (let i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i);
     const blob = new Blob([buf], {type:'application/pdf'});
-    window.open(URL.createObjectURL(blob), '_blank');
+    const blobUrl = URL.createObjectURL(blob);
+    const overlay = document.getElementById('gmail-pdf-overlay');
+    const frame   = document.getElementById('gmail-pdf-frame');
+    const title   = document.getElementById('gmail-pdf-title');
+    if (title)   title.textContent = item.filename || 'Invoice PDF';
+    if (frame)   frame.src = blobUrl;
+    if (overlay) { overlay.style.display = 'flex'; overlay._blobUrl = blobUrl; }
   } catch(e) {
     alert('Could not load PDF: ' + e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = '👁 PDF'; }
+}
+
+function gmailClosePDF() {
+  const overlay = document.getElementById('gmail-pdf-overlay');
+  const frame   = document.getElementById('gmail-pdf-frame');
+  if (overlay) overlay.style.display = 'none';
+  if (frame)   { if (overlay._blobUrl) { URL.revokeObjectURL(overlay._blobUrl); overlay._blobUrl = null; } frame.src = ''; }
 }
 
 async function gmailApplyLabel(messageId) {
