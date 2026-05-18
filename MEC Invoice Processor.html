@@ -3648,8 +3648,25 @@ function xeroReference(name, invNum) {
 }
 
 function exportXeroCSV() {
-  const rows = [['ContactName','InvoiceNumber','Reference','InvoiceDate','DueDate',
-                  'Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount']];
+  // Xero Bills import template — 24 columns (matches BillTemplate.csv exactly)
+  // Columns: *ContactName, EmailAddress, POAddressLine1-4, POCity, PORegion, POPostalCode,
+  //          POCountry, *InvoiceNumber, *InvoiceDate, *DueDate, InventoryItemCode,
+  //          Description, *Quantity, *UnitAmount, *AccountCode, *TaxType,
+  //          TrackingName1, TrackingOption1, TrackingName2, TrackingOption2, Currency
+  const HDR = ['*ContactName','EmailAddress','POAddressLine1','POAddressLine2','POAddressLine3',
+               'POAddressLine4','POCity','PORegion','POPostalCode','POCountry',
+               '*InvoiceNumber','*InvoiceDate','*DueDate','InventoryItemCode',
+               'Description','*Quantity','*UnitAmount','*AccountCode','*TaxType',
+               'TrackingName1','TrackingOption1','TrackingName2','TrackingOption2','Currency'];
+  const rows = [HDR];
+
+  // Helper: build one data row with blanks for all unused columns
+  // InventoryItemCode is used to carry the MEC internal reference (initials-invoiceno)
+  const mkRow = (contact, invNum, invDate, dueDate, itemCode, desc, qty, amount, acctCode, taxType) =>
+    [contact, '', '', '', '', '', '', '', '', '',
+     invNum, invDate, dueDate, itemCode,
+     desc, qty, amount, acctCode, taxType,
+     '', '', '', '', ''];
 
   // ── Event contractor invoices (with super logic) ─────────────────────────────
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid).forEach(p => {
@@ -3657,33 +3674,29 @@ function exportXeroCSV() {
     const c = p.contractor;
     const invNum = p.invoiceNumber || autoInvNum(p);
     const dateXero = formatDateXero(p.date);
-    // Use performance date in description if available; fall back to invoice date
     const dateReadable = formatDateReadable(p.perfDate || p.date);
     const acctCode = ACCOUNT_CODES[p.type];
     const taxType  = TAX_TYPES[p.type];
+    const ref = xeroReference(c.name, p.invoiceNumber); // e.g. KC-INV001
 
-    // Line 1 — performance fee (service fee only; travel stays in its own line below)
-    const grossAmt = (a.unitAmount + a.super).toFixed(2); // = serviceFee (passed to calculateAmounts)
+    // Line 1 — performance fee
+    const grossAmt = (a.unitAmount + a.super).toFixed(2);
     const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
-    const ref = xeroReference(c.name, p.invoiceNumber);
-    rows.push([c.name, invNum, ref, dateXero, dateXero, feeDesc, 1, grossAmt, acctCode, taxType, a.taxAmount > 0 ? a.taxAmount.toFixed(2) : '']);
+    rows.push(mkRow(c.name, invNum, dateXero, dateXero, ref, feeDesc, 1, grossAmt, acctCode, taxType));
 
-    // Line 2 — super deduction (negative line on same bill)
-    // Super is withheld on service + travel (time-based payments), NOT on parking/accommodation
-    // Skipped entirely if the "Withhold super deductions" toggle is OFF
+    // Line 2 — super deduction (negative line, skipped if toggle OFF)
     if (c.superEligible !== false && superDeductionsEnabled()) {
       const superAmt = p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
-        ? calculateAmounts(p.superBase, p.type).super   // recalc on service+travel
-        : a.super;                                       // no travel — use normal amount
+        ? calculateAmounts(p.superBase, p.type).super
+        : a.super;
       if (superAmt > 0) {
         const travelNote = (p.expenses?.travel || 0) > 0 ? ' (incl. travel)' : '';
         const superDesc = `SGC Super - ${c.name} | Inv: ${invNum} | $${superAmt.toFixed(2)} withheld${travelNote}`;
-        rows.push([c.name, invNum, ref, '', '', superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded', '']);
+        rows.push(mkRow(c.name, invNum, dateXero, '', ref, superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded'));
       }
     }
 
     // Lines 3+ — expense splits (parking / accommodation / travel)
-    // Travel is super-eligible (already covered in super deduction above); parking/accommodation are pure reimbursements
     if (p.expenses) {
       const isGSTContractor = ['B','D'].includes(p.type);
       const expTaxType = isGSTContractor ? 'Tax on Purchases' : 'GST Free Expenses';
@@ -3694,28 +3707,24 @@ function exportXeroCSV() {
       ];
       expItems.filter(x => x.amount > 0).forEach(x => {
         const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
-        const taxAmt   = isGSTContractor ? (x.amount - exGSTAmt) : 0;
         const expDesc  = `${x.label} - ${c.name} | Inv: ${invNum}`;
-        rows.push([c.name, invNum, ref, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType, taxAmt > 0 ? taxAmt.toFixed(2) : '']);
+        rows.push(mkRow(c.name, invNum, '', '', ref, expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
       });
     }
   });
 
   // ── Other AP invoices (supplier bills — no super, no splits) ─────────────────
-  // These are regular business expenses (SEO, coaching, subscriptions, etc.)
   processed.filter(p => p.invoiceType === 'ap' && !p.alreadyPaid).forEach(p => {
     const invNum = p.invoiceNumber || autoInvNum(p);
     const dateXero = formatDateXero(p.date);
     const dateReadable = formatDateReadable(p.date);
     const supplierName = p.name || '(Unknown Supplier)';
-    // Detect GST from invoice — if hasGST use Tax on Purchases, otherwise GST Free
-    const apTaxType = p.hasGST ? 'Tax on Purchases' : 'GST Free Expenses';
-    const apAcctCode = p.hasGST ? '310' : '310';  // use 310 (General Expenses) for AP; adjust per your chart of accounts
+    const apTaxType  = p.hasGST ? 'Tax on Purchases' : 'GST Free Expenses';
+    const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
-    const apTax = p.hasGST ? (p.total - p.total / 1.1).toFixed(2) : '';
     const apRef = xeroReference(supplierName, p.invoiceNumber);
-    rows.push([supplierName, invNum, apRef, dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType, apTax]);
+    rows.push(mkRow(supplierName, invNum, dateXero, dateXero, apRef, apDesc, 1, apAmount, apAcctCode, apTaxType));
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_${today()}.csv`);
