@@ -347,6 +347,9 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
             <div class="section-label" style="margin:0">Extracted Invoice Data — Review &amp; Correct</div>
             <div style="display:flex;align-items:center;gap:6px">
+              <button onclick="clearAllInvoices()" title="Remove all uploaded invoices and start fresh"
+                style="background:#FEF2F2;color:#C0392B;border:1px solid #FCA5A5;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🗑 Remove all</button>
+              <span style="color:#D0D8E0;font-size:11px">|</span>
               <span style="font-size:11px;color:#888">Sort:</span>
               <select id="sort-select-top" onchange="sortInvoiceRows(this.value);document.getElementById('sort-select-bottom').value=this.value" style="font-size:12px;padding:4px 7px;border:1px solid #D0D8E0;border-radius:5px;background:#fff;cursor:pointer">
                 <option value="name">Contractor name A→Z</option>
@@ -395,10 +398,9 @@
         </div>
         <table>
           <thead><tr>
-            <th style="width:200px">Contractor Name</th>
-            <th style="width:120px">Invoice #</th>
-            <th style="width:110px">Invoice Date</th>
-            <th style="width:110px">Total Amount ($)</th>
+            <th style="width:220px">Contractor Name</th>
+            <th style="width:130px">Invoice #</th>
+            <th style="width:120px">Total Amount ($)</th>
             <th style="width:140px">ABN</th>
             <th style="width:80px">Matched / ABR</th>
             <th title="Tick to exclude from exports">Exclude?</th>
@@ -667,105 +669,134 @@
     </div>
     <!-- Same-contractor banner (shown when other invoices exist for this contractor) -->
     <div id="rv-contractor-batch-banner" style="display:none;margin-bottom:7px;padding:5px 10px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:5px;font-size:11px;color:#93c5fd;display:flex;align-items:center;gap:6px"></div>
-    <!-- Fields row 1: Contractor | Invoice # | Total -->
-    <div style="display:grid;grid-template-columns:2fr 1fr 140px;gap:8px;margin-bottom:7px">
+    <!-- Hidden invoice date (kept for code compatibility — not shown in UI) -->
+    <input type="date" id="rv-date" style="display:none">
+
+    <!-- ─── INPUT CARD: all fillable fields in sequential Tab order ─── -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:12px 14px;margin-bottom:9px;display:flex;flex-direction:column;gap:9px">
+
+      <!-- 1. Contractor (full width, Zoho typeahead) -->
       <div>
-        <div style="color:#8BAAC0;font-size:10px;margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
-          title="The contractor's name as it appears in Zoho CRM. Start typing to search and link a Zoho record.">Contractor</div>
+        <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
+          title="The contractor's name as it appears in Zoho CRM. Start typing to search.">Contractor</div>
         <div style="position:relative">
           <input type="text" id="rv-name" tabindex="1" placeholder="Start typing to search Zoho…"
             oninput="reviewSearchContractor(this.value); updateReviewStatus();"
             onblur="setTimeout(()=>{const d=document.getElementById('rv-drop');if(d)d.style.display='none'},200)"
-            style="font-size:12px;padding:5px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+            style="font-size:13px;padding:7px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
           <div id="rv-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>
         </div>
       </div>
-      <div>
-        <div style="color:#8BAAC0;font-size:10px;margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
-        <input type="text" id="rv-inv" tabindex="2"
-          style="font-size:12px;padding:5px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+
+      <!-- 2 + 3. Invoice # | Total (inc. GST) -->
+      <div style="display:grid;grid-template-columns:1fr 150px;gap:8px">
+        <div>
+          <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
+          <input type="text" id="rv-inv" tabindex="2"
+            style="font-size:13px;padding:7px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+        </div>
+        <div>
+          <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
+            title="Invoice total including GST (if applicable). Super and Xero amounts are calculated from this.">Total (inc. GST)</div>
+          <input type="number" id="rv-total" tabindex="3" step="0.01" placeholder="0.00"
+            oninput="rvUpdateServiceFee()"
+            style="font-size:13px;padding:7px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+        </div>
       </div>
+
+      <!-- 4. Performance date -->
       <div>
-        <div style="color:#8BAAC0;font-size:10px;margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
-          title="Invoice total including GST (if applicable). Super and Xero amounts are calculated from this.">Total (inc. GST)</div>
-        <input type="number" id="rv-total" tabindex="3" step="0.01" placeholder="0.00"
-          oninput="rvUpdateServiceFee()"
-          style="font-size:12px;padding:5px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+        <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
+          title="The date of the actual performance or event — auto-filled when a Zoho booking is selected below">
+          Event / Perf. Date <span style="color:#4ADE80;font-size:8px;font-weight:500;text-transform:none;letter-spacing:0">(auto from booking)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="date" id="rv-perfdate" tabindex="4"
+            onchange="updatePerfDateDOW()"
+            onclick="try{this.showPicker()}catch(e){}"
+            style="font-size:13px;padding:7px 10px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
+          <span id="rv-perfdate-dow" style="font-size:12px;color:#4ADE80;font-weight:600;min-width:80px"></span>
+        </div>
       </div>
-    </div>
-    <!-- Fields row 2: ABN | View on ABR | GST override | Super override | spacer | Actions -->
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+
+      <!-- 5-7. Expense splits -->
       <div>
-        <div style="color:#8BAAC0;font-size:10px;margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">ABN <span id="rv-abn-zoho-badge" style="display:none;font-size:9px;color:#60A5FA;font-weight:600;text-transform:none;letter-spacing:0;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:3px;padding:1px 5px;vertical-align:middle">from Zoho</span></div>
-        <input type="text" id="rv-abn" tabindex="4" maxlength="14" placeholder="XX XXX XXX XXX"
-          oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#3A5068'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
-          style="font-size:12px;padding:5px 9px;width:170px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+        <div style="color:#8BAAC0;font-size:10px;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Expense splits</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div>
+            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🚗 Parking $</label>
+            <input type="number" id="rv-exp-parking" tabindex="5" step="0.01" min="0" placeholder="0"
+              oninput="rvUpdateServiceFee()"
+              style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+          </div>
+          <div>
+            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🏨 Accommodation $</label>
+            <input type="number" id="rv-exp-accommodation" tabindex="6" step="0.01" min="0" placeholder="0"
+              oninput="rvUpdateServiceFee()"
+              style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+          </div>
+          <div>
+            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">✈ Travel $</label>
+            <input type="number" id="rv-exp-travel" tabindex="7" step="0.01" min="0" placeholder="0"
+              oninput="rvUpdateServiceFee()"
+              style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+          </div>
+        </div>
+        <div id="rv-service-fee-display" style="color:#8BAAC0;font-size:11px;margin-top:4px"></div>
       </div>
-      <div style="padding-top:17px">
+
+      <!-- 8. ABN + ABR buttons + GST + Super toggles -->
+      <div style="display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap">
+        <div>
+          <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">
+            ABN <span id="rv-abn-zoho-badge" style="display:none;font-size:9px;color:#60A5FA;font-weight:600;text-transform:none;letter-spacing:0;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:3px;padding:1px 5px;vertical-align:middle">from Zoho</span>
+          </div>
+          <input type="text" id="rv-abn" tabindex="8" maxlength="14" placeholder="XX XXX XXX XXX"
+            oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#3A5068'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
+            style="font-size:12px;padding:6px 9px;width:155px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+        </div>
         <button onclick="reviewOpenABR()" tabindex="-1"
-          title="Open this ABN's record on the Australian Business Register website (new tab) — and run a background lookup to populate the ABR panel below"
-          style="background:rgba(255,255,255,0.1);color:#ccc;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:5px 11px;font-size:12px;cursor:pointer;white-space:nowrap">🔗 View on ABR</button>
-      </div>
-      <div style="padding-top:17px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding:5px 0">
-          <input type="checkbox" id="rv-gst" tabindex="7" style="width:15px;height:15px;cursor:pointer;accent-color:#1D7A8C">
-          Invoice incl. GST
+          title="Open this ABN on the Australian Business Register website"
+          style="background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:6px 10px;font-size:11px;cursor:pointer;white-space:nowrap">🔗 View on ABR</button>
+        <button onclick="reviewRunABR()" tabindex="-1"
+          title="Pull live ABR data for this ABN without opening a new tab"
+          style="background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">↻ Pull ABR</button>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding-bottom:1px">
+          <input type="checkbox" id="rv-gst" tabindex="9" style="width:14px;height:14px;cursor:pointer;accent-color:#1D7A8C">
+          Incl. GST
           <span class="rv-tip">?<span class="rv-tip-box"><strong>Invoice includes GST?</strong>Tick if this invoice includes GST. Affects the Xero export amount and super calculation for Type B contractors (individual + GST registered).<br><br>PDF extraction sometimes gets this wrong — use the ABR panel to verify.</span></span>
         </label>
-      </div>
-      <div style="padding-top:17px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding:5px 0">
-          <input type="checkbox" id="rv-super" tabindex="8" style="width:15px;height:15px;cursor:pointer;accent-color:#27AE60">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding-bottom:1px">
+          <input type="checkbox" id="rv-super" tabindex="10" style="width:14px;height:14px;cursor:pointer;accent-color:#27AE60">
           Withhold super?
           <span class="rv-tip">?<span class="rv-tip-box"><strong>Withhold super on this invoice?</strong>Tick to deduct the employer super contribution (SGC) from this payment. Defaults to on for Type A/B contractors (individuals). Untick to override — e.g. if the contractor has confirmed they hold a private super arrangement.</span></span>
         </label>
       </div>
+    </div><!-- /input card -->
+
+    <!-- ─── ACTION BUTTONS ─── -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      <button onclick="showRawText(reviewModalRowId)" tabindex="-1"
+        title="Show the raw text extracted from this PDF — useful for debugging extraction errors"
+        style="background:rgba(255,255,255,0.08);color:#9DB5CC;border:1px solid rgba(255,255,255,0.15);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">📋 Raw Text</button>
+      <button id="rv-flag-btn" onclick="reviewFlagIssue()" tabindex="-1"
+        title="Mark this invoice as needing attention — shows an amber warning on the Stage 1 row"
+        style="background:rgba(232,160,32,0.18);color:#FBD38D;border:1px solid rgba(232,160,32,0.35);border-radius:5px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚠ Needs attention</button>
       <div style="flex:1"></div>
-      <div style="display:flex;gap:6px;padding-top:17px">
-        <button onclick="showRawText(reviewModalRowId)" tabindex="-1"
-          title="Show the raw text extracted from this PDF — useful for debugging extraction errors"
-          style="background:rgba(255,255,255,0.08);color:#9DB5CC;border:1px solid rgba(255,255,255,0.15);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">📋 Raw Text</button>
-        <button id="rv-flag-btn" onclick="reviewFlagIssue()" tabindex="-1"
-          title="Mark this invoice as needing attention — shows an amber warning on the Stage 1 row"
-          style="background:rgba(232,160,32,0.18);color:#FBD38D;border:1px solid rgba(232,160,32,0.35);border-radius:5px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚠ Needs attention</button>
-        <button id="rv-save-next-btn" onclick="reviewConfirmAndNext()" tabindex="9"
-          title="Save and automatically open the next unreviewed invoice"
-          style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm &amp; Next</button>
-        <button id="rv-save-btn" onclick="rvValidateBeforeConfirm().then(ok=>{if(ok)reviewLooksGood()})" tabindex="10"
-          title="Save all field values back to Stage 1 and mark this invoice as reviewed"
-          style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm</button>
-      </div>
+      <button id="rv-prev-btn" onclick="reviewViewPrevious()" tabindex="-1"
+        title="Go to the previous invoice (without confirming)"
+        style="background:rgba(255,255,255,0.07);color:#9DB5CC;border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap">← Previous</button>
+      <button id="rv-save-next-btn" onclick="reviewConfirmAndNext()" tabindex="11"
+        title="Save and open the next unreviewed invoice"
+        style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm &amp; Next</button>
+      <button id="rv-save-btn" onclick="rvValidateBeforeConfirm().then(ok=>{if(ok)reviewLooksGood()})" tabindex="12"
+        title="Save all field values back to Stage 1 and mark this invoice as reviewed"
+        style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm</button>
     </div>
-    <!-- Fields row 3: Expense splits (Parking / Accommodation / Travel) -->
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:6px">
-      <span style="color:#8BAAC0;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Expense splits:</span>
-      <div style="display:flex;align-items:center;gap:4px">
-        <label style="color:#ddd;font-size:11px;white-space:nowrap" for="rv-exp-parking">🚗 Parking</label>
-        <span style="color:#8BAAC0;font-size:12px">$</span>
-        <input type="number" id="rv-exp-parking" tabindex="10" step="0.01" min="0" placeholder="0"
-          oninput="rvUpdateServiceFee()"
-          style="font-size:12px;padding:4px 7px;width:80px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-      </div>
-      <div style="display:flex;align-items:center;gap:4px">
-        <label style="color:#ddd;font-size:11px;white-space:nowrap" for="rv-exp-accommodation">🏨 Accommodation</label>
-        <span style="color:#8BAAC0;font-size:12px">$</span>
-        <input type="number" id="rv-exp-accommodation" tabindex="11" step="0.01" min="0" placeholder="0"
-          oninput="rvUpdateServiceFee()"
-          style="font-size:12px;padding:4px 7px;width:80px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-      </div>
-      <div style="display:flex;align-items:center;gap:4px">
-        <label style="color:#ddd;font-size:11px;white-space:nowrap" for="rv-exp-travel">🚗 Travel</label>
-        <span style="color:#8BAAC0;font-size:12px">$</span>
-        <input type="number" id="rv-exp-travel" tabindex="12" step="0.01" min="0" placeholder="0"
-          oninput="rvUpdateServiceFee()"
-          style="font-size:12px;padding:4px 7px;width:80px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-      </div>
-      <div style="flex:1"></div>
-      <div id="rv-service-fee-display" style="color:#8BAAC0;font-size:11px;white-space:nowrap"></div>
-    </div>
-    <!-- Comparison panel: vertical stack — Zoho/ABR table, then dates, then booking list -->
-    <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;display:flex;flex-direction:column;gap:8px">
-      <!-- Zoho vs ABR comparison table (full width) -->
+
+    <!-- ─── INFO PANELS: Zoho/ABR comparison + Booking list ─── -->
+    <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;display:flex;flex-direction:column;gap:8px">
+      <!-- Zoho vs ABR comparison table -->
       <div style="border:1px solid rgba(255,255,255,0.1);border-radius:6px;overflow:hidden;font-size:11px">
         <table id="rv-comparison-table" style="width:100%;border-collapse:collapse">
           <thead>
@@ -811,26 +842,6 @@
         </table>
         <div id="rv-zoho-content" style="display:none"></div>
         <div id="rv-abr-content"  style="display:none"></div>
-      </div>
-      <!-- Dates row -->
-      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px 12px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <div style="color:#8BAAC0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Invoice Date</div>
-            <input type="date" id="rv-date" tabindex="5"
-              onclick="try{this.showPicker()}catch(e){}"
-              style="font-size:11px;padding:4px 7px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
-          </div>
-          <div>
-            <div style="color:#8BAAC0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px"
-              title="The date of the actual performance or event — auto-filled from selected Zoho booking">Perf. Date <span style="color:#4ADE80;font-size:8px;font-weight:500">(auto from booking)</span></div>
-            <input type="date" id="rv-perfdate" tabindex="6"
-              onchange="updatePerfDateDOW()"
-              onclick="try{this.showPicker()}catch(e){}"
-              style="font-size:11px;padding:4px 7px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
-          </div>
-        </div>
-        <div id="rv-perfdate-dow" style="font-size:11px;color:#4ADE80;font-weight:500;margin-top:4px;min-height:16px"></div>
       </div>
       <!-- Booking link / matching section -->
       <div id="rv-booking-link" style="font-size:11px;overflow:hidden"></div>
@@ -2125,14 +2136,7 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
         ${gstLbl} → Type ${match.type} · ${superLbl}${fundLbl}
       </div>`;
   } else {
-    matchBadge = `<span class="badge badge-warn match-status-warn">Not found in Zoho</span>
-      <div class="contractor-search-wrap" style="margin-top:4px">
-        <input type="text" placeholder="🔍 Search Zoho…"
-          oninput="searchContractorsS1('${id}', this.value)"
-          onblur="setTimeout(()=>hideDropdownS1('${id}'),200)"
-          style="font-size:11px;padding:3px 6px;width:155px;border:1px solid #FC8181;border-radius:4px;background:#fff">
-        <div id="s1drop-${id}" class="contractor-dropdown" style="display:none"></div>
-      </div>`;
+    matchBadge = `<span class="badge badge-warn match-status-warn">Not found in Zoho</span>`;
   }
 
   // Route to AP tbody if auto-classified as non-event; matched contractors always go to event
@@ -2160,9 +2164,16 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
   if (dupWarning) tr.style.background = '#FFFBEB';
   tr.id = 'row-' + id;
   tr.innerHTML = `
-    <td><input type="text" value="${escHtml(displayName)}" placeholder="Contractor name"
-         onchange="updateMatch(this,'${id}')" id="name-${id}">
-    ${pdfNameNote}${dupNote}</td>
+    <td style="position:relative">
+      <div style="position:relative">
+        <input type="text" value="${escHtml(displayName)}" placeholder="Start typing to search Zoho…"
+          oninput="searchContractorsS1('${id}', this.value)"
+          onchange="updateMatch(this,'${id}')"
+          onblur="setTimeout(()=>hideDropdownS1('${id}'),200)"
+          id="name-${id}" style="width:100%">
+        <div id="s1drop-${id}" class="contractor-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.2)"></div>
+      </div>
+      ${pdfNameNote}${dupNote}</td>
     <td><input type="text" value="${escHtml(data.invoiceNumber)}" id="inv-${id}"></td>
     <td style="min-width:115px">
       ${!isAP ? `<input type="date" value="${data.performanceDate||''}" id="perfdate-${id}"
@@ -2249,6 +2260,47 @@ function removeRow(id) {
     URL.revokeObjectURL(invoiceFileData['id_' + id]);
     delete invoiceFileData['id_' + id];
   }
+  updateProcessCount();
+}
+
+function clearAllInvoices() {
+  const rowCount = document.querySelectorAll('#pdf-tbody tr[id], #ap-review-tbody tr[id], #manual-tbody tr[id]').length;
+  if (!rowCount) return;
+  if (!confirm(`Remove all ${rowCount} invoice${rowCount!==1?'s':''}? This cannot be undone.`)) return;
+
+  // Revoke all PDF object URLs to free memory
+  Object.keys(invoiceFileData).forEach(k => {
+    try { URL.revokeObjectURL(invoiceFileData[k]); } catch(e) {}
+    delete invoiceFileData[k];
+  });
+  // Clear all data stores
+  [invoiceGSTData, invoiceExpenseData, invoiceBookingData, invoiceRawText].forEach(store => {
+    Object.keys(store).forEach(k => delete store[k]);
+  });
+  if (window.invoiceSuperData) Object.keys(invoiceSuperData).forEach(k => delete invoiceSuperData[k]);
+  if (window.invoicePaidData)  Object.keys(invoicePaidData).forEach(k => delete invoicePaidData[k]);
+  if (window.invoiceTypeData)  Object.keys(invoiceTypeData).forEach(k => delete invoiceTypeData[k]);
+  reviewedRows.clear();
+  flaggedRows.clear();
+
+  // Clear all table rows
+  ['pdf-tbody','ap-review-tbody','manual-tbody'].forEach(id => {
+    const tb = document.getElementById(id);
+    if (tb) tb.innerHTML = '';
+  });
+
+  // Clear the upload list and hide the results/AP sections
+  const list = document.getElementById('pdf-list');
+  if (list) list.innerHTML = '';
+  document.getElementById('pdf-results')?.classList.add('hidden');
+  document.getElementById('ap-review-section')?.classList.add('hidden');
+
+  // Restore the drop zone to full size
+  const pdfDrop = document.getElementById('pdf-drop');
+  if (pdfDrop) { pdfDrop.style.padding = ''; pdfDrop.style.cssText = ''; }
+
+  // Re-add the single blank manual row
+  addManualRow();
   updateProcessCount();
 }
 
@@ -2404,6 +2456,9 @@ function openReviewModal(id) {
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
+  // Update Previous / Next button states
+  rvUpdateNextPrevButtons();
+
   // Focus contractor field after render
   setTimeout(() => g('rv-name')?.focus(), 80);
 }
@@ -2438,35 +2493,67 @@ function rvLoadLocalPDF(input) {
 
 // ── Validation check before Confirm ──
 function rvValidateBeforeConfirm() {
-  const missing = [];
+  // Collect missing field descriptors
+  const missingFields = [];
   const name  = (document.getElementById('rv-name')?.value  || '').trim();
   const inv   = (document.getElementById('rv-inv')?.value   || '').trim();
   const total = (document.getElementById('rv-total')?.value || '').trim();
   const perf  = (document.getElementById('rv-perfdate')?.value || '').trim();
   const abn   = (document.getElementById('rv-abn')?.value   || '').replace(/\s/g,'');
-  if (!name)  missing.push('Contractor name');
-  if (!inv)   missing.push('Invoice number');
-  if (!perf)  missing.push('Performance date');
-  if (!total) missing.push('Invoice total');
-  if (!abn || abn.length !== 11) missing.push('ABN (11 digits)');
-  if (!missing.length) return true; // all good
-  // Build a simple inline modal
+  if (!name)  missingFields.push({ key:'name',  label:'Contractor name',  targetId:'rv-name',     type:'text',   placeholder:'e.g. James Brown' });
+  if (!inv)   missingFields.push({ key:'inv',   label:'Invoice number',   targetId:'rv-inv',      type:'text',   placeholder:'e.g. INV-001' });
+  if (!perf)  missingFields.push({ key:'perf',  label:'Performance date', targetId:'rv-perfdate', type:'date',   placeholder:'' });
+  if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total',    type:'number', placeholder:'0.00' });
+  if (!abn || abn.length !== 11) missingFields.push({ key:'abn', label:'ABN (11 digits)', targetId:'rv-abn', type:'text', placeholder:'XX XXX XXX XXX' });
+  if (!missingFields.length) return Promise.resolve(true); // all good — nothing missing
+
+  // Build popup with an editable input for each missing field
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `
-    <div style="background:#1B2A4A;border:1px solid #2A3E5C;border-radius:10px;padding:24px 28px;max-width:380px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.5)">
-      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:12px">⚠ Missing fields</div>
-      <div style="font-size:12px;color:#ddd;margin-bottom:14px">The following fields are empty. The invoice can still be confirmed, but processing may be incomplete:</div>
-      <ul style="margin:0 0 16px 16px;padding:0;font-size:12px;color:#FC8181;line-height:1.8">${missing.map(m=>`<li>${m}</li>`).join('')}</ul>
+    <div style="background:#1B2A4A;border:1px solid #2A3E5C;border-radius:10px;padding:22px 26px;max-width:400px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.55)">
+      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:6px">⚠ Missing fields</div>
+      <div style="font-size:12px;color:#9DB5CC;margin-bottom:14px">Fill in below and click <strong style="color:#fff">Confirm</strong>, or <strong style="color:#fff">Go back</strong> to complete the form.</div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:16px">
+        ${missingFields.map(f => `
+          <div>
+            <label style="font-size:10px;color:#8BAAC0;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px">${f.label}</label>
+            <input type="${f.type}" id="rv-val-${f.key}" placeholder="${f.placeholder}"
+              ${f.type==='number' ? 'step="0.01" min="0"' : ''}
+              style="width:100%;font-size:12px;padding:6px 9px;border:1px solid #FC8181;border-radius:5px;background:#243652;color:#fff;outline:none">
+          </div>`).join('')}
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button id="rv-val-cancel" style="background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">Go back</button>
-        <button id="rv-val-ok" style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Confirm anyway</button>
+        <button id="rv-val-ok" style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">✓ Confirm</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+
+  // Focus the first input
+  setTimeout(() => overlay.querySelector('input')?.focus(), 60);
+
   return new Promise(resolve => {
     overlay.querySelector('#rv-val-cancel').onclick = () => { overlay.remove(); resolve(false); };
-    overlay.querySelector('#rv-val-ok').onclick    = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#rv-val-ok').onclick = () => {
+      // Copy non-empty popup values back to the actual form fields before confirming
+      missingFields.forEach(f => {
+        const popupInput = overlay.querySelector('#rv-val-' + f.key);
+        const formInput  = document.getElementById(f.targetId);
+        if (popupInput && formInput && (popupInput.value || '').trim()) {
+          formInput.value = popupInput.value.trim();
+          if (f.targetId === 'rv-perfdate') updatePerfDateDOW();
+          if (f.targetId === 'rv-total') rvUpdateServiceFee();
+        }
+      });
+      overlay.remove();
+      resolve(true);
+    };
+    // Also allow Enter key to confirm
+    overlay.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { overlay.querySelector('#rv-val-ok').click(); }
+      if (e.key === 'Escape') { overlay.querySelector('#rv-val-cancel').click(); }
+    });
   });
 }
 
@@ -2479,6 +2566,20 @@ function closeReviewModal() {
   if (noPdfMsg) noPdfMsg.style.display = 'none';
   document.body.style.overflow = '';
   reviewModalRowId = null;
+}
+
+function reviewViewPrevious() {
+  // Navigate to the previous invoice in DOM order without confirming the current one
+  const allRows = [
+    ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
+    ...Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')),
+    ...Array.from(document.querySelectorAll('#manual-tbody tr[id]')),
+  ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
+  const currentIdx = allRows.indexOf(String(reviewModalRowId));
+  if (currentIdx <= 0) return; // already at the first
+  const prevId = allRows[currentIdx - 1];
+  closeReviewModal();
+  setTimeout(() => openReviewModal(prevId), 80);
 }
 
 async function reviewConfirmAndNext() {
@@ -2509,6 +2610,47 @@ async function reviewConfirmAndNext() {
   if (nextId) {
     // Small delay so the modal close animation completes before re-opening
     setTimeout(() => openReviewModal(nextId), 80);
+  } else {
+    // All invoices reviewed — modal already closed by reviewLooksGood()
+    setTimeout(() => {
+      const total = allRows.length;
+      alert(`✓ All ${total} invoice${total!==1?'s':''} reviewed! You can now proceed to Stage 2.`);
+    }, 80);
+  }
+}
+
+function rvUpdateNextPrevButtons() {
+  // Called from openReviewModal — updates Previous button visibility and Next button label
+  const allRows = [
+    ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
+    ...Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')),
+    ...Array.from(document.querySelectorAll('#manual-tbody tr[id]')),
+  ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
+
+  const currentIdx = allRows.indexOf(String(reviewModalRowId));
+
+  // Previous button — dim if at the first invoice
+  const prevBtn = document.getElementById('rv-prev-btn');
+  if (prevBtn) {
+    prevBtn.style.opacity = currentIdx <= 0 ? '0.35' : '1';
+    prevBtn.style.pointerEvents = currentIdx <= 0 ? 'none' : '';
+  }
+
+  // Confirm & Next button — change text if this is the last unreviewed
+  const nextBtn = document.getElementById('rv-save-next-btn');
+  if (nextBtn) {
+    const candidates = [
+      ...allRows.slice(currentIdx + 1),
+      ...allRows.slice(0, currentIdx),
+    ];
+    const hasNext = candidates.some(id => !reviewedRows.has(String(id)));
+    if (hasNext) {
+      nextBtn.innerHTML = '✓ Confirm &amp; Next';
+      nextBtn.title = 'Save and automatically open the next unreviewed invoice';
+    } else {
+      nextBtn.textContent = '✓ Last Invoice — Finish';
+      nextBtn.title = 'All invoices reviewed. Confirm and close the review screen.';
+    }
   }
 }
 
@@ -2531,6 +2673,8 @@ document.addEventListener('DOMContentLoaded', () => {
       els[(idx + 1) % els.length].focus();
     }
   });
+  // Offer to restore a previous session if one exists
+  setTimeout(sessionCheckRestore, 300);
 });
 
 function reviewFlagIssue() {
@@ -2844,6 +2988,16 @@ function rvBookingSelectionChanged() {
       updatePerfDateDOW();
     }
   }
+
+  // Auto-fill Total (inc. GST) from booking cost if total is currently empty and one booking selected
+  const totalEl = document.getElementById('rv-total');
+  if (totalEl && !totalEl.value && checked.length === 1) {
+    const cost = parseFloat(checked[0].dataset.cost) || 0;
+    if (cost > 0) {
+      totalEl.value = cost.toFixed(2);
+      rvUpdateServiceFee();
+    }
+  }
   const bar = document.getElementById('rv-booking-total-bar');
   if (!bar) return;
 
@@ -2935,6 +3089,8 @@ function reviewLooksGood() {
   }
 
   closeReviewModal();
+  // Auto-save session state so a page refresh can offer to restore
+  setTimeout(sessionSave, 200);
 }
 
 function showRawText(id) {
@@ -2993,10 +3149,18 @@ function addManualRow() {
   const tr = document.createElement('tr');
   tr.id = 'row-' + id;
   tr.innerHTML = `
-    <td><input type="text" placeholder="e.g. James Cormack-Brown"
-         onchange="updateMatch(this,'${id}')" id="name-${id}"></td>
+    <td style="position:relative">
+      <div style="position:relative">
+        <input type="text" placeholder="Start typing to search Zoho…"
+          oninput="searchContractorsS1('${id}', this.value)"
+          onchange="updateMatch(this,'${id}')"
+          onblur="setTimeout(()=>hideDropdownS1('${id}'),200)"
+          id="name-${id}" style="width:100%">
+        <div id="s1drop-${id}" class="contractor-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.2)"></div>
+      </div>
+    </td>
     <td><input type="text" placeholder="INV-001" id="inv-${id}"></td>
-    <td><input type="date" value="${today}" id="date-${id}"></td>
+    <input type="hidden" value="${today}" id="date-${id}">
     <td><input type="number" step="0.01" placeholder="580.00" id="total-${id}"></td>
     <td>
       <div style="display:flex;gap:4px;align-items:center;">
@@ -3009,7 +3173,10 @@ function addManualRow() {
       <input type="checkbox" id="s1-paid-${id}" style="cursor:pointer;width:15px;height:15px;"
         title="Tick to exclude this row from Xero + Super CSV exports (e.g. already paid)">
     </td>
-    <td><button class="btn btn-danger btn-sm" onclick="removeRow('${id}')">✕</button></td>`;
+    <td style="white-space:nowrap">
+      <button class="btn btn-secondary btn-sm" onclick="openReviewModal('${id}')" id="rv-btn-${id}" title="Review invoice — verify &amp; correct fields" style="margin-right:3px">👁 Review</button>
+      <button class="btn btn-danger btn-sm" onclick="removeRow('${id}')">✕</button>
+    </td>`;
   tbody.appendChild(tr);
   updateProcessCount();
 }
@@ -3283,12 +3450,68 @@ function searchContractorsS1(rowId, query) {
   drop.innerHTML = matches.map(c => {
     const tl = `<span class="badge badge-${(c.type||'a').toLowerCase()}" style="font-size:9px;padding:1px 5px;margin-left:4px">${c.type}</span>`;
     const sl = c.superEligible ? '<span style="color:#27AE60;font-size:10px;margin-left:4px">✓ Super</span>' : '';
-    return `<div class="contractor-option" onclick="linkContractorS1('${rowId}','${c.zohoId}')">
+    return `<div class="contractor-option" onclick="linkContractorS1('${rowId}','${c.zohoId}')"
+      onmouseenter="s1ShowBookingTooltip(this,'${c.zohoId}')"
+      onmouseleave="s1HideBookingTooltip(this)"
+      style="position:relative">
       <span class="opt-name">${escHtml(c.name)}</span>${tl}${sl}
       <span class="opt-abn">${c.abn||'—'}</span>
     </div>`;
   }).join('');
   drop.style.display = 'block';
+}
+
+function s1ShowBookingTooltip(el, zohoId) {
+  s1HideBookingTooltip(el); // clear any existing
+  const recent = getContractorBookings(zohoId, null).slice(0, 5);
+  if (!recent.length) return;
+
+  const tip = document.createElement('div');
+  tip.className = 's1-booking-tooltip';
+  tip.style.cssText = [
+    'position:absolute', 'left:100%', 'top:0', 'z-index:200',
+    'background:#1B2A4A', 'border:1px solid #2A3E5C', 'border-radius:6px',
+    'padding:10px 12px', 'min-width:320px', 'max-width:480px',
+    'box-shadow:0 8px 24px rgba(0,0,0,0.5)', 'font-size:11px', 'color:#ddd',
+    'pointer-events:none'
+  ].join(';');
+
+  const rows = recent.map(({ booking, entertainer }) => {
+    const ents = (booking.entertainers || []);
+    const entCols = ents.slice(0, 6).map(e => {
+      const highlight = e.id === zohoId ? 'font-weight:700;color:#93c5fd' : 'color:#aaa';
+      const paid = e.paid
+        ? '<span style="color:#4ADE80;margin-left:3px">✓</span>'
+        : '<span style="color:#FC8181;margin-left:3px">✗</span>';
+      const cost = e.cost ? `$${Number(e.cost).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—';
+      return `<td style="padding:2px 5px;${highlight}">${escHtml(e.name||'—')}</td><td style="padding:2px 5px;color:#9DB5CC">${cost}${paid}</td>`;
+    }).join('');
+    const dateStr = booking.eventDate
+      ? new Date(booking.eventDate + 'T12:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})
+      : '—';
+    return `<tr>
+      <td style="padding:2px 5px;color:#8BAAC0;white-space:nowrap">${dateStr}</td>
+      <td style="padding:2px 5px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(booking.bookingName||'')}">${escHtml((booking.bookingName||'').slice(0,22))}${(booking.bookingName||'').length>22?'…':''}</td>
+      ${entCols}
+    </tr>`;
+  }).join('');
+
+  tip.innerHTML = `
+    <div style="font-weight:700;color:#93c5fd;margin-bottom:6px;font-size:11px">Recent bookings</div>
+    <table style="border-collapse:collapse;width:100%">
+      <thead><tr>
+        <th style="padding:2px 5px;color:#8BAAC0;font-weight:600;font-size:10px;text-align:left">Date</th>
+        <th style="padding:2px 5px;color:#8BAAC0;font-weight:600;font-size:10px;text-align:left">Booking</th>
+        <th colspan="8" style="padding:2px 5px;color:#8BAAC0;font-weight:600;font-size:10px;text-align:left">Entertainers (name · $cost · paid?)</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  el.appendChild(tip);
+}
+
+function s1HideBookingTooltip(el) {
+  el.querySelectorAll('.s1-booking-tooltip').forEach(t => t.remove());
 }
 
 function hideDropdownS1(rowId) {
@@ -3952,6 +4175,141 @@ function escHtml(s) {
 
 // ── Init ──
 addManualRow(); // Start with one blank row
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Session Persistence  — sessionStorage save/restore + beforeunload warning
+// Uses sessionStorage (survives F5 page refresh but not tab close), so an
+// accidental Reload can be recovered. PDFs cannot be stored — they must be
+// re-uploaded, but all field values, reviewed/flagged status and expense splits
+// are fully restored.
+// ══════════════════════════════════════════════════════════════════════════════
+const SESSION_KEY = 'mec_invoice_session';
+
+function sessionHasWork() {
+  const rows = document.querySelectorAll('#pdf-tbody tr[id], #manual-tbody tr[id]');
+  // "has work" if there's more than the single blank starter row, or any reviewed/flagged rows
+  return reviewedRows.size > 0 || flaggedRows.size > 0 || rows.length > 1
+    || (rows.length === 1 && (document.getElementById('name-' + rows[0].id.replace('row-', ''))?.value || '').trim());
+}
+
+function sessionSave() {
+  try {
+    const rows = [];
+    document.querySelectorAll('#pdf-tbody tr[id], #ap-review-tbody tr[id], #manual-tbody tr[id]').forEach(tr => {
+      const id = tr.id.replace('row-', '');
+      const name = document.getElementById('name-'+id)?.value || '';
+      if (!name.trim()) return; // skip blank rows
+      rows.push({
+        id,
+        name,
+        inv:      document.getElementById('inv-'+id)?.value      || '',
+        perfdate: document.getElementById('perfdate-'+id)?.value || '',
+        total:    document.getElementById('total-'+id)?.value    || '',
+        abn:      document.getElementById('abn-'+id)?.value      || '',
+        reviewed: reviewedRows.has(String(id)),
+        flagged:  flaggedRows.has(String(id)),
+        gst:      invoiceGSTData['id_'+id]     ?? null,
+        superOn:  invoiceSuperData?.['id_'+id] ?? null,
+        expense:  invoiceExpenseData['id_'+id] || null,
+        bookings: invoiceBookingData['id_'+id] || null,
+      });
+    });
+    if (!rows.length) return;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ts: Date.now(), rows }));
+  } catch(e) { /* sessionStorage unavailable */ }
+}
+
+function sessionCheckRestore() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const { ts, rows } = JSON.parse(raw);
+    if (!rows?.length) return;
+    const ageMin = Math.round((Date.now() - ts) / 60000);
+    if (ageMin > 60 * 8) { sessionStorage.removeItem(SESSION_KEY); return; } // discard after 8 hours
+
+    const reviewedCount = rows.filter(r => r.reviewed).length;
+    const flaggedCount  = rows.filter(r => r.flagged).length;
+    const ageLabel = ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin} min ago` : `${Math.round(ageMin/60)}h ago`;
+    const msg = [
+      `🔄 Restore unsaved session from ${ageLabel}?`,
+      `  • ${rows.length} invoice${rows.length!==1?'s':''}`,
+      reviewedCount ? `  • ${reviewedCount} already reviewed` : null,
+      flaggedCount  ? `  • ${flaggedCount} flagged` : null,
+      '',
+      'All field values will be restored. PDFs need to be re-uploaded using the "👁 Review" button.'
+    ].filter(l => l !== null).join('\n');
+
+    if (!confirm(msg)) { sessionStorage.removeItem(SESSION_KEY); return; }
+
+    // Clear the starter blank row
+    const manualTbody = document.getElementById('manual-tbody');
+    if (manualTbody) manualTbody.innerHTML = '';
+
+    // Recreate each saved row as a manual row with all data restored
+    rows.forEach(r => {
+      addManualRow();
+      const newId = 'm' + manualRowId; // ID just created by addManualRow
+
+      // Populate visible fields
+      const set = (elId, val) => { const el = document.getElementById(elId); if (el && val != null && val !== '') el.value = val; };
+      set('name-'+newId, r.name);
+      set('inv-'+newId,  r.inv);
+      set('total-'+newId, r.total);
+      set('abn-'+newId,  r.abn);
+
+      // Restore data stores under new ID
+      if (r.gst    != null) invoiceGSTData['id_'+newId]    = r.gst;
+      if (r.superOn != null) { if (!window.invoiceSuperData) window.invoiceSuperData = {}; invoiceSuperData['id_'+newId] = r.superOn; }
+      if (r.expense)  invoiceExpenseData['id_'+newId] = r.expense;
+      if (r.bookings) {
+        invoiceBookingData['id_'+newId] = r.bookings;
+        // Restore perfdate from booking data
+        if (!r.perfdate && r.bookings[0]?.eventDate) r.perfdate = r.bookings[0].eventDate;
+      }
+      // Store perfdate in a data attribute for openReviewModal to pick up
+      if (r.perfdate) {
+        const tr = document.getElementById('row-'+newId);
+        if (tr) tr.dataset.perfdate = r.perfdate;
+        // Create a hidden perfdate element for openReviewModal compatibility
+        const ph = document.createElement('input');
+        ph.type = 'hidden'; ph.id = 'perfdate-'+newId; ph.value = r.perfdate;
+        const nameEl = document.getElementById('name-'+newId);
+        if (nameEl) nameEl.closest('td')?.appendChild(ph);
+      }
+
+      // Restore reviewed / flagged state
+      if (r.reviewed) {
+        reviewedRows.add(String(newId));
+        const btn = document.getElementById('rv-btn-'+newId);
+        if (btn) { btn.style.background='#EDFAF3'; btn.style.border='1px solid #27AE60'; btn.style.color='#1A7A40'; btn.style.fontWeight='600'; btn.innerHTML='✓ Reviewed'; }
+      }
+      if (r.flagged) {
+        flaggedRows.add(String(newId));
+        const btn = document.getElementById('rv-btn-'+newId);
+        if (btn) { btn.style.background='#FFFBEB'; btn.style.border='1px solid #E8A020'; btn.style.color='#92400E'; btn.style.fontWeight='600'; btn.innerHTML='⚠ Attention'; }
+      }
+
+      // Trigger match update so the Zoho match badge shows
+      const nameEl = document.getElementById('name-'+newId);
+      if (nameEl && r.name) updateMatch(nameEl, newId);
+    });
+
+    // Show the results section
+    document.getElementById('pdf-results')?.classList.remove('hidden');
+    updateProcessCount();
+    sessionStorage.removeItem(SESSION_KEY); // clear after successful restore
+  } catch(e) { console.warn('Session restore failed:', e); }
+}
+
+// Warn before accidental close/refresh if work is in progress; auto-save so we can offer restore
+window.addEventListener('beforeunload', e => {
+  if (sessionHasWork()) {
+    sessionSave();
+    e.preventDefault();
+    e.returnValue = ''; // triggers browser's "Leave site?" dialog
+  }
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Gmail Integration
