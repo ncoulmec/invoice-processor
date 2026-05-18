@@ -1,0 +1,3427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<title>MEC Group · Payroll Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #1a3a5c;
+    --ink: #0e0e0e;
+    --bg: #f5f3ee;
+    --card: #ffffff;
+    --border: #e5e2da;
+    --muted: #6b6b6b;
+    --faint: #8a8a8a;
+    --accent: #2d6a4f;
+    --accent-bg: #e8f1ec;
+    --danger: #b91c1c;
+    --warn: #5a5a58;
+    --warn-bg: #ecebe5;
+    --radius: 10px;
+    --mono: 'DM Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.5; }
+
+  header.top { background: var(--navy); color: #fff; padding: 26px 32px 22px; }
+  .top-inner { max-width: 1280px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  header.top h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  header.top .sub { margin: 0; font-size: 12px; color: #b8c7d8; font-family: var(--mono); }
+  header.top .role-tag { background: var(--warn-bg); color: var(--warn); padding: 4px 10px; border-radius: 999px; font-size: 11px; font-family: var(--mono); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid #d3d1c7; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -2px; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 26px 32px 100px; }
+
+  .controls { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 22px; margin-bottom: 22px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .controls label { font-size: 13px; color: var(--muted); }
+  .controls select { font-family: inherit; font-size: 14px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-width: 220px; }
+  .controls select:focus { outline: none; border-color: var(--navy); }
+  .controls .emp-context { font-size: 12px; color: var(--muted); font-family: var(--mono); padding-left: 16px; border-left: 1px solid var(--border); }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 22px; }
+  .card h2 { margin: 0 0 8px; font-size: 13px; font-weight: 500; color: var(--muted); }
+  .card p.blurb { margin: 2px 0 14px; font-size: 13px; color: var(--muted); }
+
+  table.payroll { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.payroll th { text-align: left; padding: 10px 10px; font-weight: 500; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.payroll th.num { text-align: right; }
+  table.payroll td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  table.payroll td.mon { font-family: var(--mono); font-weight: 700; color: var(--navy); font-size: 12px; width: 110px; }
+  table.payroll td.input-cell { padding: 4px 6px; }
+  table.payroll td.input-cell input { font-family: var(--mono); font-size: 13px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; text-align: right; width: 100%; background: #fff; }
+  table.payroll td.input-cell input:focus { outline: none; border-color: var(--navy); background: #fff; }
+  table.payroll td.notes-cell { width: 30%; padding: 4px 6px; }
+  table.payroll td.notes-cell input { font-family: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; text-align: left; width: 100%; background: #fff; }
+  table.payroll td.notes-cell input:focus { outline: none; border-color: var(--navy); background: #fff; }
+  table.payroll tr.filled td { background: #f5faf7; }
+  table.payroll tr.filled td.mon { color: var(--accent); }
+  table.payroll tr.filled td.mon::before { content: '🔒 '; }
+
+  /* Tab strip across the top of admin */
+  .admin-tabs {
+    display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+    margin-bottom: 22px; flex-wrap: wrap;
+  }
+  .admin-tab-btn {
+    background: none; border: none; padding: 12px 18px; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 500; color: var(--muted);
+    border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.12s, border-color 0.12s;
+  }
+  .admin-tab-btn:hover { color: var(--ink); }
+  .admin-tab-btn.active { color: var(--navy); border-bottom-color: var(--navy); font-weight: 600; }
+  .admin-panel { display: none; }
+  .admin-panel.active { display: block; }
+
+  /* Unified Monthly Payroll table */
+  .um-controls {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    background: #fafaf7; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 14px;
+  }
+  .um-controls .um-period-label { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+  table.unified-payroll {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    table-layout: fixed;
+  }
+  table.unified-payroll th {
+    text-align: left; padding: 8px 6px; font-weight: 600; color: var(--muted);
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em;
+    border-bottom: 2px solid var(--border); vertical-align: bottom;
+  }
+  table.unified-payroll th.num { text-align: right; }
+  table.unified-payroll th.history { background: #fafaf7; color: var(--faint); border-left: 1px solid var(--border); }
+  table.unified-payroll th.current { background: #eef4fa; color: var(--navy); border-left: 1px solid #cdd9e8; border-right: 1px solid #cdd9e8; }
+  table.unified-payroll th.computed { background: #f5faf7; color: var(--accent); border-left: 1px solid #c3e4d0; }
+  table.unified-payroll th.qend { background: #ecebe5; color: var(--warn); border-left: 1px solid #d3d1c7; }
+  table.unified-payroll td {
+    padding: 6px 6px; border-bottom: 1px solid var(--border);
+    vertical-align: middle; font-family: var(--mono); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  table.unified-payroll td.num { text-align: right; }
+  /* Tabular numerals — keeps numeric columns vertically aligned in financial tables. */
+  table.unified-payroll td.num, table.payroll td.num,
+  table.payroll td.input-cell input,
+  table.unified-payroll td.input-cell input,
+  input[inputmode="numeric"], input[inputmode="decimal"] { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  table.unified-payroll td.emp-cell {
+    font-family: 'DM Sans', sans-serif; font-weight: 600; color: var(--ink);
+    width: 130px; max-width: 130px;
+  }
+  table.unified-payroll td.emp-cell .role { display: block; font-weight: 400; font-size: 10px; color: var(--muted); margin-top: 1px; }
+  table.unified-payroll td.history { background: #fafaf7; color: var(--faint); border-left: 1px solid var(--border); }
+  table.unified-payroll td.current { background: #eef4fa; border-left: 1px solid #cdd9e8; border-right: 1px solid #cdd9e8; }
+  table.unified-payroll td.computed { background: #f5faf7; color: var(--accent); border-left: 1px solid #c3e4d0; font-weight: 600; }
+  table.unified-payroll td.qend { background: #ecebe5; border-left: 1px solid #d3d1c7; }
+  table.unified-payroll td.input-cell input {
+    width: 100%; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: 4px; font-family: var(--mono); font-size: 12px;
+    text-align: right; background: #fff;
+  }
+  table.unified-payroll td.input-cell input:focus { outline: none; border-color: var(--navy); }
+  table.unified-payroll td.input-cell input.locked,
+  table.unified-payroll td.input-cell input:disabled {
+    background: #fafaf7; color: var(--muted); cursor: not-allowed;
+  }
+  table.unified-payroll tr.gm-row td:not(.qend):not(.computed) { color: var(--faint); }
+  table.unified-payroll tr.gm-row td.role-na { font-style: italic; font-size: 10px; }
+  table.unified-payroll tr.perf-row td.history.na { color: var(--faint); font-size: 10px; font-style: italic; }
+  .um-legend {
+    display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--muted);
+    padding: 10px 14px; background: #fafaf7; border-radius: 6px; margin-top: 12px; font-family: var(--mono);
+  }
+  .um-legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .um-legend .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); }
+  .um-legend .swatch.history { background: #fafaf7; }
+  .um-legend .swatch.current { background: #eef4fa; }
+  .um-legend .swatch.computed { background: #f5faf7; }
+  .um-legend .swatch.qend { background: #ecebe5; }
+
+  /* YTD summary cards */
+  .ytd-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .ytd-row { grid-template-columns: repeat(2, 1fr); } }
+  .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
+  .kpi-card .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .kpi-card .value { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+  .kpi-card .sub { margin-top: 4px; font-size: 11px; color: var(--faint); font-family: var(--mono); }
+
+  /* Save bar */
+  .save-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--border); padding: 14px 32px; display: flex; justify-content: space-between; align-items: center; gap: 16px; z-index: 100; box-shadow: 0 -2px 10px rgba(0,0,0,0.04); }
+  .save-bar .status { font-size: 13px; color: var(--muted); }
+  .save-bar .status.dirty { color: var(--warn); font-weight: 600; }
+  .btn { padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .btn.primary:hover { background: #132a42; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Modal */
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; align-items: center; justify-content: center; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 28px; width: min(520px, 90vw); }
+  .modal h3 { margin: 0 0 8px; font-size: 18px; }
+  .modal p { margin: 0 0 14px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .modal input[type="text"], .modal input[type="password"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 13px; margin-bottom: 12px; }
+  .modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 80px; right: 32px; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 150; display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+  .toast.show { display: block; }
+  .toast.success { background: var(--accent); color: #fff; }
+  .toast.saving { background: var(--navy); color: #fff; }
+  .toast.error { background: var(--danger); color: #fff; }
+
+  .loading { padding: 80px; text-align: center; color: var(--muted); }
+  .error-banner { background: #fdf2f2; border: 1px solid #f2d5d5; color: var(--danger); padding: 16px 20px; border-radius: 10px; margin: 20px 0; font-size: 14px; }
+
+  .pw-gate-overlay { position: fixed; inset: 0; z-index: 10000;
+    background: rgba(252, 252, 248, 0.96); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, sans-serif; }
+  .pw-gate-card { background: #fff; border: 1px solid #ddd; border-radius: 16px;
+    padding: 32px 36px; max-width: 400px; width: 90%;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08); text-align: center; }
+  .pw-gate-card h2 { margin: 0 0 6px; font-size: 18px; }
+  .pw-gate-card .sub { font-size: 13px; color: #666; margin: 0 0 24px; }
+  .pw-gate-card input { width: 100%; padding: 12px 14px; box-sizing: border-box;
+    font-family: monospace; font-size: 14px; border: 1px solid #ddd; border-radius: 8px;
+    margin-bottom: 12px; }
+  .pw-gate-card input:focus { outline: none; border-color: #2d5ab4;
+    box-shadow: 0 0 0 3px rgba(45,90,180,0.15); }
+  .pw-gate-card button { padding: 10px 22px; background: #1a1a1a; color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .pw-gate-card button:hover { background: #2d5ab4; }
+  .pw-gate-card button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pw-gate-error { color: #a8281b; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .pw-gate-loading { font-size: 12px; color: #666; margin-top: 8px; min-height: 16px; }
+
+  /* Split-grid sub-headings for unified payroll */
+  .um-grid-heading {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 10px 14px; margin: 18px 0 10px;
+    background: var(--navy); color: #fff; border-radius: 8px 8px 0 0;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .um-grid-heading.alt { background: linear-gradient(135deg, #2d6a4f 0%, #1f5e3c 100%); }
+  .um-grid-heading .right { font-size: 11px; font-weight: 400; opacity: 0.9; text-transform: none; letter-spacing: normal; font-family: var(--mono); }
+  .um-grid-heading + div { margin-top: 0 !important; }
+
+  /* Tooltip for Pay This Cycle (and other small ? hovers) — uses a JS-positioned
+     tooltip element appended to <body> so it escapes any overflow container. */
+  .um-tooltip {
+    display: inline-block; cursor: help; margin-left: 4px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff;
+    border: 1px solid var(--border); color: var(--muted);
+    font-size: 9px; font-weight: 700; line-height: 13px; text-align: center;
+    font-family: 'DM Sans', sans-serif; vertical-align: middle;
+    transition: all 0.12s;
+  }
+  .um-tooltip:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+  /* The actual tooltip bubble is a body-level element (created by JS) */
+  #um-tooltip-bubble {
+    position: fixed; z-index: 10000;
+    background: var(--ink); color: #fff;
+    padding: 8px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 400; line-height: 1.5;
+    max-width: 280px; pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    opacity: 0; transition: opacity 0.15s ease;
+    text-align: left; font-family: 'DM Sans', sans-serif;
+  }
+  #um-tooltip-bubble.show { opacity: 1; }
+
+  /* ===== XERO RECONCILIATION TAB ===== */
+  .recon-upload-zone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 28px 20px;
+    text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    background: #fafaf9; min-height: 100px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .recon-upload-zone:hover, .recon-upload-zone.drag-over { border-color: var(--navy); background: #eef4fa; }
+  .recon-upload-zone .zone-icon { font-size: 26px; margin-bottom: 8px; pointer-events: none; }
+  .recon-upload-zone .zone-label { font-size: 13px; font-weight: 600; color: var(--ink); pointer-events: none; }
+  .recon-upload-zone .zone-sub { font-size: 11px; color: var(--muted); margin-top: 4px; pointer-events: none; }
+  .recon-upload-zone.loaded { border-color: var(--accent); background: var(--accent-bg); border-style: solid; }
+  .recon-upload-zone.loaded .zone-label { color: var(--accent); }
+  .recon-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; font-family: var(--mono); }
+  .recon-badge.ok { background: #d1fae5; color: #065f46; }
+  .recon-badge.missing { background: #fee2e2; color: #991b1b; }
+  .recon-badge.mismatch { background: #fef9c3; color: #713f12; }
+  .recon-badge.pending { background: #eff6ff; color: #1e40af; }
+  .recon-stat { text-align: center; padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .recon-stat .rs-val { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--ink); }
+  .recon-stat .rs-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .recon-rule-chip { display: inline-flex; align-items: center; gap: 5px; background: #f3f4f6; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 11px; font-family: var(--mono); color: var(--muted); }
+  .recon-rule-chip.excl { background: #fef3c7; border-color: #d97706; color: #92400e; }
+
+  /* Future / disabled cells */
+  table.unified-payroll td.future {
+    background: repeating-linear-gradient(45deg, #fafaf7 0 6px, #f5f3ee 6px 12px);
+    color: var(--faint);
+  }
+  table.unified-payroll td.input-cell input.future {
+    background: transparent; color: var(--faint); cursor: not-allowed;
+  }
+  table.unified-payroll td.trueup {
+    background: #ecebe5; border-left: 1px solid #d3d1c7; color: var(--warn); font-weight: 600;
+  }
+  table.unified-payroll th.trueup {
+    background: #ecebe5; border-left: 1px solid #d3d1c7; color: var(--warn);
+  }
+
+  </style>
+</head>
+<body>
+<div class="pw-gate-overlay" id="pw-gate" style="display: none;">
+  <div class="pw-gate-card">
+    <h2 id="pw-gate-title">Admin access</h2>
+    <p class="sub">Enter the master password to unlock the MEC compensation panel.</p>
+    <input type="password" id="pw-gate-input" placeholder="Master password" autocomplete="off">
+    <div><button id="pw-gate-submit">Unlock</button></div>
+    <div class="pw-gate-error" id="pw-gate-error"></div>
+    <div class="pw-gate-loading" id="pw-gate-loading"></div>
+  </div>
+</div>
+
+
+<header class="top">
+  <div class="top-inner">
+    <div>
+      <h1>Payroll Admin</h1>
+      <p class="sub" id="meta-sub">MEC Group · Actual commission entry</p>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;"><button id="sign-out-btn" onclick="signOut()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 500;">Sign out</button><span class="role-tag">Admin access</span></div>
+  </div>
+</header>
+
+<main>
+  <div id="error-slot"></div>
+  <div id="loading" class="loading">Loading data…</div>
+  <div id="content" style="display: none;">
+
+    <div class="admin-tabs">
+      <button class="admin-tab-btn active" aria-current="page" data-admin-tab="fortnightly">📅 Fortnightly Payroll</button>
+      <button class="admin-tab-btn" data-admin-tab="quarterly">📈 Quarterly Payroll</button>
+      <button class="admin-tab-btn" data-admin-tab="pool">🤝 Team Pool <span style="font-size:9px; color: #b8860b; margin-left: 6px;">●BETA</span></button>
+      <button class="admin-tab-btn" data-admin-tab="xero-recon">💳 Xero Recon</button>
+    </div>
+
+    <!-- ========== FORTNIGHTLY PAYROLL VIEW (ACTIVE) ========== -->
+    <div class="admin-panel active" id="admin-panel-fortnightly">
+      <div class="card" style="margin-bottom: 14px; padding: 16px 20px; background: linear-gradient(135deg, #fffaf2 0%, #fff 100%); border-left: 4px solid #b8860b;">
+        <div style="font-size: 11px; color: #8a6a00; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">📅 Active payroll cycle</div>
+        <div style="font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.55;">
+          Fortnights as rows, reps as columns. Each cell = <strong>GP received</strong> for that fortnight; pay is computed live using cumulative band math. Two values per cell — <strong>ex super</strong> (paste into the Xero <em>bonus</em> field) and <strong>super</strong> (paste into the Xero <em>super contribution</em> field). First pay date: <strong>Mon 15 Jun 2026</strong>.
+        </div>
+      </div>
+
+
+      <div class="card" style="margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+          <h2 style="margin: 0;">Fortnightly Payroll · Single-Screen Entry</h2>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" id="fnp-collapse-all" style="font-size: 11px; padding: 4px 10px; border: 1px solid #d3d1c7; background: #fff; color: var(--ink); border-radius: 4px; cursor: pointer;">Collapse all months</button>
+            <button type="button" id="fnp-expand-all" style="font-size: 11px; padding: 4px 10px; border: 1px solid #d3d1c7; background: #fff; color: var(--ink); border-radius: 4px; cursor: pointer;">Expand all months</button>
+          </div>
+        </div>
+
+        <div id="fnp-totals" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px;"></div>
+
+        <div style="overflow-x: auto; max-height: 78vh; overflow-y: auto; border: 1px solid #ecebe5; border-radius: 6px;">
+          <table class="payroll" id="fnp-table" style="width: 100%; border-collapse: separate; border-spacing: 0;">
+            <thead id="fnp-thead" style="position: sticky; top: 0; z-index: 5; background: #fafaf7;"></thead>
+            <tbody id="fnp-tbody"></tbody>
+            <tfoot id="fnp-tfoot"></tfoot>
+          </table>
+        </div>
+
+        <p style="font-size: 11px; color: var(--faint); margin: 12px 0 0; font-family: var(--mono);">▸ Click any month header row to expand its fortnights · Months containing a band crossing are highlighted gold · Hover any cell for context · Tab/Enter inside an input jumps to the next fortnight (across reps within a fortnight first).</p>
+      </div>
+
+      <!-- ============================================================
+           YEAR-END AUDIT — Cross-check each rep's annual sum vs company GP
+           ============================================================ -->
+      <div class="card" style="margin-bottom: 14px;">
+        <h2>Year-End Audit · All Sales Reps</h2>
+        <p class="blurb">For each rep, paste their full-year GP received total from the source of truth (Zoho Payments report) and we'll verify it matches the sum of their 26 fortnight entries above.</p>
+        <div id="fnp-audit-body" style="overflow-x: auto;"></div>
+      </div>
+    </div>
+
+    <!-- ========== QUARTERLY PAYROLL VIEW ========== -->
+    <div class="admin-panel" id="admin-panel-quarterly">
+      <div class="card" style="margin-bottom: 14px; padding: 16px 20px; background: #f6f8fc; border-left: 4px solid var(--navy);">
+        <div style="font-size: 11px; color: var(--navy); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">📈 Quarterly payroll cycle</div>
+        <div style="font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.55;">
+          Hayley, Tom &amp; Michael are paid on a <strong>quarterly</strong> cadence (75% paid each quarter, 25% reconciled at year-end). Enter each quarter's metric — <strong>Contribution Margin</strong> for Hayley, <strong>Performance Revenue</strong> for Tom &amp; Michael — and the system annualises (YTD × 4 ÷ quarters entered), applies the bands + milestone, and shows the 75% pro-rata payout. Run this <strong>once per quarter close</strong>, alongside the matching fortnightly cycle.
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 14px;">
+        <h2 style="margin: 0 0 12px;">Quarterly Payroll · Single-Screen Entry</h2>
+        <div id="qtp-totals" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 14px;"></div>
+        <div style="overflow-x: auto; border: 1px solid #ecebe5; border-radius: 6px;">
+          <table class="payroll" id="qtp-table" style="width: 100%; border-collapse: separate; border-spacing: 0;">
+            <thead id="qtp-thead" style="position: sticky; top: 0; z-index: 5; background: #fafaf7;"></thead>
+            <tbody id="qtp-tbody"></tbody>
+            <tfoot id="qtp-tfoot"></tfoot>
+          </table>
+        </div>
+        <p style="font-size: 11px; color: var(--faint); margin: 12px 0 0; font-family: var(--mono);">▸ Each cell = that quarter's metric. Bonus / Super values below the input are the copy-paste figures for Xero. Tab/Enter moves left-to-right then down to the next quarter.</p>
+      </div>
+
+      <!-- Year-End Audit for the quarterly cohort -->
+      <div class="card" style="margin-bottom: 14px;">
+        <h2>Year-End Audit · Quarterly Cohort</h2>
+        <p class="blurb">For each person, paste their full-year metric total from the source of truth (Xero CM report for Hayley, Zoho Performance Revenue for Tom &amp; Michael) and we'll verify it matches the sum of their 4 quarter entries above.</p>
+        <div id="qtp-audit-body" style="overflow-x: auto;"></div>
+      </div>
+    </div>
+
+    <!-- ========== TEAM POOL ADMIN ========== -->
+    <div class="admin-panel" id="admin-panel-pool">
+      <div class="card" style="margin-bottom: 14px; padding: 16px 20px; background: linear-gradient(135deg, #fff8e1 0%, #fff2c5 100%); border: 2px solid #d3d1c7;">
+        <div style="font-size: 11px; color: #8a6a00; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">⚠ Beta — Team Pool not yet active</div>
+        <div style="font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.55;">
+          The pool is shown to the team as a <strong>preview only</strong> (similar to how KPIs are visible but inactive). The "Close out quarter" button is intentionally disabled until we confirm the launch quarter. You can still inspect the math here and pre-fill quarterly actuals once we go live, but nothing publishes to the team's Team Pool tab as a paid bonus until activation.
+        </div>
+      </div>
+      <div class="card" style="margin-bottom: 14px;">
+        <h2>🤝 Team Pool — Quarterly Actuals (Preview)</h2>
+        <p class="blurb">When activated, payroll will enter each quarter's team total GP-sold (from Zoho's "Quarterly GP Sold · Booking Closed Date" report) plus per-rep splits here. The dashboard auto-computes the pool funded (rep slice + company contribution), ramp factor, and per-person share. <strong>Close-out is disabled in beta.</strong></p>
+        <div id="pool-admin-body"></div>
+      </div>
+    </div>
+
+    <!-- ========== XERO RECONCILIATION TAB ========== -->
+    <div class="admin-panel" id="admin-panel-xero-recon">
+
+      <!-- Banner -->
+      <div class="card" style="margin-bottom:14px; padding:16px 20px; background:linear-gradient(135deg,#eef4fa 0%,#fff 100%); border-left:4px solid var(--navy);">
+        <div style="font-size:11px; color:var(--navy); text-transform:uppercase; letter-spacing:0.08em; font-weight:800;">💳 Xero Reconciliation · Admin weekly check-in</div>
+        <div style="font-size:13px; color:var(--ink); margin-top:6px; line-height:1.6;">
+          Upload your Xero account transactions export to see which invoice payments need to be added to Zoho.
+          Optionally also upload a Zoho payments CSV to cross-check what's already entered.<br>
+          <span style="color:var(--muted);">Auto-filters apply: only <strong>Receivable Payments</strong> with an <strong>INV- reference</strong> are shown. PIN fees, DJ School/Lesson reports, payable payments, and spend money are silently excluded.</span>
+        </div>
+      </div>
+
+      <!-- Upload zones -->
+      <div class="recon-upload-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+            <h2 style="margin:0;">Step 1 · Xero export <span style="color:var(--danger); font-size:10px; margin-left:4px; font-weight:700;">REQUIRED</span></h2>
+            <a href="https://reporting.xero.com/!!w0P0/v1/Run/15071015?isCustom=True" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:5px; background:var(--navy); color:#fff; font-size:11px; font-weight:600; font-family:inherit; padding:5px 11px; border-radius:6px; text-decoration:none; white-space:nowrap;">↗ Get Xero CSV</a>
+          </div>
+          <div class="recon-upload-zone" id="xr-xero-zone">
+            <div class="zone-icon">📊</div>
+            <div class="zone-label">Drop Xero file here or click to browse</div>
+            <div class="zone-sub">Account Transactions export · .xlsx</div>
+          </div>
+          <input type="file" id="xr-xero-input" accept=".csv,.xlsx,.xls" style="display:none;">
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+            <h2 style="margin:0;">Step 2 · Zoho Payments <span style="color:var(--muted); font-size:10px; margin-left:4px;">OPTIONAL — cross-check</span></h2>
+            <a href="https://crm.zoho.com/crm/org657079535/tab/Reports/2877869000295257008" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:5px; background:var(--accent); color:#fff; font-size:11px; font-weight:600; font-family:inherit; padding:5px 11px; border-radius:6px; text-decoration:none; white-space:nowrap;">↗ Get Zoho report</a>
+          </div>
+          <div class="recon-upload-zone" id="xr-zoho-zone">
+            <div class="zone-icon">🗂️</div>
+            <div class="zone-label">Drop Zoho Payments file here or click to browse</div>
+            <div class="zone-sub">Export from Zoho CRM Payments module · .xlsx or .csv</div>
+          </div>
+          <input type="file" id="xr-zoho-input" accept=".csv,.xlsx,.xls" style="display:none;">
+        </div>
+
+      </div>
+
+      <!-- Results -->
+      <div class="card" style="margin-bottom:14px;">
+        <div id="xr-results">
+          <div style="text-align:center; padding:40px 20px; color:var(--faint); font-size:13px;">
+            Upload a Xero CSV above to see invoice payments that need entering into Zoho.
+          </div>
+        </div>
+      </div>
+
+      <!-- Refund reminder -->
+      <div style="display:flex; align-items:flex-start; gap:10px; padding:12px 16px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; margin-bottom:14px;">
+        <span style="font-size:16px; flex-shrink:0;">⚠️</span>
+        <p style="margin:0; font-size:12px; color:#92400e; line-height:1.6;">
+          <strong>Refunds are not captured here.</strong> Customer refunds appear in Xero as "Spend Money" outgoing transactions and cannot be reliably distinguished from regular business expenses automatically. If a refund was issued this period, enter it manually in Zoho by opening the relevant booking → Financials tab → <strong>Refund Payment</strong>.
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+</main>
+
+<div class="save-bar">
+  <div class="status" id="save-status">GitHub: <span id="gh-status">not connected</span></div>
+  <div style="display: flex; gap: 10px;">
+    <button class="btn" id="gh-config-btn">Configure GitHub</button>
+    <button class="btn primary" id="save-gh-btn">☁ Save to GitHub</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="gh-modal">
+  <div class="modal">
+    <h3>GitHub connection</h3>
+    <p>Paste a fine-grained personal access token with <strong>Contents: Read and Write</strong> permission on the <code>mec-compensation</code> repo. The token is stored in this browser's localStorage and never sent anywhere except GitHub.</p>
+    <label style="font-size:12px; color:var(--muted);">Token</label>
+    <input type="password" id="gh-pat-input" placeholder="github_pat_…">
+    <label style="font-size:12px; color:var(--muted);">Repo (owner/name)</label>
+    <input type="text" id="gh-repo-input" value="ncoulmec/mec-compensation">
+    <label style="font-size:12px; color:var(--muted);">Branch</label>
+    <input type="text" id="gh-branch-input" value="main">
+    <div class="row">
+      <button class="btn" id="gh-disconnect-btn">Disconnect</button>
+      <button class="btn" id="gh-cancel-btn">Cancel</button>
+      <button class="btn primary" id="gh-save-btn">Save token</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="save-toast"></div>
+
+<script>
+
+
+// =========================================================================
+// DEV_MODE — single switch to bypass encryption + cache during iteration.
+// Flick to false (and run prod-deploy) for production.
+// =========================================================================
+const DEV_MODE = false;
+
+// Try to load plaintext data.json from same folder. Returns null if not found.
+async function _devLoadPlaintext() {
+  try {
+    const res = await fetch('./data.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) { return null; }
+}
+
+function _showDevBanner(label) {
+  if (document.getElementById('_dev-mode-banner')) return;
+  const b = document.createElement('div');
+  b.id = '_dev-mode-banner';
+  b.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; z-index: 9999; padding: 6px 16px; background: #ecebe5; border-bottom: 2px solid #d3d1c7; color: #8a6a00; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600; text-align: center; line-height: 1.3;';
+  b.innerHTML = '🔓 DEV MODE — encryption + PIN gate disabled · data.json loaded plaintext · ' + (label || '') + ' · NEVER roll out in this mode';
+  document.body.insertBefore(b, document.body.firstChild);
+  // Push the rest of the page down so the banner doesn't overlap content
+  document.body.style.paddingTop = (parseInt(getComputedStyle(document.body).paddingTop) || 0) + 26 + 'px';
+}
+
+// Hide the password gate overlay if it exists (for both PIN and master gates).
+function _hideGate() {
+  ['pin-gate', 'pw-gate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// DEV_MODE replacement for unlockAdmin — loads plaintext data.json (full).
+async function _devLoadAdmin() {
+  const full = await _devLoadPlaintext();
+  if (!full) throw new Error('DEV_MODE on but data.json not found at ./data.json — copy it from 🔒 DON\'T DELETE/ to GitHub files/, or set DEV_MODE = false.');
+  _hideGate();
+  _showDevBanner('admin');
+  return full;
+}
+
+// =========================================================================
+// ENCRYPTION LIBRARY (v41)
+// Mirrors build-encrypted.py — uses Web Crypto API for AES-GCM + PBKDF2
+// =========================================================================
+const ENC_PBKDF2_ITERATIONS = 250000;
+const ENC_DEK_LEN = 32;       // 256 bits
+const ENC_IV_LEN = 12;
+const ENC_SALT_LEN = 16;
+
+function _b64encode(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function _b64decode(s) {
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
+async function _deriveKEKBytes(password, salt, iterations) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits', 'deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: new Uint8Array(salt), iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+async function _encryptBytes(plaintextBytes, dekKey) {
+  const iv = crypto.getRandomValues(new Uint8Array(ENC_IV_LEN));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, dekKey, plaintextBytes);
+  return { iv: _b64encode(iv), ct: _b64encode(ct) };
+}
+async function _decryptPayload(payload, dekKey) {
+  const iv = new Uint8Array(_b64decode(payload.iv));
+  const ct = new Uint8Array(_b64decode(payload.ct));
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, dekKey, ct);
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+async function _wrapDEK(dekRaw, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(ENC_SALT_LEN));
+  const kek = await _deriveKEKBytes(password, salt, ENC_PBKDF2_ITERATIONS);
+  const iv = crypto.getRandomValues(new Uint8Array(ENC_IV_LEN));
+  const wrapped = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek, dekRaw);
+  return { salt: _b64encode(salt), iv: _b64encode(iv), ct: _b64encode(wrapped), iter: ENC_PBKDF2_ITERATIONS };
+}
+async function _unwrapDEKToKey(wrap, password) {
+  const kek = await _deriveKEKBytes(password, _b64decode(wrap.salt), wrap.iter);
+  const iv = new Uint8Array(_b64decode(wrap.iv));
+  const ct = new Uint8Array(_b64decode(wrap.ct));
+  const dekBytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, kek, ct);
+  return crypto.subtle.importKey('raw', dekBytes, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+}
+
+// Decrypt a master encrypted file with master password. Returns the decrypted JSON.
+async function decryptMasterFile(encryptedFile, masterPassword) {
+  const dek = await _unwrapDEKToKey(encryptedFile.wrap_master, masterPassword);
+  return _decryptPayload(encryptedFile.data, dek);
+}
+
+// Build a per-employee subset, mirroring build-encrypted.py's build_employee_subset
+function _buildEmployeeSubset(fullData, employeeId) {
+  const emp = (fullData.employees || []).find(e => e.id === employeeId);
+  if (!emp) throw new Error(`Employee not found: ${employeeId}`);
+  const projects = (fullData.projects || []).filter(p => Array.isArray(p.assignedTo) && p.assignedTo.includes(employeeId));
+  return {
+    meta: fullData.meta,
+    globals: fullData.globals,
+    planTypes: fullData.planTypes,
+    faqs: fullData.faqs,
+    projects,
+    employees: [emp]
+  };
+}
+
+// Encrypt a per-employee subset with both PIN and master.
+async function encryptForEmployee(subset, pin, master) {
+  const dekRawArr = crypto.getRandomValues(new Uint8Array(ENC_DEK_LEN));
+  const dekRaw = dekRawArr.buffer;
+  const dekKey = await crypto.subtle.importKey('raw', dekRaw, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const plaintext = new TextEncoder().encode(JSON.stringify(subset));
+  const data = await _encryptBytes(plaintext, dekKey);
+  const wrap_pin = await _wrapDEK(dekRaw, pin);
+  const wrap_master = await _wrapDEK(dekRaw, master);
+  return { version: 1, alg: 'AES-256-GCM', kdf: { name: 'PBKDF2', hash: 'SHA-256' }, data, wrap_pin, wrap_master };
+}
+
+// Encrypt the master file (full data + pins) with master password only.
+async function encryptMasterFile(fullData, pins, master) {
+  const bundle = Object.assign({}, fullData, { _pinsForAdminUse: pins });
+  const dekRawArr = crypto.getRandomValues(new Uint8Array(ENC_DEK_LEN));
+  const dekRaw = dekRawArr.buffer;
+  const dekKey = await crypto.subtle.importKey('raw', dekRaw, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const plaintext = new TextEncoder().encode(JSON.stringify(bundle));
+  const data = await _encryptBytes(plaintext, dekKey);
+  const wrap_master = await _wrapDEK(dekRaw, master);
+  return { version: 1, alg: 'AES-256-GCM', kdf: { name: 'PBKDF2', hash: 'SHA-256' }, data, wrap_master };
+}
+
+// Build the full set of encrypted files for deployment.
+// Returns { 'master.enc.json': obj, 'daniel.enc.json': obj, ... }
+async function buildAllEncryptedFiles(fullData, pins, master) {
+  const out = {};
+  out['master.enc.json'] = await encryptMasterFile(fullData, pins, master);
+  for (const [empId, pin] of Object.entries(pins)) {
+    const exists = (fullData.employees || []).some(e => e.id === empId);
+    if (!exists) continue;
+    const subset = _buildEmployeeSubset(fullData, empId);
+    out[`${empId}.enc.json`] = await encryptForEmployee(subset, pin, master);
+  }
+  return out;
+}
+
+// =========================================================================
+// MASTER PASSWORD GATE — admin tools
+// =========================================================================
+const ADMIN_CACHE_KEY = 'mec-admin-master-v28';
+const ADMIN_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MASTER_ENCRYPTED_URL = './encrypted/master.enc.json';
+
+let _adminMasterPassword = null;       // held in memory after unlock for re-encrypt-on-save
+let _adminEncryptedMasterFile = null;  // raw encrypted master file (we re-write on save)
+
+function _readAdminCache() {
+  try {
+    const raw = localStorage.getItem(ADMIN_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj.expires || obj.expires < Date.now()) return null;
+    return obj;
+  } catch (e) { return null; }
+}
+function _writeAdminCache(masterPassword, decrypted) {
+  try {
+    localStorage.setItem(ADMIN_CACHE_KEY, JSON.stringify({
+      master: masterPassword, data: decrypted, expires: Date.now() + ADMIN_CACHE_TTL_MS
+    }));
+  } catch (e) {}
+}
+function _clearAdminCache() {
+  try { localStorage.removeItem(ADMIN_CACHE_KEY); } catch (e) {}
+}
+
+async function unlockAdmin() {
+  const cached = _readAdminCache();
+  if (cached) {
+    _adminMasterPassword = cached.master;
+    // Refresh the encrypted file so future saves use the latest base
+    try {
+      const r = await fetch(MASTER_ENCRYPTED_URL + '?' + Date.now());
+      if (r.ok) _adminEncryptedMasterFile = await r.json();
+    } catch (e) {}
+    return cached.data;
+  }
+  let r;
+  try {
+    r = await fetch(MASTER_ENCRYPTED_URL + '?' + Date.now());
+  } catch (e) {
+    throw new Error(`Network error fetching ${MASTER_ENCRYPTED_URL}: ${e.message}`);
+  }
+  if (!r.ok) throw new Error(`Could not fetch ${MASTER_ENCRYPTED_URL} (HTTP ${r.status}). Make sure the 'encrypted' folder was uploaded to GitHub.`);
+  try {
+    _adminEncryptedMasterFile = await r.json();
+  } catch (e) {
+    throw new Error(`encrypted/master.enc.json is not valid JSON: ${e.message}`);
+  }
+  return new Promise((resolve, reject) => {
+    const overlay = document.getElementById('pw-gate');
+    if (!overlay) { reject(new Error('Master password gate element (#pw-gate) is missing from the page.')); return; }
+    overlay.style.display = 'flex';
+    const input = document.getElementById('pw-gate-input');
+    const submit = document.getElementById('pw-gate-submit');
+    const errorEl = document.getElementById('pw-gate-error');
+    const loadEl = document.getElementById('pw-gate-loading');
+    input.focus();
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit.click(); });
+    submit.addEventListener('click', async () => {
+      errorEl.textContent = '';
+      const pw = input.value;
+      if (!pw) { errorEl.textContent = 'Enter the master password.'; return; }
+      submit.disabled = true;
+      loadEl.textContent = 'Decrypting…';
+      try {
+        const decrypted = await decryptMasterFile(_adminEncryptedMasterFile, pw);
+        _adminMasterPassword = pw;
+        _writeAdminCache(pw, decrypted);
+        loadEl.textContent = '';
+        overlay.style.display = 'none';
+        resolve(decrypted);
+      } catch (err) {
+        loadEl.textContent = '';
+        errorEl.textContent = 'Wrong master password.';
+        input.value = ''; input.focus();
+      } finally { submit.disabled = false; }
+    });
+  });
+}
+
+// Helper accessors used by saveToGitHub
+function getAdminMasterPassword() { return _adminMasterPassword; }
+
+/* ============================================================
+   MEC Group Payroll Admin — admin.html
+   Enters actualPayouts[] per employee month-by-month.
+   Saves the same data.json as MEC Overview (uses its own PAT flow).
+   ============================================================ */
+
+let data = null;
+let dirty = false;
+let selectedEmpId = null;
+
+const $ = (sel) => document.querySelector(sel);
+const fmtNum = (n) => n == null || n === '' ? '' : Number(n).toLocaleString('en-AU', { maximumFractionDigits: 0 });
+const fmtMoney = (n) => n == null || isNaN(n) ? '—' : '$' + Number(n).toLocaleString('en-AU', { maximumFractionDigits: 0 });
+const parseNum = (s) => { const c = String(s).replace(/[^0-9.-]/g, ''); return c === '' ? null : +c; };
+
+async function load() {
+  try {
+    // v41: Master password gate + decrypt the encrypted master file
+    data = await (DEV_MODE ? _devLoadAdmin() : unlockAdmin());
+    $('#loading').style.display = 'none';
+    $('#content').style.display = 'block';
+    $('#meta-sub').textContent = `${data.meta.companyName} · Actuals for payroll — last edited ${data.meta.effectiveDate}`;
+    // Legacy Monthly Payroll + By Employee tabs have been removed. The corresponding
+    // init functions still exist but early-return when their DOM elements are missing.
+    populateEmployeeDropdown();
+    initUnifiedView();
+    wireAdminTabs();
+    wireUmTooltips();
+    renderGhStatus();
+    renderPoolAdmin();
+    // Fortnightly is now the active default tab — render it on load.
+    if (typeof renderFortnightlyAdmin === 'function') renderFortnightlyAdmin();
+    // Wire up Xero Reconciliation tab upload zones.
+    if (typeof initXeroRecon === 'function') initXeroRecon();
+  } catch (err) {
+    console.error('Admin dashboard load failed:', err);
+    $('#loading').style.display = 'none';
+    $('#error-slot').innerHTML = `<div class="error-banner"><strong>Could not load admin dashboard.</strong><br>${err.message}<br><br>Check that the <code>encrypted/master.enc.json</code> file is uploaded to GitHub alongside <code>admin.html</code>.</div>`;
+  }
+}
+
+function wireAdminTabs() {
+
+// --- Sign out: clear admin auth cache + reload ---
+function signOut() {
+  try { sessionStorage.clear(); } catch(e) {}
+  try {
+    Object.keys(localStorage).forEach(k => {
+      if (k === 'mec-admin-master-v3' || k.startsWith('dashboard-')) {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch(e) {}
+  location.reload();
+}
+
+  // Programmatically activate an admin tab (used by the in-page "Open Quarterly Payroll" link too)
+  function activateAdminTab(tabId) {
+    document.querySelectorAll('.admin-tab-btn').forEach(b => {
+      const isThis = b.dataset.adminTab === tabId;
+      b.classList.toggle('active', isThis);
+      if (isThis) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+    const target = document.getElementById('admin-panel-' + tabId);
+    if (target) target.classList.add('active');
+    // Lazy-render the heavy grids on first open
+    if (tabId === 'fortnightly' && typeof renderFortnightlyAdmin === 'function') renderFortnightlyAdmin();
+    if (tabId === 'quarterly' && typeof renderQuarterlyAdmin === 'function') renderQuarterlyAdmin();
+  }
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => activateAdminTab(btn.dataset.adminTab));
+  });
+}
+
+// Body-level tooltip for .um-tooltip elements — escapes the overflow:auto containers
+// so it can extend above/outside the table without being clipped.
+function wireUmTooltips() {
+  let bubble = document.getElementById('um-tooltip-bubble');
+  if (!bubble) {
+    bubble = document.createElement('div');
+    bubble.id = 'um-tooltip-bubble';
+    document.body.appendChild(bubble);
+  }
+  // Delegated mouseover/mouseout — works even after the table re-renders
+  document.addEventListener('mouseover', (ev) => {
+    const t = ev.target.closest('.um-tooltip');
+    if (!t) return;
+    const tip = t.dataset.tip || '';
+    if (!tip) return;
+    bubble.textContent = tip;
+    bubble.classList.add('show');
+    // Position above the trigger, centered, but clamp to viewport
+    const r = t.getBoundingClientRect();
+    bubble.style.left = '0px'; bubble.style.top = '0px';
+    // Force layout to get bubble dimensions
+    const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+    let left = r.left + (r.width / 2) - (bw / 2);
+    let top = r.top - bh - 8;
+    // Clamp horizontally
+    const margin = 8;
+    if (left < margin) left = margin;
+    if (left + bw > window.innerWidth - margin) left = window.innerWidth - bw - margin;
+    // If above trigger goes off-screen, flip below
+    if (top < margin) top = r.bottom + 8;
+    bubble.style.left = left + 'px';
+    bubble.style.top = top + 'px';
+  });
+  document.addEventListener('mouseout', (ev) => {
+    const t = ev.target.closest('.um-tooltip');
+    if (!t) return;
+    bubble.classList.remove('show');
+  });
+}
+
+function populateEmployeeDropdown() {
+  const sel = $('#emp-select');
+  if (!sel) return; // By-Employee panel removed in fortnightly migration
+  sel.innerHTML = data.employees.map(e => `<option value="${e.id}">${e.name} — ${e.roleShort || e.role}</option>`).join('');
+  sel.addEventListener('change', () => selectEmployee(sel.value));
+  // Select first non-placeholder employee
+  const firstReal = data.employees.find(e => !e.placeholder) || data.employees[0];
+  sel.value = firstReal.id;
+  selectEmployee(firstReal.id);
+}
+
+function ensureActualPayouts(emp) {
+  if (!emp.actualPayouts || !Array.isArray(emp.actualPayouts) || emp.actualPayouts.length !== 12) {
+    const monthLabels = (emp.actuals && Array.isArray(emp.actuals.monthlyGP))
+      ? emp.actuals.monthlyGP.map(m => m.month)
+      : ['Apr 2026','May 2026','Jun 2026','Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026','Jan 2027','Feb 2027','Mar 2027'];
+    emp.actualPayouts = monthLabels.map(m => ({ month: m, commissionPaid: null, gpReceived: null, eventGP: null, notes: '' }));
+  }
+  return emp.actualPayouts;
+}
+
+// Shared band commission calculator — mirrors the Sales dashboard logic (daniel-*.html).
+function calcBandCommission(metric, bands) {
+  let total = 0;
+  const sorted = [...bands].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    const next = i + 1 < sorted.length ? sorted[i + 1].threshold : Infinity;
+    total += Math.max(0, Math.min(metric, next) - b.threshold) * b.rate;
+  }
+  return total;
+}
+
+// Compute per-month cash payout with quarterly TU + running balance carry-forward.
+// Matches the Sales dashboard algorithm so admin sees exactly what the employee will see.
+function computePayouts(emp) {
+  const plan = data.planTypes[emp.planType];
+  if (!plan || !Array.isArray(plan.bands)) return { rows: new Array(12).fill({ gpComm: 0, prodComm: 0, cash: 0 }), balanceEnd: 0 };
+  const sr = data.globals.superRate || 0.12;
+  const prodPct = plan.includeProduction ? (plan.productionPct || 0) : 0;
+  const mBands = plan.bands.map(b => ({ threshold: b.threshold / 12, rate: b.rate }));
+  const qBands = plan.bands.map(b => ({ threshold: b.threshold / 4, rate: b.rate }));
+
+  // Raw monthly commission (inc. super, since bandsIncludeSuper applies)
+  const raw = emp.actualPayouts.map(p => {
+    const gp = +p.gpReceived || 0;
+    const ev = +p.eventGP || 0;
+    return { gp, ev, gpRaw: calcBandCommission(gp, mBands), prodInc: ev * prodPct };
+  });
+
+  let balance = 0;
+  const paid = new Array(12).fill(0);
+  const quarterEnds = [2, 5, 8, 11];
+  for (let q = 0; q < 4; q++) {
+    const mi = [q * 3, q * 3 + 1, q * 3 + 2];
+    let qCash = 0, qOffset = 0;
+    for (let j = 0; j < 2; j++) {
+      const i = mi[j];
+      const r = raw[i].gpRaw;
+      const off = Math.min(balance, r);
+      paid[i] = r - off;
+      balance -= off;
+      qCash += paid[i];
+      qOffset += off;
+    }
+    // Month 3 reconciliation
+    const qGP = mi.reduce((a, i) => a + raw[i].gp, 0);
+    const qEntitled = calcBandCommission(qGP, qBands);
+    const m3Rem = qEntitled - qCash - qOffset;
+    if (m3Rem >= 0) {
+      const off = Math.min(balance, m3Rem);
+      paid[mi[2]] = m3Rem - off;
+      balance -= off;
+    } else {
+      paid[mi[2]] = 0;
+      balance += -m3Rem;
+    }
+  }
+  // Annual reconciliation
+  const annualGP = raw.reduce((a, r) => a + r.gp, 0);
+  const annualEnt = calcBandCommission(annualGP, plan.bands);
+  const paidM1to11 = paid.slice(0, 11).reduce((a, v) => a + v, 0);
+  const allowed12 = Math.max(0, annualEnt - paidM1to11);
+  if (paid[11] > allowed12) paid[11] = allowed12;
+  const total = paid.reduce((a, v) => a + v, 0);
+  // Annual stage 2: residual overpay, minus what quarterly TU already put in balance
+  const targetBal = total - annualEnt;
+  if (targetBal - balance > 0.01) balance = targetBal;
+
+  return {
+    rows: raw.map((r, i) => {
+      const gpCommInc = paid[i];                        // cash-paid GP commission after TU (inc super)
+      const prodCommInc = r.prodInc;                    // production commission (inc super)
+      const totalInc = gpCommInc + prodCommInc;
+      return {
+        gp: r.gp, ev: r.ev,
+        gpCommInc, gpCommRaw: r.gpRaw,
+        gpCommEx: gpCommInc / (1 + sr),                 // ex super (Xero entry)
+        prodCommInc, prodCommEx: prodCommInc / (1 + sr),
+        cashInc: totalInc,
+        cashEx: totalInc / (1 + sr),                    // ex super (what goes in Xero)
+      };
+    }),
+    balanceEnd: balance,
+    annualEnt,
+  };
+}
+
+function selectEmployee(id) {
+  selectedEmpId = id;
+  const emp = data.employees.find(e => e.id === id);
+  if (!emp) return;
+  const plan = data.planTypes[emp.planType];
+  ensureActualPayouts(emp);
+  const dashLink = emp.dashboardFile
+    ? `<a href="${emp.dashboardFile}" target="_blank" class="btn primary" style="margin-left: 14px; padding: 6px 12px; font-size: 12px; text-decoration: none;">Open ${emp.name.split(' ')[0]}'s dashboard ↗</a>`
+    : '';
+  $('#emp-context').innerHTML = `${emp.role} · Plan: <strong>${plan.name}</strong> · Base $${fmtNum(emp.baseSalary)} ex-super ${dashLink}`;
+  renderGrid(emp);
+  renderYTD(emp);
+}
+
+function renderGrid(emp) {
+  const rows = emp.actualPayouts.map((p, i) => {
+    const gpEntered = p.gpReceived != null && p.gpReceived !== '';
+    const evEntered = p.eventGP != null && p.eventGP !== '';
+    const filled = gpEntered || evEntered;
+    const gpVal = p.gpReceived != null ? fmtNum(p.gpReceived) : '';
+    const evVal = p.eventGP != null ? fmtNum(p.eventGP) : '';
+    const notesVal = p.notes || '';
+    return `
+      <tr data-idx="${i}" class="${filled ? 'filled' : ''}">
+        <td class="mon">${p.month}</td>
+        <td class="input-cell"><input type="text" inputmode="numeric" data-field="gpReceived" data-idx="${i}" value="${gpVal}" placeholder="0"></td>
+        <td class="input-cell"><input type="text" inputmode="numeric" data-field="eventGP" data-idx="${i}" value="${evVal}" placeholder="0"></td>
+        <td class="num" data-cell="gpComm" style="background:#f5faf7;">—</td>
+        <td class="num" data-cell="prodComm" style="background:#f5faf7;">—</td>
+        <td class="num" data-cell="cash" style="background:#f5faf7; font-weight:700;">—</td>
+        <td class="notes-cell"><input type="text" data-field="notes" data-idx="${i}" value="${String(notesVal).replace(/"/g,'&quot;')}" placeholder="e.g. includes $3k refund from Apr"></td>
+        <td><button class="btn" style="padding:4px 10px; font-size:12px;" data-clear="${i}" title="Clear this row (unlocks it on employee dashboard)">Clear</button></td>
+      </tr>
+    `;
+  }).join('');
+  const body = $('#payroll-body');
+  body.innerHTML = rows;
+
+  body.querySelectorAll('input[data-field]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const idx = +inp.dataset.idx;
+      const field = inp.dataset.field;
+      const empNow = data.employees.find(e => e.id === selectedEmpId);
+      if (field === 'notes') {
+        empNow.actualPayouts[idx][field] = inp.value;
+      } else {
+        const val = parseNum(inp.value);
+        empNow.actualPayouts[idx][field] = val;
+        if (val != null) inp.value = fmtNum(val);
+        // Toggle row filled state based on whether any numeric field is set
+        const p = empNow.actualPayouts[idx];
+        const rowFilled = (p.gpReceived != null && p.gpReceived !== '') || (p.eventGP != null && p.eventGP !== '');
+        inp.closest('tr').classList.toggle('filled', rowFilled);
+      }
+      setDirty();
+      recalcRow(empNow);
+      renderYTD(empNow);
+    });
+  });
+  body.querySelectorAll('button[data-clear]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = +btn.dataset.clear;
+      const empNow = data.employees.find(e => e.id === selectedEmpId);
+      empNow.actualPayouts[idx] = { month: empNow.actualPayouts[idx].month, commissionPaid: null, gpReceived: null, eventGP: null, notes: '' };
+      setDirty();
+      renderGrid(empNow);
+      renderYTD(empNow);
+    });
+  });
+
+  // First render of computed cells
+  recalcRow(emp);
+}
+
+function recalcRow(emp) {
+  const { rows: computedRows } = computePayouts(emp);
+  const body = $('#payroll-body');
+  computedRows.forEach((r, i) => {
+    const tr = body.querySelector(`tr[data-idx="${i}"]`);
+    if (!tr) return;
+    tr.querySelector('[data-cell="gpComm"]').textContent = r.gpCommEx > 0 ? fmtMoney(r.gpCommEx) : (r.gpCommRaw > 0 ? '$0 (TU offset)' : '—');
+    tr.querySelector('[data-cell="prodComm"]').textContent = r.prodCommEx > 0 ? fmtMoney(r.prodCommEx) : '—';
+    tr.querySelector('[data-cell="cash"]').textContent = r.cashEx > 0 ? fmtMoney(r.cashEx) : '—';
+  });
+}
+
+function renderYTD(emp) {
+  const { rows, balanceEnd } = computePayouts(emp);
+  const sums = rows.reduce((a, r) => ({
+    cashEx: a.cashEx + r.cashEx,
+    gp: a.gp + r.gp,
+    ev: a.ev + r.ev,
+    filled: a.filled + (r.gp > 0 || r.ev > 0 ? 1 : 0),
+  }), { cashEx: 0, gp: 0, ev: 0, filled: 0 });
+  const sr = data.globals.superRate || 0.12;
+  const balanceEx = balanceEnd / (1 + sr);
+  $('#ytd-row').innerHTML = `
+    <div class="kpi-card"><div class="label">Months entered</div><div class="value">${sums.filled} / 12</div><div class="sub">Locked on employee dashboard</div></div>
+    <div class="kpi-card"><div class="label">YTD Paid (Xero ex-super)</div><div class="value">${fmtMoney(sums.cashEx)}</div><div class="sub">Sum of monthly payouts</div></div>
+    <div class="kpi-card"><div class="label">YTD GP Received</div><div class="value">${fmtMoney(sums.gp)}</div><div class="sub">Event GP: ${fmtMoney(sums.ev)}</div></div>
+    <div class="kpi-card"><div class="label">True-up balance fwd</div><div class="value">${fmtMoney(balanceEx)}</div><div class="sub">${balanceEnd > 0.5 ? 'Ex super · rolls to next FY' : 'Even — no carry-forward'}</div></div>
+  `;
+}
+
+function setDirty(v = true) {
+  dirty = v;
+  $('#save-status').classList.toggle('dirty', v);
+  $('#save-status').innerHTML = v
+    ? '● Unsaved changes'
+    : 'GitHub: <span id="gh-status">' + (getGhSettings()?.pat ? 'connected' : 'not connected') + '</span>';
+}
+
+/* ============================================================
+   UNIFIED MONTHLY PAYROLL VIEW (NEW)
+   - One screen, all employees as rows
+   - Pick the active month from dropdown
+   - 3 prior months shown read-only for cross-check
+   - Quarter-end columns appear on Mar/Jun/Sep/Dec for Tom/Michael (Performance Revenue) + Hayley (CM/NP)
+   ============================================================ */
+
+const QUARTER_END_LABELS = ['Mar', 'Jun', 'Sep', 'Dec'];
+
+function isQuarterEndMonth(label) {
+  // label like "Apr 2026" — strip year, take first 3 chars
+  if (!label) return false;
+  const m = label.trim().slice(0, 3);
+  return QUARTER_END_LABELS.includes(m);
+}
+
+function getEmployeeKind(emp) {
+  if (!emp || emp.placeholder) return 'placeholder';
+  const id = (emp.id || '').toLowerCase();
+  if (id === 'hayley') return 'gm';
+  if (id === 'tom' || id === 'michael') return 'performer';
+  return 'sales';
+}
+
+function ensureExtendedActuals(emp) {
+  // Make sure each actualPayout slot has the new fields used by performer/gm rows.
+  const arr = ensureActualPayouts(emp);
+  arr.forEach(p => {
+    if (!('performanceRev' in p)) p.performanceRev = null;
+    if (!('quarterlyCM' in p)) p.quarterlyCM = null;
+    if (!('quarterlyNP' in p)) p.quarterlyNP = null;
+  });
+  return arr;
+}
+
+function getMonthLabels() {
+  // Use the first non-placeholder employee's actualPayouts months as canonical
+  const ref = data.employees.find(e => !e.placeholder && Array.isArray(e.actualPayouts) && e.actualPayouts.length === 12);
+  if (ref) return ref.actualPayouts.map(m => m.month);
+  // Fallback — fabricate Apr-Mar fiscal labels from current year
+  const now = new Date();
+  const fyStart = now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+  const months = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  return months.map((m, i) => `${m} ${i < 9 ? fyStart : fyStart + 1}`);
+}
+
+function initUnifiedView() {
+  // Monthly Payroll panel was removed in the fortnightly migration. Early-return
+  // if the panel's controls aren't present.
+  if (!document.getElementById('um-month-select')) return;
+  // Ensure every employee has the extended actuals fields
+  data.employees.forEach(e => { if (!e.placeholder) ensureExtendedActuals(e); });
+
+  const monthLabels = getMonthLabels();
+  // Default selected month: first non-future month with a value, otherwise first month
+  let defaultIdx = 0;
+  for (let i = monthLabels.length - 1; i >= 0; i--) {
+    const anyFilled = data.employees.some(e => {
+      const ap = e.actualPayouts && e.actualPayouts[i];
+      return ap && ((ap.gpReceived != null && ap.gpReceived !== '') || (ap.eventGP != null && ap.eventGP !== '') || (ap.performanceRev != null && ap.performanceRev !== '') || (ap.quarterlyCM != null && ap.quarterlyCM !== ''));
+    });
+    if (anyFilled) { defaultIdx = Math.min(i + 1, monthLabels.length - 1); break; }
+  }
+
+  const sel = document.getElementById('um-month-select');
+  sel.innerHTML = monthLabels.map((m, i) => `<option value="${i}">${m}${isQuarterEndMonth(m) ? ' · Quarter End' : ''}</option>`).join('');
+  sel.value = String(defaultIdx);
+  sel.addEventListener('change', () => renderUnifiedView(+sel.value));
+
+  renderUnifiedView(defaultIdx);
+}
+
+function renderUnifiedView(currentIdx) {
+  const monthLabels = getMonthLabels();
+  // 6-month rolling window: 3 prior + current + 2 future
+  const windowStart = Math.max(0, currentIdx - 3);
+  const windowEnd = Math.min(monthLabels.length - 1, currentIdx + 2);
+  const windowMonths = [];
+  for (let i = windowStart; i <= windowEnd; i++) {
+    windowMonths.push({ idx: i, label: monthLabels[i], state: i < currentIdx ? 'past' : (i === currentIdx ? 'current' : 'future') });
+  }
+  document.getElementById('um-period-label').textContent =
+    `Active: ${monthLabels[currentIdx]} · Window ${monthLabels[windowStart]} → ${monthLabels[windowEnd]}`;
+  document.getElementById('um-sales-window-label').textContent =
+    `${windowMonths.length} months visible · click a future month to advance the window`;
+
+  renderUnifiedSales(windowMonths, currentIdx);
+  renderUnifiedQuarterly(currentIdx);
+}
+
+// === SALES GRID (monthly, 6-month window) ===
+function renderUnifiedSales(windowMonths, currentIdx) {
+  const salesEmps = data.employees.filter(e => !e.placeholder && getEmployeeKind(e) === 'sales');
+  const thead = document.getElementById('unified-sales-thead');
+  const tbody = document.getElementById('unified-sales-tbody');
+
+  // Header — month columns x2 sub-columns each (GP Received + Event GP) for editable, single column for past/future
+  let head = `<tr>
+    <th rowspan="2" style="width: 130px;">Sales Rep</th>`;
+  windowMonths.forEach(m => {
+    const cls = m.state === 'past' ? 'history' : (m.state === 'current' ? 'current' : 'qend');
+    const colspan = m.state === 'current' ? 2 : 1;
+    head += `<th colspan="${colspan}" class="${cls}" style="text-align:center;">${m.label}${m.state === 'current' ? ' · ENTER' : ''}</th>`;
+  });
+  head += `<th rowspan="2" class="trueup num" style="width: 90px;">True-up Bal<span class="um-tooltip" data-tip="Running quarterly true-up balance carrying forward into the next pay cycle. Positive = employee was overpaid in a prior month and the excess will be netted from upcoming commissions. Ex-super.">?</span></th>`;
+  head += `<th rowspan="2" class="computed num" style="width: 110px;">Pay this Cycle<span class="um-tooltip" data-tip="Enter this exact amount into the Bonus field inside Zoho payroll for ${formatMonthShort(windowMonths.find(m=>m.state==='current')?.label || '')}. Ex-super, after monthly + quarterly true-up adjustments.">?</span></th>`;
+  head += `</tr><tr>`;
+  windowMonths.forEach(m => {
+    const cls = m.state === 'past' ? 'history' : (m.state === 'current' ? 'current' : 'qend');
+    if (m.state === 'current') {
+      head += `<th class="${cls} num" style="width:88px;">GP Recv</th><th class="${cls} num" style="width:88px;">Event GP</th>`;
+    } else {
+      head += `<th class="${cls} num" style="width:90px;">GP Recv</th>`;
+    }
+  });
+  head += `</tr>`;
+  thead.innerHTML = head;
+
+  tbody.innerHTML = '';
+  salesEmps.forEach(emp => {
+    const ap = ensureExtendedActuals(emp);
+    const { rows: computedRows, balanceEnd } = computePayouts(emp);
+    const sr = data.globals.superRate || 0.12;
+    const balanceEx = balanceEnd / (1 + sr);
+
+    const tr = document.createElement('tr');
+    tr.className = 'sales-row';
+    let cells = `<td class="emp-cell">${emp.name.split(' ')[0]} <span class="role">${emp.roleShort || emp.role || ''}</span></td>`;
+    windowMonths.forEach(m => {
+      const apM = ap[m.idx] || {};
+      if (m.state === 'past') {
+        const v = apM.gpReceived != null && apM.gpReceived !== '' ? fmtMoney(apM.gpReceived) : '—';
+        cells += `<td class="num history" title="${apM.notes ? 'Note: ' + String(apM.notes).replace(/"/g,'&quot;') : ''}">${v}</td>`;
+      } else if (m.state === 'current') {
+        const gpVal = apM.gpReceived != null ? fmtNum(apM.gpReceived) : '';
+        const evVal = apM.eventGP != null ? fmtNum(apM.eventGP) : '';
+        cells += `<td class="num current input-cell"><input type="text" inputmode="numeric" data-um-emp="${emp.id}" data-um-idx="${m.idx}" data-um-field="gpReceived" value="${gpVal}" placeholder="0"></td>`;
+        cells += `<td class="num current input-cell"><input type="text" inputmode="numeric" data-um-emp="${emp.id}" data-um-idx="${m.idx}" data-um-field="eventGP" value="${evVal}" placeholder="0"></td>`;
+      } else {
+        // future
+        const v = apM.gpReceived != null && apM.gpReceived !== '' ? fmtMoney(apM.gpReceived) : '—';
+        cells += `<td class="num future">${v}</td>`;
+      }
+    });
+    // True-up balance
+    cells += `<td class="num trueup">${Math.abs(balanceEx) > 0.5 ? fmtMoney(balanceEx) : '—'}</td>`;
+    // Pay this cycle (computed for current month)
+    const r = computedRows[currentIdx];
+    const payTxt = r && r.cashEx > 0 ? fmtMoney(r.cashEx) : (r && r.gpCommRaw > 0 ? '$0' : '—');
+    cells += `<td class="num computed" data-um-pay="${emp.id}">${payTxt}</td>`;
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+
+  wireUnifiedInputs(tbody);
+}
+
+// === QUARTERLY GRID (Tom / Michael / Hayley) ===
+function renderUnifiedQuarterly(currentIdx) {
+  const performerEmps = data.employees.filter(e => !e.placeholder && (getEmployeeKind(e) === 'performer' || getEmployeeKind(e) === 'gm'));
+  const monthLabels = getMonthLabels();
+  // Quarter-end indices: 2, 5, 8, 11 (Mar of each Q for Apr-Mar fiscal). Map to labels.
+  const qIndices = [2, 5, 8, 11];
+  // State per quarter relative to currentIdx
+  const quarters = qIndices.map((qi, q) => ({
+    idx: qi,
+    qNum: q + 1,
+    label: monthLabels[qi] || `Q${q + 1}`,
+    state: qi < currentIdx ? 'past' : (qi === currentIdx ? 'current' : (qi <= currentIdx + 2 ? 'upcoming' : 'future'))
+  }));
+
+  const thead = document.getElementById('unified-quarter-thead');
+  const tbody = document.getElementById('unified-quarter-tbody');
+
+  let head = `<tr>
+    <th rowspan="2" style="width: 130px;">Employee</th>`;
+  quarters.forEach(q => {
+    const cls = q.state === 'past' ? 'history' : (q.state === 'current' ? 'current' : 'qend');
+    head += `<th colspan="2" class="${cls}" style="text-align:center;">Q${q.qNum} · ${q.label}${q.state === 'current' ? ' · ENTER' : ''}</th>`;
+  });
+  head += `<th rowspan="2" class="computed num" style="width: 110px;">YTD Pay<span class="um-tooltip" data-tip="Sum of pay (ex super) across completed and current quarters with data. Each quarter's figure goes into the Bonus field in Zoho on the first fortnightly cycle after quarter-end.">?</span></th>`;
+  head += `</tr><tr>`;
+  quarters.forEach(q => {
+    const cls = q.state === 'past' ? 'history' : (q.state === 'current' ? 'current' : 'qend');
+    head += `<th class="${cls} num" style="width:88px; font-size:9px;">Input<br><span style="font-weight:400; color: var(--faint); text-transform: none; letter-spacing: normal;">Perf Rev / CM</span></th>`;
+    head += `<th class="${cls} num" style="width:88px; font-size:9px;">Pay (ex super)<br><span style="font-weight:400; color: var(--faint); text-transform: none; letter-spacing: normal;">→ Xero</span></th>`;
+  });
+  head += `</tr>`;
+  thead.innerHTML = head;
+
+  tbody.innerHTML = '';
+  performerEmps.forEach(emp => {
+    const kind = getEmployeeKind(emp);
+    const ap = ensureExtendedActuals(emp);
+    const sr = data.globals.superRate || 0.12;
+
+    const tr = document.createElement('tr');
+    tr.className = kind === 'gm' ? 'gm-row' : 'perf-row';
+    let label = emp.name.split(' ')[0];
+    let secondary = kind === 'gm' ? 'CM + NP quarterly' : 'Performance Rev';
+    let cells = `<td class="emp-cell">${label} <span class="role">${secondary}</span></td>`;
+
+    let ytdPay = 0;
+    quarters.forEach(q => {
+      const apQ = ap[q.idx] || {};
+      const editable = (q.state === 'current' || q.state === 'upcoming');
+
+      if (kind === 'performer') {
+        // Performance Revenue + Pay
+        if (editable) {
+          cells += `<td class="num current input-cell"><input type="text" inputmode="numeric" data-um-emp="${emp.id}" data-um-idx="${q.idx}" data-um-field="performanceRev" value="${apQ.performanceRev != null ? fmtNum(apQ.performanceRev) : ''}" placeholder="0"></td>`;
+        } else if (q.state === 'past') {
+          cells += `<td class="num history">${apQ.performanceRev != null ? fmtMoney(apQ.performanceRev) : '—'}</td>`;
+        } else {
+          cells += `<td class="num future">—</td>`;
+        }
+        const pay = parsePayPerformer(emp, apQ.performanceRev);
+        const payCls = q.state === 'past' ? 'history' : (q.state === 'current' ? 'current' : (q.state === 'upcoming' ? 'qend' : 'future'));
+        if (pay > 0) ytdPay += pay;
+        cells += `<td class="num ${payCls}" data-um-pay-q="${emp.id}-${q.idx}">${pay > 0 ? fmtMoney(pay) : '—'}</td>`;
+      } else if (kind === 'gm') {
+        // Hayley: input shows CM (with NP underneath as secondary) + Pay
+        if (editable) {
+          cells += `<td class="num current input-cell"><input type="text" inputmode="numeric" data-um-emp="${emp.id}" data-um-idx="${q.idx}" data-um-field="quarterlyCM" value="${apQ.quarterlyCM != null ? fmtNum(apQ.quarterlyCM) : ''}" placeholder="CM" style="margin-bottom: 3px;"><input type="text" inputmode="numeric" data-um-emp="${emp.id}" data-um-idx="${q.idx}" data-um-field="quarterlyNP" value="${apQ.quarterlyNP != null ? fmtNum(apQ.quarterlyNP) : ''}" placeholder="NP" style="font-size: 11px; opacity: 0.85;"></td>`;
+        } else if (q.state === 'past') {
+          cells += `<td class="num history" style="font-size: 11px;">CM ${apQ.quarterlyCM != null ? fmtMoney(apQ.quarterlyCM) : '—'}<br><span style="color: var(--faint);">NP ${apQ.quarterlyNP != null ? fmtMoney(apQ.quarterlyNP) : '—'}</span></td>`;
+        } else {
+          cells += `<td class="num future">—</td>`;
+        }
+        const pay = parsePayGM(emp, apQ.quarterlyCM, apQ.quarterlyNP);
+        const payCls = q.state === 'past' ? 'history' : (q.state === 'current' ? 'current' : (q.state === 'upcoming' ? 'qend' : 'future'));
+        if (pay > 0) ytdPay += pay;
+        cells += `<td class="num ${payCls}" data-um-pay-q="${emp.id}-${q.idx}">${pay > 0 ? fmtMoney(pay) : '—'}</td>`;
+      }
+    });
+    cells += `<td class="num computed">${ytdPay > 0 ? fmtMoney(ytdPay) : '—'}</td>`;
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+
+  wireUnifiedInputs(tbody);
+}
+
+// Helper: parse + compute pay for a performer at a given Performance Revenue value (ex super).
+function parsePayPerformer(emp, performanceRev) {
+  const sr = data.globals.superRate || 0.12;
+  const pr = +performanceRev || 0;
+  if (!pr) return 0;
+  const plan = data.planTypes[emp.planType];
+  if (!plan || !Array.isArray(plan.bands)) return 0;
+  let inc = 0;
+  const sorted = [...plan.bands].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    const next = i + 1 < sorted.length ? sorted[i + 1].threshold : Infinity;
+    inc += Math.max(0, Math.min(pr, next) - b.threshold) * b.rate;
+  }
+  if (Array.isArray(plan.flatBonuses)) {
+    plan.flatBonuses.forEach(k => {
+      const t = +k.threshold || 0;
+      const rf = +k.rampFromRevenue || null;
+      if (rf && rf < t) {
+        if (pr <= rf) {} else if (pr >= t) inc += k.amount;
+        else inc += k.amount * (pr - rf) / (t - rf);
+      } else if (pr >= t) inc += k.amount;
+    });
+  }
+  return inc / (1 + sr);
+}
+
+// Helper: parse + compute pay for GM (Hayley) at quarter CM/NP.
+function parsePayGM(emp, qCM, qNP) {
+  const sr = data.globals.superRate || 0.12;
+  const cm = +qCM || 0;
+  const np = +qNP || 0;
+  if (!cm && !np) return 0;
+  const plan = data.planTypes[emp.planType];
+  if (!plan) return 0;
+  let inc = 0;
+  if (Array.isArray(plan.cmBands) && cm > 0) {
+    const sorted = [...plan.cmBands].sort((a, b) => a.threshold - b.threshold);
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i];
+      const t = b.threshold / 4;
+      const next = i + 1 < sorted.length ? sorted[i + 1].threshold / 4 : Infinity;
+      inc += Math.max(0, Math.min(cm, next) - t) * b.rate;
+    }
+  }
+  if (Array.isArray(plan.npBands) && np > 0) {
+    const sorted = [...plan.npBands].sort((a, b) => a.threshold - b.threshold);
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i];
+      const t = b.threshold / 4;
+      const next = i + 1 < sorted.length ? sorted[i + 1].threshold / 4 : Infinity;
+      inc += Math.max(0, Math.min(np, next) - t) * b.rate;
+    }
+  }
+  return inc / (1 + sr);
+}
+
+function wireUnifiedInputs(tbodyEl) {
+  tbodyEl.querySelectorAll('input[data-um-emp]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const empId = inp.dataset.umEmp;
+      const idx = +inp.dataset.umIdx;
+      const field = inp.dataset.umField;
+      const empNow = data.employees.find(e => e.id === empId);
+      ensureExtendedActuals(empNow);
+      const val = parseNum(inp.value);
+      empNow.actualPayouts[idx][field] = val;
+      if (val != null) inp.value = fmtNum(val);
+      setDirty();
+      // Trigger a full re-render of unified view to refresh dependent cells (computed Pay,
+      // YTD totals, true-up balances). Cheap because rows are small.
+      const monthSel = document.getElementById('um-month-select');
+      if (monthSel) renderUnifiedView(+monthSel.value);
+    });
+  });
+}
+
+function formatMonthShort(label) {
+  // "Apr 2026" → "Apr 2026" (kept short already, fine to return as-is)
+  return label || 'this cycle';
+}
+
+// Compute the cash-out figure for "Pay this cycle" cell on the unified view.
+// Sales reps: per the existing computePayouts() (monthly with quarterly true-up).
+// Performer (Tom/Michael): on quarter-end months, run revenue bands on performanceRev.
+// GM (Hayley): on quarter-end months, run CM bands + NP kicker (mirrors hayley dashboard math).
+function computeUnifiedPayCell(emp, idx) {
+  const kind = getEmployeeKind(emp);
+  const monthLabel = (emp.actualPayouts[idx] || {}).month || '';
+  const isQ = isQuarterEndMonth(monthLabel);
+  const sr = data.globals.superRate || 0.12;
+
+  if (kind === 'sales') {
+    const { rows } = computePayouts(emp);
+    const r = rows[idx];
+    return r && r.cashEx > 0 ? fmtMoney(r.cashEx) : '—';
+  }
+  if (kind === 'performer') {
+    if (!isQ) return '<span style="color: var(--faint); font-style: italic;">paid Q-end</span>';
+    const ap = emp.actualPayouts[idx] || {};
+    const pr = +ap.performanceRev || 0;
+    if (!pr) return '—';
+    const plan = data.planTypes[emp.planType];
+    if (!plan || !Array.isArray(plan.bands)) return '—';
+    let inc = 0;
+    const sorted = [...plan.bands].sort((a, b) => a.threshold - b.threshold);
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i];
+      const next = i + 1 < sorted.length ? sorted[i + 1].threshold : Infinity;
+      inc += Math.max(0, Math.min(pr, next) - b.threshold) * b.rate;
+    }
+    if (Array.isArray(plan.flatBonuses)) {
+      plan.flatBonuses.forEach(k => {
+        const t = k.threshold;
+        const rf = k.rampFromRevenue;
+        if (rf && rf < t) {
+          inc += pr <= rf ? 0 : (pr >= t ? k.amount : k.amount * (pr - rf) / (t - rf));
+        } else if (pr >= t) inc += k.amount;
+      });
+    }
+    return fmtMoney(inc / (1 + sr));
+  }
+  if (kind === 'gm') {
+    if (!isQ) return '<span style="color: var(--faint); font-style: italic;">paid Q-end</span>';
+    const ap = emp.actualPayouts[idx] || {};
+    const cm = +ap.quarterlyCM || 0;
+    const np = +ap.quarterlyNP || 0;
+    if (!cm && !np) return '—';
+    const plan = data.planTypes[emp.planType];
+    if (!plan) return '—';
+    let inc = 0;
+    // CM bands (quarterly thresholds — assume plan.cmBands are annualised, so /4)
+    if (Array.isArray(plan.cmBands) && cm > 0) {
+      const baseline = (plan.cmBaseline || 0) / 4;
+      const eligible = Math.max(0, cm - baseline);
+      const sorted = [...plan.cmBands].sort((a, b) => a.threshold - b.threshold);
+      for (let i = 0; i < sorted.length; i++) {
+        const b = sorted[i];
+        const t = b.threshold / 4;
+        const next = i + 1 < sorted.length ? sorted[i + 1].threshold / 4 : Infinity;
+        inc += Math.max(0, Math.min(cm, next) - t) * b.rate;
+      }
+    }
+    // NP kicker bands
+    if (Array.isArray(plan.npBands) && np > 0) {
+      const sorted = [...plan.npBands].sort((a, b) => a.threshold - b.threshold);
+      for (let i = 0; i < sorted.length; i++) {
+        const b = sorted[i];
+        const t = b.threshold / 4;
+        const next = i + 1 < sorted.length ? sorted[i + 1].threshold / 4 : Infinity;
+        inc += Math.max(0, Math.min(np, next) - t) * b.rate;
+      }
+    }
+    return inc > 0 ? fmtMoney(inc / (1 + sr)) : '—';
+  }
+  return '—';
+}
+
+/* ===== GitHub save flow ===== */
+// Shared with MEC Overview (index.html) — set up a PAT once and both pages use it.
+const LS_KEY = 'mec_gh_settings';
+function getGhSettings() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; } }
+function saveGhSettings(s) { localStorage.setItem(LS_KEY, JSON.stringify(s)); renderGhStatus(); }
+function clearGhSettings() { localStorage.removeItem(LS_KEY); renderGhStatus(); }
+function renderGhStatus() {
+  const s = getGhSettings();
+  $('#gh-status').textContent = s?.pat ? `connected (${s.repo})` : 'not connected';
+}
+
+function openGhModal() {
+  const s = getGhSettings();
+  if (s) { $('#gh-pat-input').value = ''; $('#gh-repo-input').value = s.repo || 'ncoulmec/mec-compensation'; $('#gh-branch-input').value = s.branch || 'main'; }
+  $('#gh-modal').classList.add('open');
+}
+function closeGhModal() { $('#gh-modal').classList.remove('open'); }
+
+$('#gh-config-btn').addEventListener('click', openGhModal);
+$('#gh-cancel-btn').addEventListener('click', closeGhModal);
+$('#gh-disconnect-btn').addEventListener('click', () => {
+  if (!confirm('Remove GitHub token from this browser?')) return;
+  clearGhSettings();
+  closeGhModal();
+  showToast('success', 'Token cleared.');
+});
+$('#gh-save-btn').addEventListener('click', async () => {
+  const pat = $('#gh-pat-input').value.trim();
+  const repo = $('#gh-repo-input').value.trim();
+  const branch = $('#gh-branch-input').value.trim() || 'main';
+  if (!pat) return alert('Paste a GitHub token first.');
+  if (!repo.includes('/')) return alert('Repo must be owner/name.');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}`, { headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' } });
+    if (res.status === 401) throw new Error('Token rejected.');
+    if (res.status === 404) throw new Error('Repo not found or no access.');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const info = await res.json();
+    if (!info.permissions?.push) throw new Error('Token has no write permission.');
+    saveGhSettings({ pat, repo, branch });
+    closeGhModal();
+    showToast('success', `✓ Connected to ${repo}.`);
+  } catch (err) {
+    alert('Connection failed: ' + err.message);
+  }
+});
+
+function showToast(kind, msg, timeout = 4500) {
+  const t = $('#save-toast');
+  t.className = 'toast show ' + kind;
+  t.textContent = msg;
+  clearTimeout(t._timer);
+  if (timeout > 0) t._timer = setTimeout(() => t.classList.remove('show'), timeout);
+}
+
+function encodeBase64Utf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function saveToGitHub() {
+  const s = getGhSettings();
+  if (!s || !s.pat) {
+    openGhModal();
+    return;
+  }
+  const master = getAdminMasterPassword();
+  if (!master) {
+    showToast('error', 'Not unlocked — refresh and re-enter master password.');
+    return;
+  }
+
+  const btn = document.getElementById('save-gh-btn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Encrypting…';
+  showToast('saving', 'Encrypting and saving to GitHub…', 0);
+
+  try {
+    // Update meta
+    data.meta = data.meta || {};
+    data.meta.lastUpdatedBy = 'nathan';
+    data.meta.effectiveDate = new Date().toISOString().slice(0, 10);
+
+    // Pull PINs from the bundled `_pinsForAdminUse` field set by build-encrypted.py
+    const pins = data._pinsForAdminUse || {};
+    if (!pins || Object.keys(pins).length === 0) {
+      throw new Error('No PINs found in master file. Run build-encrypted.py once locally to bootstrap PINs.');
+    }
+    // Strip the pins from the in-memory data before re-encrypting per-employee files
+    // (encryptMasterFile re-adds them for the master)
+    const fullData = JSON.parse(JSON.stringify(data));
+    delete fullData._pinsForAdminUse;
+
+    btn.textContent = 'Encrypting…';
+    const files = await buildAllEncryptedFiles(fullData, pins, master);
+
+    btn.textContent = 'Pushing…';
+    const baseUrl = `https://api.github.com/repos/${s.repo}`;
+    const headers = {
+      Authorization: `Bearer ${s.pat}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    };
+
+    // Use the Git Data API for an atomic single-commit multi-file push.
+    // 1) Get current ref
+    const refRes = await fetch(`${baseUrl}/git/ref/heads/${s.branch}`, { headers });
+    if (!refRes.ok) throw new Error(`Could not read branch ref (HTTP ${refRes.status})`);
+    const ref = await refRes.json();
+    const parentSha = ref.object.sha;
+
+    // 2) Get base tree from latest commit
+    const commitRes = await fetch(`${baseUrl}/git/commits/${parentSha}`, { headers });
+    if (!commitRes.ok) throw new Error(`Could not read base commit (HTTP ${commitRes.status})`);
+    const commit = await commitRes.json();
+    const baseTreeSha = commit.tree.sha;
+
+    // 3) Create blobs for each encrypted file
+    const blobShas = {};
+    for (const [filename, payload] of Object.entries(files)) {
+      const content = JSON.stringify(payload);
+      const blobRes = await fetch(`${baseUrl}/git/blobs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content, encoding: 'utf-8' })
+      });
+      if (!blobRes.ok) throw new Error(`Blob create failed for ${filename} (HTTP ${blobRes.status})`);
+      const blob = await blobRes.json();
+      blobShas[filename] = blob.sha;
+    }
+
+    // 4) Create new tree
+    const treeItems = Object.entries(blobShas).map(([filename, sha]) => ({
+      path: `GitHub files/encrypted/${filename}`,
+      mode: '100644',
+      type: 'blob',
+      sha
+    }));
+    const treeRes = await fetch(`${baseUrl}/git/trees`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems })
+    });
+    if (!treeRes.ok) throw new Error(`Tree create failed (HTTP ${treeRes.status})`);
+    const tree = await treeRes.json();
+
+    // 5) Create commit
+    const newCommitRes = await fetch(`${baseUrl}/git/commits`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message: `Update encrypted compensation data via MEC admin — ${new Date().toLocaleString('en-AU')}`,
+        tree: tree.sha,
+        parents: [parentSha]
+      })
+    });
+    if (!newCommitRes.ok) throw new Error(`Commit failed (HTTP ${newCommitRes.status})`);
+    const newCommit = await newCommitRes.json();
+
+    // 6) Update ref
+    const updateRes = await fetch(`${baseUrl}/git/refs/heads/${s.branch}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ sha: newCommit.sha, force: false })
+    });
+    if (!updateRes.ok) {
+      const errData = await updateRes.json().catch(() => ({}));
+      let msg = errData.message || `HTTP ${updateRes.status}`;
+      if (updateRes.status === 401) msg = 'Token rejected. Click "GitHub: connected" to re-enter.';
+      if (updateRes.status === 403) msg = 'Token lacks write permission. Re-create with Contents: Read and Write.';
+      throw new Error(msg);
+    }
+
+    // Refresh in-memory cache so subsequent saves don't re-bake stale state
+    _writeAdminCache(master, data);
+    if (typeof original !== 'undefined') original = clone(data);
+    if (typeof setDirty === 'function') setDirty(false);
+    showToast('success', '✓ Saved. Encrypted blobs pushed in one commit. GitHub Pages will refresh in ~30-60s.');
+  } catch (err) {
+    showToast('error', `Save failed: ${err.message}`, 8000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+$('#save-gh-btn').addEventListener('click', saveToGitHub);
+
+/* ============================================================
+   TEAM POOL ADMIN — quarterly actuals entry
+   ============================================================ */
+function poolWalkBands(emp, gpSold) {
+  if (!emp || !gpSold) return 0;
+  const plan = data.planTypes[emp.planType];
+  if (!plan || !plan.bands) return 0;
+  let total = 0;
+  for (let i = 0; i < plan.bands.length; i++) {
+    const band = plan.bands[i];
+    const next = plan.bands[i+1];
+    const lower = band.threshold;
+    const upper = next ? next.threshold : Infinity;
+    if (gpSold <= lower) break;
+    const inBand = Math.min(gpSold, upper) - lower;
+    total += inBand * (band.poolRate || 0);
+  }
+  return total;
+}
+
+function poolWalkBandsQuarterly(emp, quarterlyGpSold) {
+  // Apply quarterly-pro-rated thresholds: $300k annual = $75k quarterly threshold etc.
+  if (!emp || !quarterlyGpSold) return 0;
+  const plan = data.planTypes[emp.planType];
+  if (!plan || !plan.bands) return 0;
+  let total = 0;
+  for (let i = 0; i < plan.bands.length; i++) {
+    const band = plan.bands[i];
+    const next = plan.bands[i+1];
+    const lower = band.threshold / 4;     // quarterly threshold
+    const upper = next ? next.threshold / 4 : Infinity;
+    if (quarterlyGpSold <= lower) break;
+    const inBand = Math.min(quarterlyGpSold, upper) - lower;
+    total += inBand * (band.poolRate || 0);
+  }
+  return total;
+}
+
+function poolPayoutFactor(actual, target, softFloor) {
+  if (!target || target <= 0) return 0;
+  const progress = actual / target;
+  const floor = softFloor != null ? softFloor : 0.80;
+  if (progress < floor) return 0;
+  if (progress >= 1.0) return progress;     // above target — scales 1:1
+  return (progress - floor) / (1.0 - floor); // linear ramp 0 → 1
+}
+
+function poolCompanyContribution(progress, tiers) {
+  if (!tiers || !tiers.length) return 0;
+  if (progress < tiers[0].progress) return 0;
+  if (progress >= tiers[tiers.length - 1].progress) return tiers[tiers.length - 1].amount;
+  for (let i = 0; i < tiers.length - 1; i++) {
+    const a = tiers[i], b = tiers[i + 1];
+    if (progress >= a.progress && progress <= b.progress) {
+      const span = b.progress - a.progress;
+      if (span === 0) return a.amount;
+      const f = (progress - a.progress) / span;
+      return a.amount + f * (b.amount - a.amount);
+    }
+  }
+  return 0;
+}
+
+function fmtPoolMoney(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return '$' + Math.round(+n).toLocaleString('en-AU');
+}
+
+function renderPoolAdmin() {
+  const wrap = document.getElementById('pool-admin-body');
+  if (!wrap) return;
+  if (!data || !data.globals || !data.globals.teamPool) {
+    wrap.innerHTML = '<p style="color: var(--muted);">Team Pool config not found in data.</p>';
+    return;
+  }
+  const tp = data.globals.teamPool;
+  const splitCount = tp.splitCount || 8;
+  const softFloor = tp.softFloor || 0.80;
+
+  // Sales/hybrid reps that contribute to pool (have GP-based plan)
+  const contributingReps = data.employees.filter(e =>
+    !e.placeholder && data.planTypes[e.planType] &&
+    data.planTypes[e.planType].metricBasis === 'gp'
+  );
+
+  let html = '<div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Soft floor <strong style="color: var(--ink);">' + Math.round(softFloor*100) + '%</strong> · Split <strong style="color: var(--ink);">' + splitCount + '-way equal</strong> · Quarterly thresholds (annual ÷ 4) used for per-quarter pool funding</div>';
+
+  (tp.fiscalQuarters || []).forEach((q, qi) => {
+    const isCurrent = q.id === tp.currentQuarterId;
+    const isClosed = q.status === 'closed';
+    const isUpcoming = q.status === 'upcoming';
+    const statusBadge = isClosed
+      ? '<span style="background:#eaf3ee;color:#0a7a3a;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Closed · Locked</span>'
+      : isCurrent
+        ? '<span style="background:#fff8e1;color:#b8860b;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Current</span>'
+        : '<span style="background:#f5f3ee;color:var(--muted);padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Upcoming</span>';
+
+    const perRep = q.perRepGPSold || {};
+    const actualTotal = +q.actualGPSold || 0;
+    const perRepTotal = contributingReps.reduce((s, e) => s + (+perRep[e.id] || 0), 0);
+
+    // Pool is purely company-funded. Per-rep GP entries are kept for record-keeping but no longer
+    // contribute to pool funding — the rep band slice is set to $0 by design.
+    const repSlice = 0;
+    const progress = q.target > 0 ? actualTotal / q.target : 0;
+    const companyContrib = poolCompanyContribution(progress, tp.companyContributionTiers || []);
+    const payoutFactor = poolPayoutFactor(actualTotal, q.target, softFloor);
+    const poolFunded = companyContrib;
+    const perPersonShare = poolFunded / splitCount;
+
+    const progressPct = Math.round(progress * 100);
+    const fillPct = Math.min(100, progressPct);
+    const fillColour = progress >= 1.0 ? '#0a7a3a' : (progress >= softFloor ? '#b8860b' : '#a8281b');
+
+    const repInputRows = contributingReps.map(e => {
+      const v = +perRep[e.id] || 0;
+      const dataPath = `globals.teamPool.fiscalQuarters.${qi}.perRepGPSold.${e.id}`;
+      const lockedAttr = isClosed ? ' disabled' : '';
+      const sharePct = perRepTotal > 0 ? Math.round(v / perRepTotal * 100) + '%' : '—';
+      return `<tr>
+        <td style="padding: 6px 8px;">${e.name} <span style="font-size: 11px; color: var(--muted);">${e.role || ''}</span></td>
+        <td style="padding: 6px 8px;"><input type="text" inputmode="numeric" class="pool-rep-input" data-path="${dataPath}" data-qid="${q.id}" value="${v.toLocaleString('en-AU')}" style="width: 110px; padding: 6px 10px; text-align: right; font-family: var(--mono); border: 1px solid var(--border); border-radius: 6px; ${isClosed ? 'background: #f5f3ee; color: var(--muted);' : ''}" ${lockedAttr}></td>
+        <td style="padding: 6px 8px; text-align: right; font-family: var(--mono); color: var(--muted); font-size: 11px;">${sharePct}</td>
+      </tr>`;
+    }).join('');
+
+    const isBeta = tp.beta === true;
+    const closeBtnHtml = isBeta
+      ? `<button class="btn small" disabled title="Team Pool is in Beta — close-out disabled until activation" style="background: #f5f3ee; color: var(--muted); border: 1px dashed var(--border); cursor: not-allowed;">🔒 Close out quarter (Beta)</button>`
+      : isClosed
+        ? `<button class="btn small" onclick="reopenPoolQuarter('${q.id}')" style="background: #ecebe5; color: var(--muted); border: 1px solid var(--border);">↺ Re-open quarter</button>`
+        : `<button class="btn small primary" onclick="closeOutPoolQuarter('${q.id}')" style="background: #b8860b; color: #fff;">🔒 Close out quarter</button>`;
+
+    const perRepMismatch = Math.abs(perRepTotal - actualTotal) > 1;
+    const mismatchWarn = perRepMismatch && perRepTotal > 0
+      ? `<div style="margin-top: 8px; padding: 8px 10px; background: var(--warn-bg); border: 1px solid #f0e2c4; border-radius: 6px; font-size: 11px; color: var(--warn);">⚠ Per-rep total (${fmtPoolMoney(perRepTotal)}) doesn't match team total (${fmtPoolMoney(actualTotal)}). Difference: ${fmtPoolMoney(actualTotal - perRepTotal)}</div>`
+      : '';
+
+    html += `
+      <div class="card" style="margin-bottom: 18px; border-left: 3px solid ${isCurrent ? '#b8860b' : (isClosed ? '#0a7a3a' : 'var(--border)')}; ${isUpcoming ? 'opacity: 0.7;' : ''}">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 14px;">
+          <div>
+            <h3 style="margin: 0 0 4px;">${q.label} ${statusBadge}</h3>
+            <div style="font-size: 12px; color: var(--muted); font-family: var(--mono);">Target: ${fmtPoolMoney(q.target)} · Seasonal factor ${q.factor.toFixed(3)}×</div>
+          </div>
+          <div>${closeBtnHtml}</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 18px;">
+          <!-- Left: per-rep input table -->
+          <div>
+            <h4 style="margin: 0 0 8px; font-size: 13px; color: var(--navy);">Per-rep quarterly GP-Sold (from Zoho)</h4>
+            <p style="font-size: 11px; color: var(--muted); margin: 0 0 8px;">Recorded for transparency — pool is purely company-funded so per-rep entries don't change the payout. The team total below is what determines the company contribution.</p>
+            <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+              <thead>
+                <tr style="background: #fafaf7; border-bottom: 1px solid var(--border);">
+                  <th style="text-align: left; padding: 6px 8px; font-weight: 600; font-size: 11px; color: var(--muted);">Rep</th>
+                  <th style="text-align: right; padding: 6px 8px; font-weight: 600; font-size: 11px; color: var(--muted);">Quarterly GP Sold</th>
+                  <th style="text-align: right; padding: 6px 8px; font-weight: 600; font-size: 11px; color: var(--muted);">Share of team</th>
+                </tr>
+              </thead>
+              <tbody>${repInputRows}</tbody>
+              <tfoot>
+                <tr style="background: var(--navy); color: #fff; font-weight: 600;">
+                  <td style="padding: 8px;">Total per-rep entered</td>
+                  <td style="text-align: right; padding: 8px; font-family: var(--mono);">${fmtPoolMoney(perRepTotal)}</td>
+                  <td style="text-align: right; padding: 8px; font-family: var(--mono); font-size: 11px;">${actualTotal > 0 ? Math.round(perRepTotal / actualTotal * 100) + '%' : '—'}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Right: team total + computed payout -->
+          <div>
+            <h4 style="margin: 0 0 8px; font-size: 13px; color: var(--navy);">Team total &amp; payout</h4>
+            <div style="background: #fafaf7; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Team total quarterly GP sold</label>
+              <input type="text" inputmode="numeric" class="pool-team-total-input" data-path="globals.teamPool.fiscalQuarters.${qi}.actualGPSold" data-qid="${q.id}" value="${actualTotal.toLocaleString('en-AU')}" style="width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px 12px; text-align: right; font-family: var(--mono); font-size: 16px; font-weight: 700; border: 1px solid var(--border); border-radius: 6px; ${isClosed ? 'background: #f5f3ee; color: var(--muted);' : ''}" ${isClosed ? 'disabled' : ''}>
+              <div style="margin-top: 8px; height: 8px; background: #f0e2c4; border-radius: 999px; overflow: hidden; position: relative;">
+                <div style="height: 100%; width: ${fillPct}%; background: ${fillColour}; border-radius: 999px;"></div>
+                <div style="position: absolute; top: 0; left: ${Math.round(softFloor*100)}%; height: 100%; width: 1px; background: rgba(0,0,0,0.5);"></div>
+              </div>
+              <div style="font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 4px;">${progressPct}% of target · ${progress >= 1.0 ? 'TARGET HIT ✓' : (progress >= softFloor ? 'In ramp zone' : 'Below soft floor')}</div>
+            </div>
+
+            <div style="background: #fff; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px;"><span style="color: var(--muted);">Company contribution <span style="font-size: 10px; color: var(--faint);">(at ${progressPct}% of target)</span></span><span style="font-family: var(--mono); font-weight: 600;">${fmtPoolMoney(companyContrib)}</span></div>
+              <div style="display: flex; justify-content: space-between; padding: 8px 0 4px; font-size: 13px; border-top: 1px solid var(--border); margin-top: 4px;"><span style="color: var(--ink); font-weight: 600;">Total pool</span><span style="font-family: var(--mono); font-weight: 700;">${fmtPoolMoney(poolFunded)}</span></div>
+              <div style="display: flex; justify-content: space-between; padding: 8px 0 4px; font-size: 14px; font-weight: 700; border-top: 1px solid var(--border); margin-top: 4px; color: #b8860b;"><span>Per-person share (÷ ${splitCount})</span><span style="font-family: var(--mono);">${fmtPoolMoney(perPersonShare)}</span></div>
+            </div>
+            ${mismatchWarn}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  wrap.innerHTML = html;
+
+  // Wire input handlers — write back to data + re-render
+  wrap.querySelectorAll('.pool-rep-input, .pool-team-total-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const path = e.target.dataset.path;
+      if (!path) return;
+      const v = parseFloat(e.target.value.replace(/[^\d.-]/g, '')) || 0;
+      // Set value at path
+      const parts = path.split('.');
+      let obj = data;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const p = parts[i];
+        const idx = /^\d+$/.test(p) ? parseInt(p) : null;
+        if (idx != null) {
+          if (!Array.isArray(obj)) return;
+          if (!obj[idx]) obj[idx] = {};
+          obj = obj[idx];
+        } else {
+          if (obj[p] == null) obj[p] = {};
+          obj = obj[p];
+        }
+      }
+      const lastKey = parts[parts.length - 1];
+      obj[lastKey] = v;
+      setDirty();
+    });
+    input.addEventListener('change', () => {
+      // Re-render to update computed columns
+      renderPoolAdmin();
+    });
+  });
+}
+
+window.closeOutPoolQuarter = function(qid) {
+  if (!confirm('Close out this quarter? Per-rep figures will lock and the per-person share will appear on every employee\'s Team Pool tab as the locked-in payout.')) return;
+  const tp = data.globals.teamPool;
+  const q = tp.fiscalQuarters.find(x => x.id === qid);
+  if (!q) return;
+
+  // Compute final values from current inputs
+  const splitCount = tp.splitCount || 8;
+  const softFloor = tp.softFloor || 0.80;
+  const contributingReps = data.employees.filter(e =>
+    !e.placeholder && data.planTypes[e.planType] && data.planTypes[e.planType].metricBasis === 'gp'
+  );
+  // Pool is purely company-funded — no rep slice
+  const actualTotal = +q.actualGPSold || 0;
+  const progress = q.target > 0 ? actualTotal / q.target : 0;
+  const companyContrib = poolCompanyContribution(progress, tp.companyContributionTiers || []);
+  const payoutFactor = poolPayoutFactor(actualTotal, q.target, softFloor);
+  const poolFunded = companyContrib;
+  const perPersonShare = poolFunded / splitCount;
+
+  q.companyContribution = Math.round(companyContrib);
+  q.poolFunded = Math.round(poolFunded);
+  q.payoutFactor = +payoutFactor.toFixed(4);
+  q.perPersonShare = Math.round(perPersonShare);
+  q.status = 'closed';
+  q.closedAt = new Date().toISOString().slice(0, 10);
+
+  setDirty();
+  renderPoolAdmin();
+  alert(`Q ${qid} closed. Per-person share: $${q.perPersonShare.toLocaleString('en-AU')}. Don't forget to "Save to GitHub" to publish.`);
+};
+
+window.reopenPoolQuarter = function(qid) {
+  if (!confirm('Re-open this closed quarter for editing? The locked payout will be unlocked.')) return;
+  const tp = data.globals.teamPool;
+  const q = tp.fiscalQuarters.find(x => x.id === qid);
+  if (!q) return;
+  q.status = q.id === tp.currentQuarterId ? 'current' : 'upcoming';
+  delete q.closedAt;
+  setDirty();
+  renderPoolAdmin();
+};
+
+// ============================================================
+// FORTNIGHTLY PAYROLL ADMIN GRID (BETA)
+// Rotated layout: fortnights as rows, sales reps as columns.
+// Self-contained — uses sample (in-memory) state, does not persist
+// to data.json yet. Mirrors the demo dashboard's Option B logic.
+// ============================================================
+let _fnpInitialised = false;
+function renderFortnightlyAdmin() {
+  if (_fnpInitialised) return;
+  _fnpInitialised = true;
+
+  // Sales reps included in the grid. Pull from employees, filtered to sales plans.
+  const SALES_PLAN_IDS = ['gp_bands', 'gp_bands_senior', 'hybrid_gp'];
+  // Smart short name: if the full name (or id) contains a "2.0" marker, keep it
+  // so we don't get two "Evie" columns. Otherwise first word only.
+  function shortName(full, id) {
+    const has20 = /2\.0/.test(full) || /2[\s_]?0/.test(id || '');
+    const first = full.split(' ')[0];
+    return has20 ? `${first} 2.0` : first;
+  }
+  const reps = (data.employees || []).filter(e => SALES_PLAN_IDS.includes(e.planType) && !e.placeholder).map(e => ({
+    id: e.id,
+    name: shortName(e.name, e.id),
+    fullName: e.name,
+    planType: e.planType
+  }));
+  if (reps.length === 0) { document.getElementById('fnp-tbody').innerHTML = '<tr><td>No sales reps found.</td></tr>'; return; }
+
+  // Bands — match sales-rep plan (gp_bands)
+  const BANDS = [
+    [0, 0.04], [100000, 0.04], [200000, 0.04],
+    [300000, 0.09], [400000, 0.12], [450000, 0.13],
+    [500000, 0.14], [550000, 0.16]
+  ];
+  function cumBandComm(ytd) {
+    if (ytd <= 0) return 0;
+    let total = 0;
+    for (let i = 0; i < BANDS.length; i++) {
+      const [start, rate] = BANDS[i];
+      const end = (i + 1 < BANDS.length) ? BANDS[i + 1][0] : Infinity;
+      if (ytd <= start) break;
+      const top = Math.min(ytd, end);
+      total += (top - start) * rate;
+      if (ytd <= end) break;
+    }
+    return total;
+  }
+  function marginalRate(ytd) {
+    let rate = BANDS[0][1];
+    for (let i = 0; i < BANDS.length; i++) {
+      if (ytd > BANDS[i][0]) rate = BANDS[i][1];
+    }
+    return rate;
+  }
+
+  // Same fortnight schedule as the demo dashboard
+  const FORTNIGHTS = [
+    { period: '1 Jun – 14 Jun 2026',  paid: '15 Jun 2026', month: 'Jun 2026' },
+    { period: '15 Jun – 28 Jun 2026', paid: '29 Jun 2026', month: 'Jun 2026' },
+    { period: '29 Jun – 12 Jul 2026', paid: '13 Jul 2026', month: 'Jul 2026' },
+    { period: '13 Jul – 26 Jul 2026', paid: '27 Jul 2026', month: 'Jul 2026' },
+    { period: '27 Jul – 9 Aug 2026',  paid: '10 Aug 2026', month: 'Aug 2026' },
+    { period: '10 Aug – 23 Aug 2026', paid: '24 Aug 2026', month: 'Aug 2026' },
+    { period: '24 Aug – 6 Sep 2026',  paid: '7 Sep 2026',  month: 'Sep 2026' },
+    { period: '7 Sep – 20 Sep 2026',  paid: '21 Sep 2026', month: 'Sep 2026' },
+    { period: '21 Sep – 4 Oct 2026',  paid: '5 Oct 2026',  month: 'Oct 2026' },
+    { period: '5 Oct – 18 Oct 2026',  paid: '19 Oct 2026', month: 'Oct 2026' },
+    { period: '19 Oct – 1 Nov 2026',  paid: '2 Nov 2026',  month: 'Nov 2026' },
+    { period: '2 Nov – 15 Nov 2026',  paid: '16 Nov 2026', month: 'Nov 2026' },
+    { period: '16 Nov – 29 Nov 2026', paid: '30 Nov 2026', month: 'Nov 2026' },
+    { period: '30 Nov – 13 Dec 2026', paid: '14 Dec 2026', month: 'Dec 2026' },
+    { period: '14 Dec – 27 Dec 2026', paid: '28 Dec 2026', month: 'Dec 2026' },
+    { period: '28 Dec – 10 Jan 2027', paid: '11 Jan 2027', month: 'Jan 2027' },
+    { period: '11 Jan – 24 Jan 2027', paid: '25 Jan 2027', month: 'Jan 2027' },
+    { period: '25 Jan – 7 Feb 2027',  paid: '8 Feb 2027',  month: 'Feb 2027' },
+    { period: '8 Feb – 21 Feb 2027',  paid: '22 Feb 2027', month: 'Feb 2027' },
+    { period: '22 Feb – 7 Mar 2027',  paid: '8 Mar 2027',  month: 'Mar 2027' },
+    { period: '8 Mar – 21 Mar 2027',  paid: '22 Mar 2027', month: 'Mar 2027' },
+    { period: '22 Mar – 4 Apr 2027',  paid: '5 Apr 2027',  month: 'Apr 2027' },
+    { period: '5 Apr – 18 Apr 2027',  paid: '19 Apr 2027', month: 'Apr 2027' },
+    { period: '19 Apr – 2 May 2027',  paid: '3 May 2027',  month: 'May 2027' },
+    { period: '3 May – 16 May 2027',  paid: '17 May 2027', month: 'May 2027' },
+    { period: '17 May – 30 May 2027', paid: '31 May 2027', month: 'May 2027' }
+  ];
+
+  // Per-rep × per-fortnight matrices (GP Received + Event GP). All start blank.
+  const gpMatrix = {};
+  const eventMatrix = {};
+  const auditActuals = {};        // GP Received full-year totals (rep -> string)
+  const auditEventActuals = {};   // Event GP full-year totals (rep -> string)
+  const PROD_RATE = 0.01;          // 1% of Event GP, inc super (matches all sales plans)
+  reps.forEach(r => {
+    gpMatrix[r.id] = new Array(FORTNIGHTS.length).fill(0);
+    eventMatrix[r.id] = new Array(FORTNIGHTS.length).fill(0);
+    auditActuals[r.id] = '';
+    auditEventActuals[r.id] = '';
+  });
+
+  // Group fortnights by month
+  const monthGroups = [];
+  FORTNIGHTS.forEach((fn, i) => {
+    const last = monthGroups[monthGroups.length - 1];
+    if (last && last.month === fn.month) last.idxs.push(i);
+    else monthGroups.push({ month: fn.month, idxs: [i] });
+  });
+
+  // First pay cycle AFTER each quarter close — keyed by FORTNIGHTS index. The inline
+  // banner is injected before the month group whose first fortnight is this index, so
+  // payroll staff are prompted to run Quarterly Payroll on the same run.
+  const QUARTER_CLOSE_PROMPTS = {
+    2:  { label: 'Q4 FY26', closed: '30 Jun 2026', paid: '13 Jul 2026' },
+    8:  { label: 'Q1 FY27', closed: '30 Sep 2026', paid: '5 Oct 2026' },
+    16: { label: 'Q2 FY27', closed: '31 Dec 2026', paid: '11 Jan 2027' },
+    22: { label: 'Q3 FY27', closed: '31 Mar 2027', paid: '5 Apr 2027' }
+  };
+
+  // Expanded state — start collapsed (months hidden)
+  const expanded = new Set();
+
+  const _fmt = (n) => '$' + Math.round(n).toLocaleString();
+  const _fmtSigned = (n) => (n >= 0 ? '+' : '−') + _fmt(Math.abs(n));
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  // Compute per-fortnight rows for one rep (now includes Event GP + production commission)
+  function computeRepRows(repId) {
+    const gp = gpMatrix[repId];
+    const ev = eventMatrix[repId];
+    let ytd = 0, cumPay = 0, cumProd = 0, cumEv = 0;
+    const rows = [];
+    for (let i = 0; i < FORTNIGHTS.length; i++) {
+      const g = gp[i] || 0;
+      const e = ev[i] || 0;
+      const prevYtd = ytd;
+      ytd = prevYtd + g;
+      const properPay = cumBandComm(ytd) - cumBandComm(prevYtd);
+      const endRate = marginalRate(ytd);
+      const startRate = marginalRate(prevYtd);
+      const naivePay = g * endRate;
+      const tuAdj = properPay - naivePay;
+      const prodComm = e * PROD_RATE;
+      cumPay += properPay;
+      cumProd += prodComm;
+      cumEv += e;
+      rows.push({ idx: i, gp: g, eventGp: e, ytd, prevYtd, properPay, naivePay, tuAdj, endRate, startRate, prodComm, cumPay, cumProd, cumEv, cumTotal: cumPay + cumProd, crossed: Math.abs(tuAdj) > 0.5 });
+    }
+    return rows;
+  }
+
+  function getRepTotals(repId) {
+    const rows = computeRepRows(repId);
+    const last = rows[rows.length - 1];
+    const crossings = rows.filter(r => r.crossed).length;
+    return { rows, totalGP: last.ytd, totalEv: last.cumEv, totalPay: last.cumPay, totalProd: last.cumProd, totalAll: last.cumTotal, crossings };
+  }
+
+  // ----- Render header -----
+  function renderHeader() {
+    const thead = document.getElementById('fnp-thead');
+    let h = `<tr style="background: #fafaf7;">
+      <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #d3d1c7; min-width: 230px; position: sticky; left: 0; z-index: 6; background: #fafaf7;">Fortnight (paid date)</th>`;
+    reps.forEach(r => {
+      h += `<th style="text-align: right; padding: 8px 10px; border-bottom: 2px solid #d3d1c7; min-width: 130px; white-space: nowrap;">
+        ${esc(r.name)}
+        <div style="font-size: 9px; color: var(--faint); font-weight: 400; text-transform: none; letter-spacing: 0;">${esc(r.planType)}</div>
+      </th>`;
+    });
+    h += `<th style="text-align: right; padding: 8px 10px; border-bottom: 2px solid #d3d1c7; min-width: 110px; background: #fefcf7;">Row Total</th></tr>`;
+    thead.innerHTML = h;
+  }
+
+  // ----- Render totals strip (per-rep aggregate cards) -----
+  function renderTotals() {
+    const wrap = document.getElementById('fnp-totals');
+    let h = '';
+    let grandGP = 0, grandPay = 0, grandCross = 0;
+    reps.forEach(r => {
+      const t = getRepTotals(r.id);
+      grandGP += t.totalGP; grandPay += t.totalPay; grandCross += t.crossings;
+      const eff = t.totalGP > 0 ? (t.totalPay / t.totalGP) * 100 : 0;
+      h += `<div style="background: #fff; border: 1px solid #ecebe5; border-radius: 6px; padding: 10px;">
+        <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">${esc(r.name)}</div>
+        <div style="font-size: 16px; font-family: var(--mono); font-weight: 700; color: var(--ink); margin-top: 4px;">${_fmt(t.totalGP)} <span style="font-size: 10px; color: var(--faint); font-weight: 400;">GP</span></div>
+        <div style="font-size: 13px; font-family: var(--mono); color: var(--muted); margin-top: 2px;">${_fmt(t.totalPay)} <span style="font-size: 10px; color: var(--faint);">pay (${eff.toFixed(1)}%)</span></div>
+        ${t.crossings > 0 ? `<div style="font-size: 10px; color: #b8860b; margin-top: 4px;">⚡ ${t.crossings} crossing${t.crossings > 1 ? 's' : ''}</div>` : ''}
+      </div>`;
+    });
+    h += `<div style="background: linear-gradient(135deg, #fff8e1 0%, #fff 100%); border: 1px solid #d4b85a; border-radius: 6px; padding: 10px;">
+      <div style="font-size: 10px; color: #6a4a00; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">TEAM TOTAL</div>
+      <div style="font-size: 16px; font-family: var(--mono); font-weight: 700; color: #6a4a00; margin-top: 4px;">${_fmt(grandGP)} <span style="font-size: 10px; color: #8a6a00; font-weight: 400;">GP</span></div>
+      <div style="font-size: 13px; font-family: var(--mono); color: #6a4a00; margin-top: 2px;">${_fmt(grandPay)} <span style="font-size: 10px; color: #8a6a00;">pay</span></div>
+    </div>`;
+    wrap.innerHTML = h;
+  }
+
+  // ----- Render body (one row per fortnight + collapsible month headers) -----
+  function renderBody() {
+    const tbody = document.getElementById('fnp-tbody');
+    // Pre-compute rows for each rep once per render
+    const repRows = {};
+    reps.forEach(r => { repRows[r.id] = computeRepRows(r.id); });
+
+    let h = '';
+    monthGroups.forEach((mg, mi) => {
+      const isOpen = expanded.has(mi);
+      // Month aggregates for each rep
+      const monthGpByRep = {}; const monthPayByRep = {}; const monthTuByRep = {};
+      let hasCrossing = false;
+      reps.forEach(r => {
+        let g = 0, p = 0, t = 0;
+        mg.idxs.forEach(fi => {
+          const row = repRows[r.id][fi];
+          g += row.gp; p += row.properPay; t += row.tuAdj;
+          if (row.crossed) hasCrossing = true;
+        });
+        monthGpByRep[r.id] = g; monthPayByRep[r.id] = p; monthTuByRep[r.id] = t;
+      });
+      const groupBg = hasCrossing ? 'background: #fffbeb;' : 'background: #fafaf7;';
+
+      let monthRowGP = 0;
+      reps.forEach(r => { monthRowGP += monthGpByRep[r.id]; });
+
+      // Quarter-close prompt — injected as a full-width banner BEFORE the month group
+      // whose first fortnight is the first pay cycle after a quarter close. This is
+      // where payroll staff are prompted to also run the Quarterly Payroll tab.
+      const qPrompt = QUARTER_CLOSE_PROMPTS[mg.idxs[0]];
+      if (qPrompt) {
+        h += `<tr class="fnp-qclose-row">
+          <td colspan="${reps.length + 2}" style="padding: 0; background: #fff;">
+            <div style="margin: 12px 8px; padding: 12px 14px; background: #eef4fa; border: 1px solid #cdd9e8; border-left: 3px solid var(--navy); border-radius: 6px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 280px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--navy);">⚑ ${esc(qPrompt.label)} closed ${esc(qPrompt.closed)} — first pay cycle of the new quarter</div>
+                <div style="font-size: 11px; color: var(--muted); margin-top: 3px;">This fortnight (paid ${esc(qPrompt.paid)}) is the first run after quarter close. Also process the quarterly commission for Hayley, Tom &amp; Michael.</div>
+              </div>
+              <button class="fnp-goto-quarterly" style="padding: 7px 14px; background: var(--navy); color: #fff; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;">📈 Open Quarterly Payroll →</button>
+            </div>
+          </td>
+        </tr>`;
+      }
+      h += `<tr class="fnp-month-row" data-mi="${mi}" style="cursor: pointer; font-weight: 600; ${groupBg}">
+        <td style="padding: 8px 10px; position: sticky; left: 0; ${groupBg} z-index: 2; border-bottom: 1px solid #ecebe5;">
+          <span class="fnp-caret" style="display: inline-block; width: 10px; color: var(--muted); transition: transform 0.15s; transform: ${isOpen ? 'rotate(90deg)' : 'rotate(0deg)'};">▸</span>
+          ${esc(mg.month)} · ${mg.idxs.length} fortnight${mg.idxs.length === 1 ? '' : 's'}
+          ${hasCrossing ? '<span style="font-size: 9px; padding: 1px 4px; background: #fff3cd; color: #6a4a00; border-radius: 3px; margin-left: 6px;">CROSSING</span>' : ''}
+        </td>`;
+      reps.forEach(r => {
+        const gp = monthGpByRep[r.id];
+        const pay = monthPayByRep[r.id];
+        h += `<td style="text-align: right; padding: 8px 10px; border-bottom: 1px solid #ecebe5; font-family: var(--mono); font-size: 12px;">
+          ${gp > 0 ? _fmt(gp) : '<span style="color: var(--faint);">—</span>'}
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">${pay > 0 ? _fmt(pay) + ' pay' : ''}</div>
+        </td>`;
+      });
+      h += `<td style="text-align: right; padding: 8px 10px; border-bottom: 1px solid #ecebe5; font-family: var(--mono); font-size: 12px; font-weight: 700; background: #fefcf7;">${monthRowGP > 0 ? _fmt(monthRowGP) : '<span style="color: var(--faint); font-weight: 400;">—</span>'}</td></tr>`;
+
+      // Detail rows for this month
+      mg.idxs.forEach(fi => {
+        const fn = FORTNIGHTS[fi];
+        let rowTotal = 0;
+        const rowCells = reps.map(r => {
+          const row = repRows[r.id][fi];
+          rowTotal += row.gp;
+          const tuColor = row.crossed ? '#b8860b' : 'var(--muted)';
+          const tuStr = row.crossed ? _fmtSigned(row.tuAdj) : '';
+          const incSuper = row.properPay;
+          const exSuper = incSuper / 1.12;
+          const superAmt = incSuper - exSuper;
+          const prodInc = row.prodComm;
+          const prodEx = prodInc / 1.12;
+          const prodSuper = prodInc - prodEx;
+          // Combined fortnight pay = GP commission + production commission
+          const totalIncSuper = incSuper + prodInc;
+          const totalExSuper = exSuper + prodEx;
+          const totalSuperAmt = superAmt + prodSuper;
+          // Round to whole dollars for copy-paste convenience into Xero
+          const bonusRounded = Math.round(totalExSuper);
+          const superRounded = Math.round(totalSuperAmt);
+          const tip = totalIncSuper > 0
+            ? `${esc(r.fullName)} · ${esc(fn.paid)}\nGP Received: ${_fmt(row.gp)} · YTD: ${_fmt(row.ytd)} · Band: ${(row.endRate*100).toFixed(0)}%\nEvent GP: ${_fmt(row.eventGp)}\n———\nGP Comm (inc super): ${_fmt(incSuper)}\nProd Comm (inc super): ${_fmt(prodInc)}\nTotal bonus (ex super): ${_fmt(totalExSuper)}\nTotal super (12%): ${_fmt(totalSuperAmt)}\nTotal pay (inc super): ${_fmt(totalIncSuper)}` + (row.crossed ? `\n⚡ Band crossing · TU ${_fmtSigned(row.tuAdj)}` : '')
+            : `${esc(r.fullName)} · ${esc(fn.paid)}\nNo GP / Event GP entered yet.`;
+          const cellBg = row.crossed ? 'background: #fffbeb;' : '';
+          // Two read-only copy-paste inputs (bonus = ex-super total, super = 12% total). Click to copy.
+          const copyVals = totalIncSuper > 0
+            ? `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 4px;">
+                 <div style="text-align: left;">
+                   <div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">Bonus</div>
+                   <input type="text" class="fnp-copy-bonus" readonly value="${bonusRounded.toLocaleString()}" title="Bonus ex super (GP + Production) — click to copy" style="width: 100%; padding: 2px 4px; border: 1px solid #c3e4d0; border-radius: 3px; background: #f5faf7; text-align: right; font-family: var(--mono); font-size: 11px; color: #1e6624; cursor: pointer;">
+                 </div>
+                 <div style="text-align: left;">
+                   <div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">Super</div>
+                   <input type="text" class="fnp-copy-super" readonly value="${superRounded.toLocaleString()}" title="Super (12%) total — click to copy" style="width: 100%; padding: 2px 4px; border: 1px solid #cdd9e8; border-radius: 3px; background: #eef4fa; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--navy); cursor: pointer;">
+                 </div>
+               </div>
+               ${prodInc > 0 ? `<div style="font-size: 9px; color: var(--muted); margin-top: 3px; text-align: right; font-family: var(--mono);">incl. <strong>+${_fmt(prodInc)}</strong> prod</div>` : ''}
+               ${tuStr ? `<div style="font-size: 9px; color: ${tuColor}; margin-top: 2px; text-align: right; font-family: var(--mono);">⚡ TU ${tuStr}</div>` : ''}`
+            : `<div style="font-size: 10px; color: var(--faint); margin-top: 3px; font-family: var(--mono); text-align: right;">—</div>`;
+          return `<td class="fnp-cell" data-rep="${esc(r.id)}" data-idx="${fi}" data-tip="${esc(tip)}" style="padding: 5px 6px; border-bottom: 1px solid #f4f3ed; vertical-align: top; min-width: 160px; ${cellBg}">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
+              <div>
+                <div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; margin-bottom: 1px;">GP</div>
+                <input type="text" class="fnp-input" data-rep="${esc(r.id)}" data-idx="${fi}" value="${row.gp ? row.gp.toLocaleString() : ''}" placeholder="0" inputmode="decimal" style="width: 100%; padding: 3px 5px; border: 1px solid #d3d1c7; border-radius: 3px; background: #fff; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink);">
+              </div>
+              <div>
+                <div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; margin-bottom: 1px;">Event GP</div>
+                <input type="text" class="fnp-event-input" data-rep="${esc(r.id)}" data-idx="${fi}" value="${row.eventGp ? row.eventGp.toLocaleString() : ''}" placeholder="0" inputmode="decimal" style="width: 100%; padding: 3px 5px; border: 1px solid #d3d1c7; border-radius: 3px; background: #fff; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink);">
+              </div>
+            </div>
+            ${copyVals}
+          </td>`;
+        }).join('');
+
+        h += `<tr class="fnp-detail-row fnp-detail-${mi}" style="display: ${isOpen ? '' : 'none'}; ${(repRows[reps[0].id][fi].crossed ? '' : '')}">
+          <td style="padding: 5px 10px; padding-left: 26px; font-size: 11px; color: var(--muted); position: sticky; left: 0; background: #fff; z-index: 2; border-bottom: 1px solid #f4f3ed;">
+            <div style="font-family: var(--mono); font-weight: 600; color: var(--ink);">${esc(fn.paid)}</div>
+            <div style="font-family: var(--mono); font-size: 10px; color: var(--faint);">${esc(fn.period)}</div>
+          </td>
+          ${rowCells}
+          <td style="text-align: right; padding: 5px 10px; border-bottom: 1px solid #f4f3ed; font-family: var(--mono); font-size: 12px; font-weight: 600; background: #fefcf7;">${rowTotal > 0 ? _fmt(rowTotal) : '<span style="color: var(--faint); font-weight: 400;">—</span>'}</td>
+        </tr>`;
+      });
+    });
+    tbody.innerHTML = h;
+
+    // Footer — year totals row per rep (now includes Event GP + Production)
+    const tfoot = document.getElementById('fnp-tfoot');
+    let footHtml = `<tr style="font-weight: 700; background: #fefcf7; border-top: 2px solid #d3d1c7;">
+      <td style="padding: 10px; position: sticky; left: 0; background: #fefcf7; z-index: 2; border-top: 2px solid #d3d1c7;">Year Total</td>`;
+    let grandTotal = 0;
+    reps.forEach(r => {
+      const t = getRepTotals(r.id);
+      grandTotal += t.totalGP;
+      const eff = t.totalGP > 0 ? (t.totalPay / t.totalGP) * 100 : 0;
+      footHtml += `<td style="text-align: right; padding: 10px; font-family: var(--mono); font-size: 13px; border-top: 2px solid #d3d1c7;">
+        ${_fmt(t.totalGP)} <span style="font-size: 9px; color: var(--faint); font-weight: 400;">GP</span>
+        <div style="font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 2px;">${_fmt(t.totalEv)} <span style="color: var(--faint);">Event GP</span></div>
+        <div style="font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 4px;">${_fmt(t.totalAll)} pay (${eff.toFixed(1)}%)</div>
+      </td>`;
+    });
+    footHtml += `<td style="text-align: right; padding: 10px; font-family: var(--mono); font-size: 14px; background: #fff8e1; color: #6a4a00; border-top: 2px solid #d4b85a;">${_fmt(grandTotal)}</td></tr>`;
+    tfoot.innerHTML = footHtml;
+
+    wireInteractions();
+  }
+
+  // ----- Wire row click + input change + tab navigation -----
+  function wireInteractions() {
+    const tbody = document.getElementById('fnp-tbody');
+    // Shared flag — set true by the keydown handler when it's moving focus programmatically,
+    // so the blur fired on the OLD input doesn't re-render the body and steal focus from the new one.
+    let _suppressBlurRender = false;
+    tbody.querySelectorAll('.fnp-month-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('input')) return;
+        const mi = parseInt(row.getAttribute('data-mi'), 10);
+        if (expanded.has(mi)) expanded.delete(mi); else expanded.add(mi);
+        renderBody();
+      });
+    });
+    // Inline "Open Quarterly Payroll →" buttons in the quarter-close banners
+    tbody.querySelectorAll('.fnp-goto-quarterly').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const qTab = document.querySelector('.admin-tab-btn[data-admin-tab="quarterly"]');
+        if (qTab) qTab.click();
+      });
+    });
+    // Copy-to-clipboard for bonus/super read-only inputs
+    tbody.querySelectorAll('.fnp-copy-bonus, .fnp-copy-super').forEach(inp => {
+      inp.addEventListener('click', async () => {
+        try {
+          inp.select();
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(inp.value);
+          } else {
+            document.execCommand('copy');
+          }
+          // Flash feedback
+          const originalBg = inp.style.background;
+          inp.style.background = '#d4edda';
+          inp.style.transition = 'background 0.2s';
+          setTimeout(() => { inp.style.background = originalBg; }, 400);
+        } catch (e) { /* clipboard blocked — selection is still useful */ }
+      });
+    });
+    // Generic input wiring — Tab/Enter flows across GP → Event GP → next rep's GP → ...
+    // The sequence within a single fortnight: rep0.GP → rep0.Event → rep1.GP → rep1.Event → ...
+    // After the last rep's Event GP, advance to the next fortnight's first rep (auto-expanding month).
+    // Shift+Tab walks backward through the same sequence.
+    function focusInput(repId, idx, kind) {
+      const sel = kind === 'event' ? '.fnp-event-input' : '.fnp-input';
+      const el = document.querySelector(`${sel}[data-rep="${repId}"][data-idx="${idx}"]`);
+      if (el) { el.focus(); el.select && el.select(); }
+      return !!el;
+    }
+    function moveToNext(curRep, curIdx, curKind) {
+      // Within the same fortnight: GP → Event for same rep, then next rep's GP → Event, etc.
+      if (curKind === 'gp') {
+        return { rep: curRep, idx: curIdx, kind: 'event' };
+      }
+      // curKind === 'event' → move to next rep's GP in same fortnight, or wrap to next fortnight
+      const repIdx = reps.findIndex(r => r.id === curRep);
+      if (repIdx < reps.length - 1) {
+        return { rep: reps[repIdx + 1].id, idx: curIdx, kind: 'gp' };
+      }
+      // Last rep's Event GP → first rep's GP of the NEXT fortnight (auto-expand month)
+      if (curIdx < FORTNIGHTS.length - 1) {
+        const nextIdx = curIdx + 1;
+        const nextMonthMi = monthGroups.findIndex(g => g.idxs.includes(nextIdx));
+        if (nextMonthMi >= 0) expanded.add(nextMonthMi);
+        return { rep: reps[0].id, idx: nextIdx, kind: 'gp', needsRender: true };
+      }
+      return null;
+    }
+    function moveToPrev(curRep, curIdx, curKind) {
+      if (curKind === 'event') {
+        return { rep: curRep, idx: curIdx, kind: 'gp' };
+      }
+      const repIdx = reps.findIndex(r => r.id === curRep);
+      if (repIdx > 0) {
+        return { rep: reps[repIdx - 1].id, idx: curIdx, kind: 'event' };
+      }
+      if (curIdx > 0) {
+        const prevIdx = curIdx - 1;
+        const prevMonthMi = monthGroups.findIndex(g => g.idxs.includes(prevIdx));
+        if (prevMonthMi >= 0) expanded.add(prevMonthMi);
+        return { rep: reps[reps.length - 1].id, idx: prevIdx, kind: 'event', needsRender: true };
+      }
+      return null;
+    }
+    function wireGridInput(inp, matrix, kind) {
+      inp.addEventListener('focus', (e) => e.target.select());
+      const commit = () => {
+        const rep = inp.getAttribute('data-rep');
+        const idx = parseInt(inp.getAttribute('data-idx'), 10);
+        const raw = inp.value.replace(/[^0-9.\-]/g, '');
+        const n = parseFloat(raw);
+        matrix[rep][idx] = isFinite(n) ? n : 0;
+      };
+      inp.addEventListener('blur', () => {
+        commit();
+        renderTotals();
+        renderAudit();
+        // Only refresh the body when this blur was caused by a regular tap-elsewhere,
+        // NOT by Tab/Enter moving focus to an adjacent cell (that path handles its own render).
+        if (!_suppressBlurRender) renderBody();
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); inp.blur(); return; }
+        const isTab = e.key === 'Tab';
+        const isEnter = e.key === 'Enter';
+        if (!isTab && !isEnter) return;
+        e.preventDefault();
+        commit();
+        const curRep = inp.getAttribute('data-rep');
+        const curIdx = parseInt(inp.getAttribute('data-idx'), 10);
+        const target = (isTab && e.shiftKey) ? moveToPrev(curRep, curIdx, kind) : moveToNext(curRep, curIdx, kind);
+        if (!target) {
+          // End of the grid — let blur fire naturally with full re-render
+          renderTotals(); renderBody(); renderAudit();
+          inp.blur();
+          return;
+        }
+        // Suppress the blur-triggered renderBody on the OLD input so it doesn't destroy our new focus.
+        _suppressBlurRender = true;
+        if (target.needsRender) {
+          // Crossing a fortnight boundary — body MUST re-render to show the next row's inputs
+          renderTotals(); renderBody(); renderAudit();
+        } else {
+          renderTotals(); renderAudit();
+        }
+        focusInput(target.rep, target.idx, target.kind);
+        // Reset on next microtask — by then the blur from the OLD input has already fired
+        // (and was suppressed). Subsequent unrelated blurs will then re-render normally.
+        Promise.resolve().then(() => { _suppressBlurRender = false; });
+      });
+    }
+    tbody.querySelectorAll('.fnp-input').forEach(inp => wireGridInput(inp, gpMatrix, 'gp'));
+    tbody.querySelectorAll('.fnp-event-input').forEach(inp => wireGridInput(inp, eventMatrix, 'event'));
+  }
+
+  // ----- Year-End Audit per rep — now audits BOTH GP Received and Event GP -----
+  function renderAudit() {
+    const body = document.getElementById('fnp-audit-body');
+    // Helper: compute variance display + verdict for one stream
+    function varCell(repId, sumValue, actualsMap) {
+      const actualRaw = (actualsMap[repId] || '').replace(/[^0-9.\-]/g, '');
+      const actual = parseFloat(actualRaw);
+      if (!isFinite(actual) || actualRaw === '') return { variance: '—', verdict: '—', varColor: 'var(--ink)', state: 'idle' };
+      const diff = actual - sumValue;
+      const absDiff = Math.abs(diff);
+      const sign = diff >= 0 ? '+' : '−';
+      const variance = absDiff < 0.5 ? '$0' : sign + _fmt(absDiff);
+      if (absDiff <= 1) return { variance, verdict: '<span style="color: #1e6624; font-weight: 700;">✓</span>', varColor: '#1e6624', state: 'ok' };
+      if (absDiff <= 1000) return { variance, verdict: '<span style="color: #6a4a00; font-weight: 700;">⚠</span>', varColor: '#6a4a00', state: 'warn' };
+      return { variance, verdict: '<span style="color: #7a1f1f; font-weight: 700;">✗</span>', varColor: '#7a1f1f', state: 'err' };
+    }
+    let h = '<table style="width: 100%; border-collapse: collapse;"><thead><tr style="background: #fafaf7; border-bottom: 1px solid #d3d1c7;">';
+    h += '<th style="text-align: left; padding: 8px 10px; font-size: 11px;">Rep</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Stream</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Sum of fortnights</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Full-year (Zoho)</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Variance</th>';
+    h += '<th style="text-align: center; padding: 8px 10px; font-size: 11px;">✓</th>';
+    h += '</tr></thead><tbody>';
+    reps.forEach(r => {
+      const t = getRepTotals(r.id);
+      const gpVar = varCell(r.id, t.totalGP, auditActuals);
+      const evVar = varCell(r.id, t.totalEv, auditEventActuals);
+      // GP Received row
+      h += `<tr style="border-bottom: 1px solid #f4f3ed;">
+        <td style="padding: 6px 10px; font-weight: 600;" rowspan="2">${esc(r.fullName)}</td>
+        <td style="text-align: right; padding: 6px 10px; font-size: 11px; color: var(--muted); font-weight: 600;">GP Received</td>
+        <td style="text-align: right; padding: 6px 10px; font-family: var(--mono);">${t.totalGP > 0 ? _fmt(t.totalGP) : '<span style="color: var(--faint);">—</span>'}</td>
+        <td style="text-align: right; padding: 6px 10px;"><input type="text" class="fnp-audit-input" data-rep="${esc(r.id)}" value="${esc(auditActuals[r.id])}" placeholder="e.g. 445,000" inputmode="decimal" style="width: 130px; padding: 4px 8px; border: 1px solid #d3d1c7; border-radius: 4px; background: #fff; text-align: right; font-family: var(--mono); font-size: 12px;"></td>
+        <td style="text-align: right; padding: 6px 10px; font-family: var(--mono); color: ${gpVar.varColor};">${gpVar.variance}</td>
+        <td style="text-align: center; padding: 6px 10px; font-size: 12px;">${gpVar.verdict}</td>
+      </tr>`;
+      // Event GP row
+      h += `<tr style="border-bottom: 2px solid #d3d1c7;">
+        <td style="text-align: right; padding: 6px 10px; font-size: 11px; color: var(--muted); font-weight: 600;">Event GP</td>
+        <td style="text-align: right; padding: 6px 10px; font-family: var(--mono);">${t.totalEv > 0 ? _fmt(t.totalEv) : '<span style="color: var(--faint);">—</span>'}</td>
+        <td style="text-align: right; padding: 6px 10px;"><input type="text" class="fnp-audit-event-input" data-rep="${esc(r.id)}" value="${esc(auditEventActuals[r.id])}" placeholder="e.g. 200,000" inputmode="decimal" style="width: 130px; padding: 4px 8px; border: 1px solid #d3d1c7; border-radius: 4px; background: #fff; text-align: right; font-family: var(--mono); font-size: 12px;"></td>
+        <td style="text-align: right; padding: 6px 10px; font-family: var(--mono); color: ${evVar.varColor};">${evVar.variance}</td>
+        <td style="text-align: center; padding: 6px 10px; font-size: 12px;">${evVar.verdict}</td>
+      </tr>`;
+    });
+    h += '</tbody></table>';
+    body.innerHTML = h;
+    // Wire audit inputs (Event GP audit added)
+    body.querySelectorAll('.fnp-audit-event-input').forEach(inp => {
+      inp.addEventListener('input', () => { auditEventActuals[inp.getAttribute('data-rep')] = inp.value; renderAudit(); });
+    });
+    body.querySelectorAll('.fnp-audit-input').forEach(inp => {
+      inp.addEventListener('input', () => { auditActuals[inp.getAttribute('data-rep')] = inp.value; renderAudit(); });
+    });
+  }
+
+  // ----- Expand/collapse all buttons -----
+  document.getElementById('fnp-expand-all').addEventListener('click', () => {
+    monthGroups.forEach((g, i) => expanded.add(i));
+    renderBody();
+  });
+  document.getElementById('fnp-collapse-all').addEventListener('click', () => {
+    expanded.clear();
+    renderBody();
+  });
+
+  // Initial render
+  renderHeader();
+  renderTotals();
+  renderBody();
+  renderAudit();
+}
+
+// =========================================================================
+// XERO RECONCILIATION TAB
+// Upload a Xero Account Transactions CSV → auto-filter → show invoice payments
+// that need to be entered into Zoho. Optionally upload a Zoho payments CSV
+// to cross-check what's already in the system.
+// =========================================================================
+(function() {
+  let xeroResult = null;   // { included: [], excluded: [] }
+  let zohoMap    = null;   // Map<invoiceNumber → {amount, date}> or null
+
+  // ---- Minimal CSV parser (handles quoted fields) ----
+  function parseCSV(text) {
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const out = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const row = []; let cell = '', inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') { if (inQ && line[i+1] === '"') { cell += '"'; i++; } else { inQ = !inQ; } }
+        else if (c === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
+        else { cell += c; }
+      }
+      row.push(cell.trim()); out.push(row);
+    }
+    return out;
+  }
+
+  // ---- Extract all invoice numbers (4-6 digit sequences) from a messy string ----
+  // Handles: "13726", "INV-13726", "INV 13726", "11378 | 13550", "INV-12075 and INV-13598",
+  //          "INVOICE POST EVENTINV 13613", "12343 | 13491 AND 13641", etc.
+  function extractInvNums(str) {
+    const matches = String(str || '').match(/\b(\d{4,6})\b/g) || [];
+    return [...new Set(matches)];
+  }
+
+  // ---- Find a column index by name (flexible matching) ----
+  function colIdx(headers, ...names) {
+    const h = headers.map(x => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+    for (const n of names) {
+      const idx = h.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  // ---- Find the actual header row (skips Xero/Zoho title rows at top) ----
+  // Returns the index of the first row that contains at least one of the given keywords.
+  function findHeaderRow(rows, ...keywords) {
+    const keys = keywords.map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      const r = rows[i].map(c => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+      if (keys.some(k => r.includes(k))) return i;
+    }
+    return 0; // fallback
+  }
+
+  // ---- Convert Excel date serial number to DD/MM/YYYY string ----
+  function excelDateToStr(val) {
+    if (typeof val === 'number' && val > 40000) {
+      // Excel epoch: 1900-01-01 with leap-year bug offset = 25569 days to Unix epoch
+      const d = new Date((val - 25569) * 86400 * 1000);
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const yyyy = d.getUTCFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    return String(val || '').trim();
+  }
+
+  // ---- Parse a cell value as a float (handles both numeric Excel cells and string CSV cells) ----
+  function parseAmt(val) {
+    if (typeof val === 'number') return val;
+    return parseFloat(String(val || '').replace(/[^0-9.\-]/g, '')) || 0;
+  }
+
+  // ---- Exclusion rules (applied AFTER source + INV- checks) ----
+  const EXCL_RULES = [
+    { re: /pin\s*payments/i,  reason: 'PIN payment fee / reimbursement' },
+    { re: /dj\s*school/i,     reason: 'DJ School (separate business)' },
+    { re: /dj\s*lesson/i,     reason: 'DJ Lesson report (separate business)' },
+  ];
+
+  // ---- Process Xero file (CSV rows or Excel rows) ----
+  function processXero(rows) {
+    if (rows.length < 2) throw new Error('File looks empty — no data rows found.');
+    const hdrIdx = findHeaderRow(rows, 'Source', 'Date');
+    const hdrs   = rows[hdrIdx];
+    const cDate   = colIdx(hdrs, 'Date');
+    const cSrc    = colIdx(hdrs, 'Source');
+    const cDesc   = colIdx(hdrs, 'Description');
+    const cRef    = colIdx(hdrs, 'Reference');
+    const cInvNo  = colIdx(hdrs, 'Invoice Number', 'InvoiceNumber', 'Invoice #');
+    const cDebit  = colIdx(hdrs, 'Debit');
+    const cCredit = colIdx(hdrs, 'Credit', 'Received');
+    const cGross  = colIdx(hdrs, 'Gross');
+
+    if (cSrc === -1) throw new Error('Could not find a "Source" column. Make sure the Source column is visible in your Xero export.');
+
+    const included = [], excluded = [];
+
+    for (let i = hdrIdx + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.every(c => !c && c !== 0)) continue;
+
+      const source = String(r[cSrc]  || '').trim();
+      const desc   = String(r[cDesc] || '').trim();
+      const ref    = String(r[cRef]  || '').trim();
+      const invCol = cInvNo >= 0 ? String(r[cInvNo] || '').trim() : '';
+      const date   = cDate  >= 0 ? excelDateToStr(r[cDate]) : '';
+
+      // Skip section header rows (e.g. "Business Account" with no source)
+      if (!source) continue;
+
+      // Determine invoice number: explicit column first, then Reference
+      const invNo = (invCol.match(/^INV-/i) ? invCol : '') || (ref.match(/^INV-/i) ? ref : '');
+
+      // Parse amount — for Receivable Payments the money is in Debit (Excel) or Gross
+      let amount = 0;
+      if (cDebit  >= 0) { const v = parseAmt(r[cDebit]);  if (v > 0) amount = v; }
+      if (!amount && cCredit >= 0) { const v = parseAmt(r[cCredit]); if (v > 0) amount = v; }
+      if (!amount && cGross  >= 0) { const v = parseAmt(r[cGross]);  if (v > 0) amount = v; }
+
+      // Must be a Receivable Payment
+      if (source.toLowerCase() !== 'receivable payment') {
+        excluded.push({ date, source, desc, ref, amount, reason: `Source "${source}" — not a receivable payment` });
+        continue;
+      }
+      // Must have an INV- reference
+      if (!invNo) {
+        excluded.push({ date, source, desc, ref: ref || invCol, amount, reason: 'No INV- invoice number found' });
+        continue;
+      }
+      // Named exclusion patterns
+      let excl = null;
+      for (const rule of EXCL_RULES) { if (rule.re.test(desc)) { excl = rule.reason; break; } }
+      if (excl) { excluded.push({ date, source, desc, ref: invNo, amount, reason: excl }); continue; }
+
+      // Clean up client name — strip "Payment: " prefix
+      const client = desc.replace(/^Payment:\s*/i, '').trim() || desc;
+      // Also store the raw numeric part for matching against Zoho (which may omit the INV- prefix)
+      const invNumeric = (extractInvNums(invNo)[0] || '').trim();
+      included.push({ date, invoiceNumber: invNo, invNumeric, client, amount });
+    }
+    return { included, excluded };
+  }
+
+  // ---- Name normalisation for fuzzy client-name matching ----
+  function normName(str) {
+    return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  // A booking name like "Lauren jar | Lauren & Daniel" yields multiple keys
+  function nameKeys(str) {
+    const keys = new Set();
+    String(str || '').split(/[|\/,]/).forEach(p => { const k = normName(p); if (k.length > 3) keys.add(k); });
+    const full = normName(str); if (full.length > 3) keys.add(full);
+    return [...keys];
+  }
+
+  // ---- Process Zoho file (CSV rows or Excel rows) ----
+  // Returns { invMap: Map<invNum, [{amount,date,paymentName,bookingName}]>,
+  //           nameMap: Map<normName, [{...}]>,
+  //           totalRecords: number }
+  function processZoho(rows) {
+    if (rows.length < 2) throw new Error('Zoho file appears empty.');
+    const hdrIdx   = findHeaderRow(rows, 'Invoice Number', 'InvoiceNumber');
+    const hdrs     = rows[hdrIdx];
+    const cInv     = colIdx(hdrs, 'Invoice Number', 'InvoiceNumber', 'Invoice #', 'Invoice No');
+    const cAmt     = colIdx(hdrs, 'Amount Received', 'AmountReceived', 'Amount');
+    const cDate    = colIdx(hdrs, 'Payment Date', 'PaymentDate', 'Date');
+    const cPayName = colIdx(hdrs, 'Payment Name', 'PaymentName', 'Name');
+    const cBooking = colIdx(hdrs, 'Booking', 'BookingName');
+    if (cInv === -1) throw new Error('Could not find an "Invoice Number" column in the Zoho export. Check the column headers in your export.');
+
+    const invMap  = new Map();  // invNum  → [{amount, date, paymentName, bookingName}]
+    const nameMap = new Map();  // normName → [{...}]
+    let totalRecords = 0;
+
+    for (let i = hdrIdx + 1; i < rows.length; i++) {
+      const r = rows[i];
+      const invRaw     = String(r[cInv]     || '').trim();
+      const paymentName = String(r[cPayName >= 0 ? cPayName : -1] || '').trim();
+      const bookingName = String(r[cBooking >= 0 ? cBooking : -1] || '').trim();
+      const amt  = cAmt  >= 0 ? (parseAmt(r[cAmt]) || null) : null;
+      const date = cDate >= 0 ? excelDateToStr(r[cDate]) : '';
+      const entry = { amount: amt, date, paymentName, bookingName, invRaw };
+
+      // Index by every invoice number found in the field
+      const nums = extractInvNums(invRaw);
+      if (nums.length > 0) {
+        totalRecords++;
+        for (const num of nums) {
+          if (!invMap.has(num)) invMap.set(num, []);
+          invMap.get(num).push(entry);
+        }
+      }
+
+      // Also index by client/booking name for fallback matching
+      // Use a Set of seen keys per entry to avoid pushing the same entry twice
+      // (e.g. when paymentName and bookingName are identical)
+      const seenNameKeys = new Set();
+      for (const nameStr of [paymentName, bookingName]) {
+        for (const key of nameKeys(nameStr)) {
+          if (seenNameKeys.has(key)) continue;
+          seenNameKeys.add(key);
+          if (!nameMap.has(key)) nameMap.set(key, []);
+          nameMap.get(key).push(entry);
+        }
+      }
+    }
+    return { invMap, nameMap, totalRecords };
+  }
+
+  // ---- Helpers ----
+  function xesc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtAUD(n) { return n > 0 ? '$' + n.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'; }
+  // Parse DD/MM/YYYY → timestamp (ms). Returns null if unparseable.
+  function parseDMY(str) {
+    const m = String(str || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return m ? new Date(+m[3], +m[2] - 1, +m[1]).getTime() : null;
+  }
+
+  // ---- Render results ----
+  function render() {
+    const el = document.getElementById('xr-results');
+    if (!xeroResult) { el.innerHTML = '<div style="text-align:center; padding:40px 20px; color:var(--faint); font-size:13px;">Upload a Xero Excel file above to see invoice payments that need entering into Zoho.</div>'; return; }
+
+    const { included, excluded } = xeroResult;
+    const hasZoho = zohoMap && zohoMap.invMap && zohoMap.invMap.size > 0;
+
+    // ---- Annotate each Xero row with match status ----
+    const rows = included.map(row => {
+      if (!hasZoho) return { ...row, status: 'pending' };
+
+      const lookupKey = row.invNumeric || row.invoiceNumber.replace(/^INV[-\s]*/i, '').trim();
+      const zohoEntries = zohoMap.invMap.get(lookupKey);
+
+      if (zohoEntries && zohoEntries.length > 0) {
+        // 1. First check: does any single Zoho entry match the Xero amount exactly?
+        //    This handles cases where an old payment for the same invoice is in Zoho
+        //    (e.g. Adam Wong: one entry from Dec 2025, one from May 2026 — only May matches).
+        const singleMatch = zohoEntries.find(e => Math.abs((e.amount || 0) - row.amount) <= 0.05);
+        if (singleMatch) {
+          return { ...row, status: 'ok', zohoTotal: row.amount, zohoEntries, singleMatch: true };
+        }
+        // 2. Fallback: sum all entries (handles split-booking invoices like RACV where
+        //    each booking has its own Zoho payment that together equal the Xero amount).
+        const zohoTotal = zohoEntries.reduce((s, e) => s + (e.amount || 0), 0);
+        const diff = Math.abs(zohoTotal - row.amount);
+        const status = diff <= 0.05 ? 'ok' : 'mismatch';
+        return { ...row, status, zohoTotal, zohoEntries };
+      }
+
+      // No invoice match — try fuzzy name fallback
+      const clientKey = normName(row.client);
+      let nameMatches = zohoMap.nameMap.get(clientKey);
+      if (!nameMatches) {
+        // Partial match: does any stored name key contain or overlap the client name?
+        for (const [k, v] of zohoMap.nameMap.entries()) {
+          if (clientKey.length > 4 && (k.includes(clientKey) || clientKey.includes(k))) {
+            nameMatches = v; break;
+          }
+        }
+      }
+      if (nameMatches) {
+        // Check if any name-matched entry also has the right amount
+        const singleMatch = nameMatches.find(e => Math.abs((e.amount || 0) - row.amount) <= 0.05);
+        const zohoTotal = singleMatch ? row.amount : nameMatches.reduce((s, e) => s + (e.amount || 0), 0);
+        const status = singleMatch ? 'ok' : 'possible_match';
+        return { ...row, status, zohoTotal, zohoEntries: nameMatches, nameMatchedClient: (nameMatches[0].paymentName || nameMatches[0].bookingName || ''), singleMatch: !!singleMatch };
+      }
+
+      return { ...row, status: 'missing', zohoTotal: null, zohoEntries: [] };
+    });
+
+    const total        = rows.reduce((s, r) => s + r.amount, 0);
+    const nOk          = rows.filter(r => r.status === 'ok').length;
+    const nMissing     = rows.filter(r => r.status === 'missing').length;
+    const nMismatch    = rows.filter(r => r.status === 'mismatch').length;
+    const nPossible    = rows.filter(r => r.status === 'possible_match').length;
+
+    // Sort: missing → mismatch → possible_match → pending → ok
+    const sortOrd = { missing: 0, mismatch: 1, possible_match: 2, pending: 3, ok: 4 };
+    rows.sort((a, b) => (sortOrd[a.status] || 0) - (sortOrd[b.status] || 0));
+
+    let h = '';
+
+    // ---- Summary stats ----
+    h += '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:18px;">';
+    h += `<div class="recon-stat"><div class="rs-val">${rows.length}</div><div class="rs-lbl">Invoice payments</div></div>`;
+    h += `<div class="recon-stat"><div class="rs-val">${fmtAUD(total)}</div><div class="rs-lbl">Total received</div></div>`;
+    if (hasZoho) {
+      h += `<div class="recon-stat"><div class="rs-val" style="color:var(--accent)">${nOk}</div><div class="rs-lbl">Matched in Zoho</div></div>`;
+      if (nMissing)  h += `<div class="recon-stat"><div class="rs-val" style="color:var(--danger)">${nMissing}</div><div class="rs-lbl">Missing from Zoho</div></div>`;
+      if (nMismatch) h += `<div class="recon-stat"><div class="rs-val" style="color:#b45309">${nMismatch}</div><div class="rs-lbl">Amount mismatch</div></div>`;
+      if (nPossible) h += `<div class="recon-stat"><div class="rs-val" style="color:#7c3aed">${nPossible}</div><div class="rs-lbl">Possible name match</div></div>`;
+    }
+    h += `<div class="recon-stat"><div class="rs-val" style="color:var(--faint)">${excluded.length}</div><div class="rs-lbl">Auto-excluded</div></div>`;
+    h += '</div>';
+
+    // ---- Main table ----
+    h += '<div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px; margin-bottom:14px;">';
+    h += '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+    h += '<thead><tr style="background:#fafaf7; border-bottom:1px solid var(--border);">';
+    h += '<th style="padding:9px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Date</th>';
+    h += '<th style="padding:9px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted);">Client</th>';
+    h += '<th style="padding:9px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Invoice #</th>';
+    h += '<th style="padding:9px 10px; text-align:right; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Xero Amount</th>';
+    if (hasZoho) {
+      h += '<th style="padding:9px 10px; text-align:right; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Zoho Total</th>';
+      h += '<th style="padding:9px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted);">Status</th>';
+    } else {
+      h += '<th style="padding:9px 10px; text-align:center; font-size:11px; font-weight:600; color:var(--muted);">Action</th>';
+    }
+    h += '</tr></thead><tbody>';
+
+    rows.forEach(row => {
+      let badge = '', rowBg = '', expandDetail = '';
+      const searchNum = row.invNumeric || row.invoiceNumber.replace(/^INV[-\s]*/i, '').trim();
+      const zohoSearchUrl = `https://crm.zoho.com/crm/org657079535/search?searchword=${encodeURIComponent(searchNum)}&isRelevance=false`;
+      const searchLink = `<a href="${xesc(zohoSearchUrl)}" target="_blank" rel="noopener" style="font-size:10px; color:var(--navy); text-decoration:none; margin-left:6px; white-space:nowrap;">↗ Search Zoho</a>`;
+
+      // Build expandable sub-row for multi-payment or possible-match entries
+      if (hasZoho && row.zohoEntries && row.zohoEntries.length > 1) {
+        const entryTotal = row.zohoEntries.reduce((s, e) => s + (e.amount || 0), 0);
+        expandDetail = `<details style="margin-top:4px;"><summary style="cursor:pointer; font-size:11px; color:var(--muted); user-select:none; list-style:none; display:inline-flex; align-items:center; gap:4px;"><span style="font-size:9px;">▶</span> ${row.zohoEntries.length} Zoho entries — expand</summary><div style="margin-top:6px; padding:6px 8px; background:#f9fafb; border-radius:6px; font-size:11px; font-family:var(--mono);">`;
+        row.zohoEntries.forEach(e => {
+          const isMatch = row.singleMatch && Math.abs((e.amount || 0) - row.amount) <= 0.05;
+          const matchStyle = isMatch ? ' font-weight:700; color:var(--accent);' : '';
+          const matchMark  = isMatch ? ' ✓' : '';
+          expandDetail += `<div style="padding:2px 0; color:var(--slate);${matchStyle}">${xesc(e.date || '—')} &nbsp;·&nbsp; ${fmtAUD(e.amount)}${matchMark} &nbsp;·&nbsp; <span style="color:var(--muted); font-family:inherit;">${xesc(e.paymentName || e.bookingName || '')}</span></div>`;
+        });
+        expandDetail += `<div style="margin-top:5px; padding-top:5px; border-top:1px solid var(--border); color:var(--ink); font-weight:600;">Total: ${fmtAUD(entryTotal)}</div>`;
+        expandDetail += `</div></details>`;
+      } else if (hasZoho && row.zohoEntries && row.zohoEntries.length === 1 && (row.status === 'possible_match' || row.nameMatchedClient)) {
+        const e = row.zohoEntries[0];
+        expandDetail = `<div style="font-size:11px; color:#6d28d9; margin-top:3px;">Matched on name: <em>${xesc(e.paymentName || e.bookingName || '')}</em> · ${xesc(e.date || '—')} · ${fmtAUD(e.amount)}</div>`;
+      }
+
+      if (row.status === 'ok') {
+        const nEntries = row.zohoEntries ? row.zohoEntries.length : 0;
+        const extras = nEntries > 1 && row.singleMatch
+          ? ` <span style="font-size:10px; color:var(--muted);">(+${nEntries - 1} other Zoho entr${nEntries - 1 === 1 ? 'y' : 'ies'})</span>` : '';
+        const nameNote = row.nameMatchedClient
+          ? ` <span style="font-size:10px; color:var(--muted);">via name</span>` : '';
+        badge = `<span class="recon-badge ok">✓ Matched</span>${extras}${nameNote}`;
+      } else if (row.status === 'mismatch') {
+        badge = `<span class="recon-badge mismatch">⚠ Amount differs</span>${searchLink}`;
+        rowBg = 'background:#fffbeb;';
+      } else if (row.status === 'possible_match') {
+        badge = `<span class="recon-badge" style="background:#ede9fe; color:#5b21b6;">? Possible name match</span>${searchLink}`;
+        rowBg = 'background:#faf5ff;';
+      } else if (row.status === 'missing') {
+        badge = `<span class="recon-badge missing">✗ Not in Zoho</span>${searchLink}`;
+        rowBg = 'background:#fef2f2;';
+      } else {
+        badge = `<span class="recon-badge pending">→ Add to Zoho</span>${searchLink}`;
+      }
+
+      h += `<tr style="border-bottom:1px solid var(--border);${rowBg}">`;
+      h += `<td style="padding:7px 10px; font-family:var(--mono); font-size:12px; white-space:nowrap;">${xesc(row.date)}</td>`;
+      h += `<td style="padding:7px 10px;">${xesc(row.client)}</td>`;
+      h += `<td style="padding:7px 10px; font-family:var(--mono); font-size:12px; white-space:nowrap;">${xesc(row.invoiceNumber)}</td>`;
+      h += `<td style="padding:7px 10px; text-align:right; font-family:var(--mono); font-size:12px;">${fmtAUD(row.amount)}</td>`;
+      if (hasZoho) {
+        const zohoDisplay = row.zohoTotal != null ? fmtAUD(row.zohoTotal) : '<span style="color:var(--faint)">—</span>';
+        h += `<td style="padding:7px 10px; text-align:right; font-family:var(--mono); font-size:12px;">${zohoDisplay}</td>`;
+        h += `<td style="padding:7px 10px;">${badge}${expandDetail}</td>`;
+      } else {
+        h += `<td style="padding:7px 10px; text-align:center;">${badge}</td>`;
+      }
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+
+    // ---- Excluded rows (collapsible) ----
+    if (excluded.length) {
+      h += `<details style="margin-top:4px;"><summary style="cursor:pointer; font-size:12px; color:var(--muted); padding:8px 0; user-select:none;">${excluded.length} rows auto-excluded — click to review</summary>`;
+      h += '<div style="margin-top:10px; overflow-x:auto; border:1px solid var(--border); border-radius:8px;">';
+      h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+      h += '<thead><tr style="background:#fafaf7; border-bottom:1px solid var(--border);">';
+      h += '<th style="padding:7px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Date</th>';
+      h += '<th style="padding:7px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Description</th>';
+      h += '<th style="padding:7px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Reference</th>';
+      h += '<th style="padding:7px 10px; text-align:right; font-size:10px; font-weight:600; color:var(--muted);">Amount</th>';
+      h += '<th style="padding:7px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Reason excluded</th>';
+      h += '</tr></thead><tbody>';
+      excluded.forEach(row => {
+        h += '<tr style="border-bottom:1px solid var(--border);">';
+        h += `<td style="padding:6px 10px; font-family:var(--mono); font-size:11px;">${xesc(row.date)}</td>`;
+        h += `<td style="padding:6px 10px; color:var(--muted); font-size:12px;">${xesc(row.desc)}</td>`;
+        h += `<td style="padding:6px 10px; font-family:var(--mono); font-size:11px;">${xesc(row.ref)}</td>`;
+        h += `<td style="padding:6px 10px; text-align:right; font-family:var(--mono); font-size:11px;">${row.amount > 0 ? fmtAUD(row.amount) : '—'}</td>`;
+        h += `<td style="padding:6px 10px;"><span class="recon-rule-chip excl">${xesc(row.reason)}</span></td>`;
+        h += '</tr>';
+      });
+      h += '</tbody></table></div></details>';
+    }
+
+    // ---- Zoho → Xero reverse check ----
+    // For every Zoho entry, make sure there is a real Xero receipt backing it up.
+    // Entries with no Xero counterpart within the export period could be duplicates or errors.
+    if (hasZoho) {
+      const DAY = 86400000;
+
+      // Infer the date range covered by this Xero export
+      const xeroDates = included.map(r => parseDMY(r.date)).filter(Boolean);
+      const xeroMin = xeroDates.length ? Math.min(...xeroDates) : null;
+      const xeroMax = xeroDates.length ? Math.max(...xeroDates) : null;
+
+      // Build a quick lookup: numeric invoice → xero row
+      const xeroInvMap = new Map();
+      included.forEach(r => {
+        const k = r.invNumeric || r.invoiceNumber.replace(/^INV[-\s]*/i, '').trim();
+        if (k) xeroInvMap.set(k, r);
+      });
+
+      const suspectEntries    = []; // within Xero period, no Xero match — likely error/duplicate
+      const historicalEntries = []; // outside Xero period — probably a prior-period payment
+
+      for (const [invNum, entries] of zohoMap.invMap.entries()) {
+        const xeroRow  = xeroInvMap.get(invNum);
+        const zohoSum  = entries.reduce((s, e) => s + (e.amount || 0), 0);
+
+        if (xeroRow) {
+          // Invoice IS in Xero — decide which Zoho entries are "covered"
+          const sumMatchesXero    = Math.abs(zohoSum - xeroRow.amount) <= 0.05;
+          const singleMatchEntry  = entries.find(e => Math.abs((e.amount || 0) - xeroRow.amount) <= 0.05);
+
+          if (sumMatchesXero) continue; // all entries account for the Xero total (e.g. RACV split bookings) — nothing to flag
+
+          // Mark the single matched entry as covered; flag the rest as extras
+          entries.forEach(entry => {
+            if (singleMatchEntry && entry === singleMatchEntry) return; // this one is fine
+            const entryTs = parseDMY(entry.date);
+            const withinPeriod = !entryTs || !xeroMin || (entryTs >= xeroMin - 7 * DAY && entryTs <= xeroMax + 7 * DAY);
+            const rec = { invNum, entry, xeroAmount: xeroRow.amount, invoiceInXero: true };
+            (withinPeriod ? suspectEntries : historicalEntries).push(rec);
+          });
+        } else {
+          // Invoice not in Xero export at all — could be outside the period, or a genuine error
+          entries.forEach(entry => {
+            const entryTs = parseDMY(entry.date);
+            const withinPeriod = !entryTs || !xeroMin || (entryTs >= xeroMin - 7 * DAY && entryTs <= xeroMax + 7 * DAY);
+            const rec = { invNum, entry, xeroAmount: null, invoiceInXero: false };
+            (withinPeriod ? suspectEntries : historicalEntries).push(rec);
+          });
+        }
+      }
+
+      // ---- Render reverse-check section ----
+      h += `<div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:14px;">`;
+      h += `<div style="padding:12px 16px; background:#fafaf7; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">`;
+      h += `<div style="font-size:12px; font-weight:700; color:var(--ink);">↩ Zoho → Xero check <span style="font-weight:400; color:var(--muted);">— Zoho payments that don't have a matching Xero receipt</span></div>`;
+      if (suspectEntries.length === 0) {
+        h += `<span class="recon-badge ok" style="margin-left:auto;">✓ All clear</span>`;
+      } else {
+        h += `<span class="recon-badge mismatch" style="margin-left:auto;">⚠ ${suspectEntries.length} suspect entr${suspectEntries.length === 1 ? 'y' : 'ies'}</span>`;
+      }
+      h += `</div>`;
+
+      if (suspectEntries.length > 0) {
+        h += `<div style="padding:10px 16px; background:#fffbeb; border-bottom:1px solid #fde68a; font-size:12px; color:#92400e;">`;
+        h += `These Zoho payments fall <strong>within the Xero export period</strong> but have no exact Xero receipt backing them up. `;
+        h += `They may be <strong>accidental duplicates</strong> (commission would be paid twice), entries for the wrong invoice, or payments that haven't cleared in Xero yet.`;
+        h += `</div>`;
+        h += `<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">`;
+        h += `<thead><tr style="background:#fafaf7; border-bottom:1px solid var(--border);">`;
+        h += `<th style="padding:7px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Date</th>`;
+        h += `<th style="padding:7px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted);">Invoice #</th>`;
+        h += `<th style="padding:7px 10px; text-align:right; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Zoho Amount</th>`;
+        h += `<th style="padding:7px 10px; text-align:right; font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;">Xero Amount</th>`;
+        h += `<th style="padding:7px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted);">Payment / Booking</th>`;
+        h += `<th style="padding:7px 10px; text-align:left; font-size:11px; font-weight:600; color:var(--muted);">Note</th>`;
+        h += `</tr></thead><tbody>`;
+        suspectEntries.forEach(({ invNum, entry, xeroAmount, invoiceInXero }) => {
+          const note = invoiceInXero
+            ? `<span class="recon-badge mismatch" style="font-size:10px;">Possible duplicate</span>`
+            : `<span class="recon-badge missing" style="font-size:10px;">Invoice not in Xero period</span>`;
+          const zohoSearchUrl = `https://crm.zoho.com/crm/org657079535/search?searchword=${encodeURIComponent(invNum)}&isRelevance=false`;
+          h += `<tr style="border-bottom:1px solid var(--border); background:#fffbeb;">`;
+          h += `<td style="padding:6px 10px; font-family:var(--mono); font-size:11px; white-space:nowrap;">${xesc(entry.date || '—')}</td>`;
+          h += `<td style="padding:6px 10px; font-family:var(--mono); font-size:11px;"><a href="${xesc(zohoSearchUrl)}" target="_blank" rel="noopener" style="color:var(--navy); text-decoration:none;">${xesc(invNum)} ↗</a></td>`;
+          h += `<td style="padding:6px 10px; text-align:right; font-family:var(--mono); font-size:11px;">${fmtAUD(entry.amount)}</td>`;
+          h += `<td style="padding:6px 10px; text-align:right; font-family:var(--mono); font-size:11px; color:var(--muted);">${xeroAmount != null ? fmtAUD(xeroAmount) : '—'}</td>`;
+          h += `<td style="padding:6px 10px; font-size:11px;">${xesc(entry.paymentName || entry.bookingName || '—')}</td>`;
+          h += `<td style="padding:6px 10px;">${note}</td>`;
+          h += `</tr>`;
+        });
+        h += `</tbody></table></div>`;
+      } else {
+        h += `<div style="padding:16px; font-size:12px; color:var(--accent); text-align:center;">No Zoho payments found within the Xero export period that lack a Xero receipt. ✓</div>`;
+      }
+
+      if (historicalEntries.length > 0) {
+        h += `<details style="border-top:1px solid var(--border);"><summary style="padding:10px 16px; cursor:pointer; font-size:12px; color:var(--muted); user-select:none;">${historicalEntries.length} historical Zoho entr${historicalEntries.length === 1 ? 'y' : 'ies'} outside the Xero export period — click to review</summary>`;
+        h += `<div style="padding:8px 16px 4px; font-size:11px; color:var(--muted); font-style:italic;">These are from a prior period — expected if your Zoho export covers all-time. No action needed unless you see something unexpected.</div>`;
+        h += `<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:11px;">`;
+        h += `<thead><tr style="background:#fafaf7; border-bottom:1px solid var(--border);">`;
+        h += `<th style="padding:5px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Date</th>`;
+        h += `<th style="padding:5px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Invoice #</th>`;
+        h += `<th style="padding:5px 10px; text-align:right; font-size:10px; font-weight:600; color:var(--muted);">Amount</th>`;
+        h += `<th style="padding:5px 10px; text-align:left; font-size:10px; font-weight:600; color:var(--muted);">Payment / Booking</th>`;
+        h += `</tr></thead><tbody>`;
+        historicalEntries.forEach(({ invNum, entry }) => {
+          h += `<tr style="border-bottom:1px solid var(--border);">`;
+          h += `<td style="padding:5px 10px; font-family:var(--mono);">${xesc(entry.date || '—')}</td>`;
+          h += `<td style="padding:5px 10px; font-family:var(--mono);">${xesc(invNum)}</td>`;
+          h += `<td style="padding:5px 10px; text-align:right; font-family:var(--mono);">${fmtAUD(entry.amount)}</td>`;
+          h += `<td style="padding:5px 10px;">${xesc(entry.paymentName || entry.bookingName || '—')}</td>`;
+          h += `</tr>`;
+        });
+        h += `</tbody></table></div></details>`;
+      }
+
+      h += `</div>`; // end reverse-check card
+    }
+
+    el.innerHTML = h;
+  }
+
+  // ---- File handler ----
+  function isExcel(file) {
+    return /\.(xlsx|xls)$/i.test(file.name) ||
+      file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.type === 'application/vnd.ms-excel';
+  }
+
+  function processFile(rawRows, type) {
+    try {
+      const fileName = rawRows._fileName || 'file';
+      if (type === 'xero') {
+        xeroResult = processXero(rawRows);
+        const zone = document.getElementById('xr-xero-zone');
+        zone.classList.add('loaded');
+        zone.querySelector('.zone-label').textContent = '✓ ' + fileName;
+        zone.querySelector('.zone-sub').textContent = xeroResult.included.length + ' invoice payments found · ' + xeroResult.excluded.length + ' excluded';
+      } else {
+        zohoMap = processZoho(rawRows);
+        const zone = document.getElementById('xr-zoho-zone');
+        zone.classList.add('loaded');
+        zone.querySelector('.zone-label').textContent = '✓ ' + fileName;
+        zone.querySelector('.zone-sub').textContent = zohoMap.totalRecords + ' payment records · ' + zohoMap.invMap.size + ' unique invoices';
+      }
+      render();
+    } catch (err) {
+      alert('Error reading file: ' + err.message);
+    }
+  }
+
+  function handleFile(file, type) {
+    // Store the original file name so processFile can reference it
+    if (isExcel(file)) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          // Convert to array-of-arrays (same shape as parseCSV output)
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          // Attach the original file name so processFile can use it
+          rawRows._fileName = file.name;
+          processFile(rawRows, type);
+        } catch (err) {
+          alert('Error reading Excel file: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const rawRows = parseCSV(e.target.result);
+          rawRows._fileName = file.name;
+          processFile(rawRows, type);
+        } catch (err) {
+          alert('Error reading CSV: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+  }
+
+  // ---- Wire up drag-drop / click for a zone ----
+  function wireZone(zoneId, inputId, type) {
+    const zone  = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    if (!zone || !input) return;
+    zone.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { if (input.files[0]) handleFile(input.files[0], type); });
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0];
+      if (f && (f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.type === 'text/csv' || f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || f.type === 'application/vnd.ms-excel')) handleFile(f, type);
+      else alert('Please drop a .csv, .xlsx, or .xls file.');
+    });
+  }
+
+  // Called from load() after DOM is ready
+  window.initXeroRecon = function() {
+    wireZone('xr-xero-zone', 'xr-xero-input', 'xero');
+    wireZone('xr-zoho-zone', 'xr-zoho-input', 'zoho');
+  };
+})();
+
+// ============================================================
+// QUARTERLY PAYROLL ADMIN GRID
+// Quarters as rows, the 3 quarterly-cohort employees as columns.
+// Each cell = that quarter's metric (CM for Hayley, Performance
+// Revenue for Tom & Michael). Annualises YTD pace, applies the
+// employee's band ladder + milestone, shows the 75% pro-rata payout.
+// Self-contained, in-memory (mirrors the fortnightly admin pattern).
+// ============================================================
+let _qtpInitialised = false;
+function renderQuarterlyAdmin() {
+  if (_qtpInitialised) return;
+  _qtpInitialised = true;
+
+  // Quarterly-cohort plans + their metric labels
+  const QTP_PLAN_IDS = ['gm', 'hybrid_rev_senior', 'hybrid_rev'];
+  const QTP_METRIC = { gm: 'CM', hybrid_rev_senior: 'Performance Revenue', hybrid_rev: 'Performance Revenue' };
+  // Where to pull each person's quarter-end actuals from (same sources as their own dashboards)
+  const QTP_DATA_SOURCE = {
+    gm:                { url: 'https://reporting.xero.com/!!w0P0/v1/Run/15016844?isCustom=True', label: 'Xero — CM report' },
+    hybrid_rev_senior: { url: 'https://crm.zoho.com/crm/org657079535/tab/CustomModule3/2877869000001224372/canvas/2877869000056971016', label: 'Zoho — Performance Revenue' },
+    hybrid_rev:        { url: 'https://crm.zoho.com/crm/org657079535/tab/CustomModule3/2877869000071356498/canvas/2877869000056971016', label: 'Zoho — Performance Revenue' }
+  };
+  const cohort = (data.employees || []).filter(e => QTP_PLAN_IDS.includes(e.planType) && !e.placeholder).map(e => {
+    const plan = data.planTypes[e.planType] || {};
+    return {
+      id: e.id,
+      name: e.name.split(' ')[0],
+      fullName: e.name,
+      planType: e.planType,
+      metricName: QTP_METRIC[e.planType] || 'Metric',
+      dataSource: QTP_DATA_SOURCE[e.planType] || null,
+      bands: plan.cmBands || plan.bands || [],
+      flatBonuses: Array.isArray(plan.flatBonuses) ? plan.flatBonuses : [],
+      payoutPct: plan.payoutPercentage != null ? plan.payoutPercentage : 0.75
+    };
+  });
+  if (cohort.length === 0) { document.getElementById('qtp-tbody').innerHTML = '<tr><td>No quarterly-cohort employees found.</td></tr>'; return; }
+
+  // FY27 quarters
+  const QUARTERS = [
+    { id: 'Q1', label: 'Q1 FY27', period: 'Jul – Sep 2026' },
+    { id: 'Q2', label: 'Q2 FY27', period: 'Oct – Dec 2026' },
+    { id: 'Q3', label: 'Q3 FY27', period: 'Jan – Mar 2027' },
+    { id: 'Q4', label: 'Q4 FY27', period: 'Apr – Jun 2027' }
+  ];
+
+  // Per-employee × per-quarter metric values + audit actuals. Start blank.
+  const qMatrix = {};
+  const qAuditActuals = {};
+  cohort.forEach(c => { qMatrix[c.id] = new Array(QUARTERS.length).fill(0); qAuditActuals[c.id] = ''; });
+
+  const SUPER_RATE = 0.12;
+  const _fmt = (n) => '$' + Math.round(n).toLocaleString();
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  // Generic incremental band commission for any sorted {threshold, rate} ladder
+  function bandComm(value, bands) {
+    if (value <= 0 || !bands.length) return 0;
+    const sorted = [...bands].sort((a, b) => a.threshold - b.threshold);
+    let total = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const start = +sorted[i].threshold;
+      const rate = +sorted[i].rate;
+      const end = (i + 1 < sorted.length) ? +sorted[i + 1].threshold : Infinity;
+      if (value <= start) break;
+      total += (Math.min(value, end) - start) * rate;
+      if (value <= end) break;
+    }
+    return total;
+  }
+  // Generic flat / milestone bonus (cliff or linear ramp)
+  function flatBonus(value, bonuses) {
+    let total = 0;
+    bonuses.forEach(b => {
+      const rampStart = +b.rampFromMetric || +b.rampFromRevenue || 0;
+      const threshold = +b.threshold || 0;
+      const amount = +b.amount || 0;
+      if (value >= threshold) total += amount;
+      else if (rampStart > 0 && value > rampStart && threshold > rampStart) {
+        total += amount * ((value - rampStart) / (threshold - rampStart));
+      }
+    });
+    return total;
+  }
+
+  // Compute per-quarter rows for one employee: annualise YTD pace, apply bands+milestone, 75% pro-rata
+  function computeEmpQuarters(c) {
+    let ytd = 0, quartersEntered = 0, cumPaid = 0;
+    const rows = [];
+    for (let i = 0; i < QUARTERS.length; i++) {
+      const qVal = qMatrix[c.id][i] || 0;
+      if (qVal <= 0) {
+        rows.push({ idx: i, metric: 0, ytd, annualised: 0, annualComm: 0, payout: 0 });
+        continue;
+      }
+      ytd += qVal;
+      quartersEntered++;
+      const annualised = ytd * (4 / quartersEntered);
+      const annualComm = bandComm(annualised, c.bands) + flatBonus(annualised, c.flatBonuses);
+      const cumPayable = annualComm * c.payoutPct * (quartersEntered / 4);
+      const payout = Math.max(0, cumPayable - cumPaid);
+      cumPaid += payout;
+      rows.push({ idx: i, metric: qVal, ytd, annualised, annualComm, payout });
+    }
+    const last = [...rows].reverse().find(r => r.metric > 0);
+    return {
+      rows,
+      ytdMetric: ytd,
+      annualComm: last ? last.annualComm : 0,
+      totalPayout: cumPaid,
+      holdback: last ? last.annualComm * (1 - c.payoutPct) * (quartersEntered / 4) : 0
+    };
+  }
+
+  // ----- Header -----
+  function renderHeader() {
+    let h = `<tr style="background: #fafaf7;">
+      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #d3d1c7; min-width: 160px;">Quarter</th>`;
+    cohort.forEach(c => {
+      const srcBtn = c.dataSource
+        ? `<div style="margin-top: 5px;"><a href="${esc(c.dataSource.url)}" target="_blank" rel="noopener" style="display: inline-block; padding: 3px 8px; background: #eef4fa; border: 1px solid #cdd9e8; border-radius: 4px; font-size: 9px; font-weight: 600; color: var(--navy); text-decoration: none; white-space: nowrap;" title="Open ${esc(c.dataSource.label)} to pull ${esc(c.name)}'s quarter-end actuals">↗ ${esc(c.dataSource.label)}</a></div>`
+        : '';
+      h += `<th style="text-align: right; padding: 8px 12px; border-bottom: 2px solid #d3d1c7; min-width: 170px; white-space: nowrap;">
+        ${esc(c.name)}
+        <div style="font-size: 9px; color: var(--faint); font-weight: 400; text-transform: none; letter-spacing: 0;">${esc(c.metricName)}</div>
+        ${srcBtn}
+      </th>`;
+    });
+    document.getElementById('qtp-thead').innerHTML = h;
+  }
+
+  // ----- Totals strip -----
+  function renderTotals() {
+    let h = '';
+    cohort.forEach(c => {
+      const t = computeEmpQuarters(c);
+      h += `<div style="background: #fff; border: 1px solid #ecebe5; border-radius: 6px; padding: 10px;">
+        <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">${esc(c.name)}</div>
+        <div style="font-size: 15px; font-family: var(--mono); font-weight: 700; color: var(--ink); margin-top: 4px;">${_fmt(t.ytdMetric)} <span style="font-size: 9px; color: var(--faint); font-weight: 400;">YTD ${esc(c.metricName)}</span></div>
+        <div style="font-size: 12px; font-family: var(--mono); color: var(--muted); margin-top: 2px;">${_fmt(t.totalPayout)} paid · ${_fmt(t.holdback)} holdback</div>
+      </div>`;
+    });
+    document.getElementById('qtp-totals').innerHTML = h;
+  }
+
+  // ----- Body: 4 quarter rows -----
+  function renderBody() {
+    const empRows = {};
+    cohort.forEach(c => { empRows[c.id] = computeEmpQuarters(c); });
+    let h = '';
+    QUARTERS.forEach((q, qi) => {
+      h += `<tr>
+        <td style="padding: 8px 12px; border-bottom: 1px solid #f4f3ed; font-weight: 600;">
+          <div>${esc(q.label)}</div>
+          <div style="font-size: 10px; color: var(--faint); font-family: var(--mono); font-weight: 400;">${esc(q.period)}</div>
+        </td>`;
+      cohort.forEach(c => {
+        const row = empRows[c.id].rows[qi];
+        const incSuper = row.payout;
+        const exSuper = incSuper / (1 + SUPER_RATE);
+        const superAmt = incSuper - exSuper;
+        const tip = row.metric > 0
+          ? `${esc(c.fullName)} · ${esc(q.label)}\n${esc(c.metricName)} this quarter: ${_fmt(row.metric)}\nYTD: ${_fmt(row.ytd)} · Annualised: ${_fmt(row.annualised)}\nAnnual commission projection: ${_fmt(row.annualComm)}\nQuarterly payout (75% pro-rata): ${_fmt(incSuper)}\n  · Bonus ex super: ${_fmt(exSuper)}\n  · Super (12%): ${_fmt(superAmt)}`
+          : `${esc(c.fullName)} · ${esc(q.label)}\nNo ${esc(c.metricName)} entered yet.`;
+        const copyVals = incSuper > 0
+          ? `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 4px;">
+               <div><div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">Bonus</div>
+                 <input type="text" class="qtp-copy-bonus" readonly value="${Math.round(exSuper).toLocaleString()}" title="Bonus ex super — click to copy" style="width: 100%; padding: 2px 4px; border: 1px solid #cdd9e8; border-radius: 3px; background: #f6f8fc; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--navy); cursor: pointer;"></div>
+               <div><div style="font-size: 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">Super</div>
+                 <input type="text" class="qtp-copy-super" readonly value="${Math.round(superAmt).toLocaleString()}" title="Super (12%) — click to copy" style="width: 100%; padding: 2px 4px; border: 1px solid #cdd9e8; border-radius: 3px; background: #eef4fa; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--navy); cursor: pointer;"></div>
+             </div>
+             <div style="font-size: 9px; color: var(--muted); margin-top: 3px; text-align: right; font-family: var(--mono);">annualised ${_fmt(row.annualised)}</div>`
+          : (row.metric > 0
+              ? `<div style="font-size: 10px; color: var(--muted); margin-top: 3px; font-family: var(--mono); text-align: right;">annualised ${_fmt(row.annualised)} · $0 payout</div>`
+              : `<div style="font-size: 10px; color: var(--faint); margin-top: 3px; font-family: var(--mono); text-align: right;">—</div>`);
+        h += `<td class="qtp-cell" data-tip="${esc(tip)}" style="padding: 6px 8px; border-bottom: 1px solid #f4f3ed; vertical-align: top;">
+          <input type="text" class="qtp-input" data-emp="${esc(c.id)}" data-idx="${qi}" value="${row.metric ? row.metric.toLocaleString() : ''}" placeholder="${esc(c.metricName)}" inputmode="decimal" style="width: 100%; padding: 4px 6px; border: 1px solid #d3d1c7; border-radius: 4px; background: #fff; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--ink);">
+          ${copyVals}
+        </td>`;
+      });
+      h += `</tr>`;
+    });
+    document.getElementById('qtp-tbody').innerHTML = h;
+
+    // Footer — year totals per employee
+    let footHtml = `<tr style="font-weight: 700; background: #f6f8fc; border-top: 2px solid #d3d1c7;">
+      <td style="padding: 10px 12px;">Year Total</td>`;
+    cohort.forEach(c => {
+      const t = computeEmpQuarters(c);
+      footHtml += `<td style="text-align: right; padding: 10px 12px; font-family: var(--mono); font-size: 13px;">
+        ${_fmt(t.ytdMetric)} <span style="font-size: 9px; color: var(--faint); font-weight: 400;">${esc(c.metricName)}</span>
+        <div style="font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 3px;">${_fmt(t.totalPayout)} paid (75%)</div>
+        <div style="font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 1px;">${_fmt(t.holdback)} holdback (25%)</div>
+      </td>`;
+    });
+    footHtml += `</tr>`;
+    document.getElementById('qtp-tfoot').innerHTML = footHtml;
+
+    wireQtp();
+  }
+
+  // ----- Interactions: copy buttons + Tab/Enter navigation -----
+  function wireQtp() {
+    const tbody = document.getElementById('qtp-tbody');
+    tbody.querySelectorAll('.qtp-copy-bonus, .qtp-copy-super').forEach(inp => {
+      inp.addEventListener('click', async () => {
+        try {
+          inp.select();
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(inp.value);
+          else document.execCommand('copy');
+          const og = inp.style.background;
+          inp.style.background = '#d4edda';
+          setTimeout(() => { inp.style.background = og; }, 400);
+        } catch (e) {}
+      });
+    });
+    let suppressBlur = false;
+    function focusCell(empId, idx) {
+      const el = document.querySelector(`.qtp-input[data-emp="${empId}"][data-idx="${idx}"]`);
+      if (el) { el.focus(); el.select && el.select(); }
+    }
+    // Tab sequence: across employees within a quarter, then down to next quarter's first employee
+    function nextCell(empId, idx, back) {
+      const ei = cohort.findIndex(c => c.id === empId);
+      if (!back) {
+        if (ei < cohort.length - 1) return { emp: cohort[ei + 1].id, idx };
+        if (idx < QUARTERS.length - 1) return { emp: cohort[0].id, idx: idx + 1 };
+        return null;
+      } else {
+        if (ei > 0) return { emp: cohort[ei - 1].id, idx };
+        if (idx > 0) return { emp: cohort[cohort.length - 1].id, idx: idx - 1 };
+        return null;
+      }
+    }
+    tbody.querySelectorAll('.qtp-input').forEach(inp => {
+      inp.addEventListener('focus', (e) => e.target.select());
+      const commit = () => {
+        const emp = inp.getAttribute('data-emp');
+        const idx = parseInt(inp.getAttribute('data-idx'), 10);
+        const raw = inp.value.replace(/[^0-9.\-]/g, '');
+        const n = parseFloat(raw);
+        qMatrix[emp][idx] = isFinite(n) ? n : 0;
+      };
+      inp.addEventListener('blur', () => {
+        commit();
+        renderTotals(); renderAudit();
+        if (!suppressBlur) renderBody();
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); inp.blur(); return; }
+        const isTab = e.key === 'Tab', isEnter = e.key === 'Enter';
+        if (!isTab && !isEnter) return;
+        e.preventDefault();
+        commit();
+        const emp = inp.getAttribute('data-emp');
+        const idx = parseInt(inp.getAttribute('data-idx'), 10);
+        const target = nextCell(emp, idx, isTab && e.shiftKey);
+        if (!target) { renderTotals(); renderBody(); renderAudit(); inp.blur(); return; }
+        suppressBlur = true;
+        renderTotals(); renderAudit();
+        focusCell(target.emp, target.idx);
+        Promise.resolve().then(() => { suppressBlur = false; });
+      });
+    });
+  }
+
+  // ----- Year-End Audit -----
+  function renderAudit() {
+    const body = document.getElementById('qtp-audit-body');
+    function varCell(empId, sumValue) {
+      const raw = (qAuditActuals[empId] || '').replace(/[^0-9.\-]/g, '');
+      const actual = parseFloat(raw);
+      if (!isFinite(actual) || raw === '') return { variance: '—', verdict: '—', color: 'var(--ink)' };
+      const diff = actual - sumValue;
+      const abs = Math.abs(diff);
+      const sign = diff >= 0 ? '+' : '−';
+      const variance = abs < 0.5 ? '$0' : sign + _fmt(abs);
+      if (abs <= 1) return { variance, verdict: '<span style="color:#1e6624;font-weight:700;">✓ Reconciled</span>', color: '#1e6624' };
+      if (abs <= 1000) return { variance, verdict: '<span style="color:#6a4a00;font-weight:700;">⚠ Minor variance</span>', color: '#6a4a00' };
+      return { variance, verdict: '<span style="color:#7a1f1f;font-weight:700;">✗ Mismatch</span>', color: '#7a1f1f' };
+    }
+    let h = '<table style="width: 100%; border-collapse: collapse;"><thead><tr style="background: #fafaf7; border-bottom: 1px solid #d3d1c7;">';
+    h += '<th style="text-align: left; padding: 8px 10px; font-size: 11px;">Person</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Metric</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Sum of 4 quarters</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Full-year (source of truth)</th>';
+    h += '<th style="text-align: right; padding: 8px 10px; font-size: 11px;">Variance</th>';
+    h += '<th style="text-align: center; padding: 8px 10px; font-size: 11px;">Verdict</th>';
+    h += '</tr></thead><tbody>';
+    cohort.forEach(c => {
+      const t = computeEmpQuarters(c);
+      const v = varCell(c.id, t.ytdMetric);
+      h += `<tr style="border-bottom: 1px solid #f4f3ed;">
+        <td style="padding: 8px 10px; font-weight: 600;">${esc(c.fullName)}</td>
+        <td style="text-align: right; padding: 8px 10px; font-size: 11px; color: var(--muted);">${esc(c.metricName)}</td>
+        <td style="text-align: right; padding: 8px 10px; font-family: var(--mono);">${t.ytdMetric > 0 ? _fmt(t.ytdMetric) : '<span style="color: var(--faint);">—</span>'}</td>
+        <td style="text-align: right; padding: 8px 10px;"><input type="text" class="qtp-audit-input" data-emp="${esc(c.id)}" value="${esc(qAuditActuals[c.id])}" placeholder="e.g. 1,100,000" inputmode="decimal" style="width: 140px; padding: 5px 8px; border: 1px solid #d3d1c7; border-radius: 4px; background: #fff; text-align: right; font-family: var(--mono); font-size: 12px;"></td>
+        <td style="text-align: right; padding: 8px 10px; font-family: var(--mono); color: ${v.color};">${v.variance}</td>
+        <td style="text-align: center; padding: 8px 10px; font-size: 12px;">${v.verdict}</td>
+      </tr>`;
+    });
+    h += '</tbody></table>';
+    body.innerHTML = h;
+    body.querySelectorAll('.qtp-audit-input').forEach(inp => {
+      inp.addEventListener('input', () => { qAuditActuals[inp.getAttribute('data-emp')] = inp.value; renderAudit(); });
+    });
+  }
+
+  renderHeader();
+  renderTotals();
+  renderBody();
+  renderAudit();
+}
+
+load();
+</script>
+</body>
+</html>
