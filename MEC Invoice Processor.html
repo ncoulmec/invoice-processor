@@ -1652,6 +1652,13 @@ async function handlePDFs(input) {
       invoiceGSTData['id_' + id] = !!data.hasGST;
       invoicePaidData['id_' + id] = !!data.alreadyPaid;
       invoiceTypeData['id_' + id] = data.invoiceTypeHint || 'unknown';
+      // Pre-populate expense fields from PDF text detection (only if non-zero amounts found)
+      if (data.detectedExpenses) {
+        const de = data.detectedExpenses;
+        if (de.parking > 0 || de.accommodation > 0 || de.travel > 0) {
+          invoiceExpenseData['id_' + id] = { parking: de.parking, accommodation: de.accommodation, travel: de.travel };
+        }
+      }
       // Store object URL for PDF preview (revoke old if re-used)
       invoiceFileData['id_' + id] = URL.createObjectURL(file);
       // Store raw text for debug inspection (helps diagnose amount/name extraction failures)
@@ -1952,6 +1959,18 @@ function parseInvoiceText(text, filename) {
     const taxInvM = text.match(/[Tt]ax\s+[Ii]nvoice\s+([A-Z]{0,4}[-]?\d[\w\-]{0,14})/);
     if (taxInvM && !/^\d{4}[-\/]\d{2}/.test(taxInvM[1])) invoiceNumber = taxInvM[1].trim(); // skip dates
   }
+  // Fallback: bare "INVOICE 246" or "INVOICE 0036" — no qualifier word
+  // Catches invoices like Kim Calapardo's that print just "INVOICE [number]"
+  if (!invoiceNumber) {
+    const bareInvM = text.match(/\bINVOICE\s+([A-Z]{0,4}[-]?\d[\w\-]{0,14})\b/i);
+    if (bareInvM) {
+      const v = bareInvM[1].trim();
+      // Skip if it looks like a date (17/05/2026 → "17" alone won't reach here, but be safe)
+      if (!/^\d{4}[-\/]\d{2}/.test(v) && !/^\d{1,2}[\/\-\.]\d{2}/.test(v)) {
+        invoiceNumber = v;
+      }
+    }
+  }
   // Fallback: "Invoice ID: HIK24-0522" style
   if (!invoiceNumber) {
     const invIdM = text.match(/Invoice\s+ID\s*:\s*([^\s\r\n]{3,20})/i);
@@ -2149,7 +2168,27 @@ function parseInvoiceText(text, filename) {
     }
   }
 
-  return { name, invoiceNumber, date, performanceDate, total, abn, hasGST, alreadyPaid, invoiceTypeHint };
+  // ── Expense detection (best-effort guess from raw text) ──────────────────
+  // These are pre-filled into the expense fields in the Review modal.
+  // The user can override any value — these are hints only.
+  const detectedExpenses = { parking: 0, accommodation: 0, travel: 0 };
+
+  // Travel: "$150 travel", "+ $150 travel", "travel: $150", "travel allowance $150"
+  const travelM = text.match(/\+?\s*\$\s*(\d+(?:\.\d{2})?)\s+(?:travel|travelling|transportation)\b/i)
+                || text.match(/\btravel(?:\s+(?:allowance|expense|fee|cost|reimbursement))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
+  if (travelM) detectedExpenses.travel = parseFloat(travelM[1]);
+
+  // Parking: "$20 parking", "parking: $20", "parking fee $20"
+  const parkingM = text.match(/\$\s*(\d+(?:\.\d{2})?)\s+parking\b/i)
+                 || text.match(/\bparking(?:\s+(?:expense|fee|cost|reimbursement))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
+  if (parkingM) detectedExpenses.parking = parseFloat(parkingM[1]);
+
+  // Accommodation: "$200 accommodation", "accommodation: $200", "hotel $200"
+  const accomM = text.match(/\$\s*(\d+(?:\.\d{2})?)\s+(?:accommodation|accom|hotel|motel|lodging)\b/i)
+               || text.match(/\b(?:accommodation|accom|hotel|motel|lodging)(?:\s+(?:expense|fee|cost))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
+  if (accomM) detectedExpenses.accommodation = parseFloat(accomM[1]);
+
+  return { name, invoiceNumber, date, performanceDate, total, abn, hasGST, alreadyPaid, invoiceTypeHint, detectedExpenses };
 }
 
 function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
@@ -4911,6 +4950,12 @@ async function gmailIngestPDF(file, item) {
     invoiceGSTData['id_' + id] = !!data.hasGST;
     invoicePaidData['id_' + id] = !!data.alreadyPaid;
     invoiceTypeData['id_' + id] = data.invoiceTypeHint || 'unknown';
+    if (data.detectedExpenses) {
+      const de = data.detectedExpenses;
+      if (de.parking > 0 || de.accommodation > 0 || de.travel > 0) {
+        invoiceExpenseData['id_' + id] = { parking: de.parking, accommodation: de.accommodation, travel: de.travel };
+      }
+    }
     invoiceFileData['id_' + id] = URL.createObjectURL(file);
     invoiceRawText['id_' + id] = data._rawText || '';
     if (data.abn && document.getElementById('abr-guid')?.value.trim()) doABNLookup(id);
