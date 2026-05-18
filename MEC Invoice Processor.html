@@ -1390,6 +1390,38 @@ function findBookingMatch(invoiceName, invoiceTotal, invoiceDate) {
   const all = findAllBookingMatches(invoiceName, invoiceTotal, null, invoiceDate);
   return all.length ? all[0] : null;
 }
+
+// Booking match that prefers explicitly-linked bookings (from Review modal selection) over fuzzy search.
+// linkedBookings = invoiceBookingData['id_'+rowId] = [{bookingId, bookingName, eventDate, cost}]
+function getBookingMatchForRow(name, total, date, linkedBookings) {
+  if (linkedBookings && linkedBookings.length > 0 && bookings.length > 0) {
+    for (const lb of linkedBookings) {
+      const fullBooking = bookings.find(b => b.id === lb.bookingId);
+      if (!fullBooking) continue;
+      const ents = fullBooking.entertainers || [];
+      // 1. Cost match (most reliable — cost is stored from the exact checkbox selected)
+      let ent = lb.cost > 0 ? ents.find(e => Math.abs((e.cost || 0) - lb.cost) < 0.01) : null;
+      // 2. Single entertainer — unambiguous
+      if (!ent && ents.length === 1) ent = ents[0];
+      // 3. First-name match
+      if (!ent) {
+        const first = (name || '').toLowerCase().split(' ')[0];
+        if (first) ent = ents.find(e => (e.name || '').toLowerCase().includes(first));
+      }
+      if (ent) {
+        return {
+          booking: fullBooking,
+          entertainer: ent,
+          alreadyPaid: !!ent.paid,
+          costMatch: Math.abs((ent.cost || 0) - total) < 0.01,
+          costDiff: Math.abs((ent.cost || 0) - total)
+        };
+      }
+    }
+  }
+  // No linked bookings (or none resolved) — fall back to fuzzy match
+  return findBookingMatch(name, total, date);
+}
 // Get ALL bookings for a specific contractor by their Zoho ID (exact match — no fuzzy logic)
 // Returns records sorted closest to refDate first
 function getContractorBookings(zohoId, refDate) {
@@ -2235,8 +2267,8 @@ function updateMatch(input, id) {
     ? `<span class="badge badge-ok match-status-ok">${match.name}</span>`
     : `<span class="badge badge-warn match-status-warn">Not found in Zoho</span>`;
   
-  // Booking cross-check
-  const bm = findBookingMatch(name, total, date);
+  // Booking cross-check: prefer explicitly-linked bookings from Review modal
+  const bm = getBookingMatchForRow(name, total, date, invoiceBookingData['id_'+id] || null);
   if (bm) {
     if (bm.alreadyPaid) {
       html += `<br><span style="color:var(--red);font-size:11px;font-weight:600">⚠ Already marked paid in Zoho</span>`;
@@ -3331,7 +3363,9 @@ function collectRows() {
     // Super is withheld on service fee + travel (time-based), but NOT on parking/accommodation (pure reimbursements)
     const superExcluded = expenses ? ((expenses.parking||0) + (expenses.accommodation||0)) : 0;
     const superBase = total - superExcluded;
-    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, invoiceType, source};
+    // Explicitly-linked bookings from the Review modal (takes precedence over fuzzy match for paid check)
+    const linkedBookings = invoiceBookingData['id_'+id] || null;
+    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, invoiceType, source, rowId: id, linkedBookings};
   }
   // PDF event rows
   document.querySelectorAll('#pdf-tbody tr[id]').forEach(tr => {
@@ -3394,8 +3428,9 @@ function processInvoices() {
       ? { contractorId: contractor.id, contractorName: contractor.name, invoiceGST: true, zohoGST: false }
       : null;
 
-    // Booking cross-check (if bookings cache loaded)
-    const bookingMatch = findBookingMatch(row.name, row.total, row.date);
+    // Booking cross-check: use explicitly-linked bookings from Review modal if available,
+    // otherwise fall back to fuzzy match
+    const bookingMatch = getBookingMatchForRow(row.name, row.total, row.date, row.linkedBookings);
     const alreadyPaidInZoho = !!(bookingMatch?.alreadyPaid);
     // manuallyExcluded = user ticked the Stage 1 Exclude? checkbox
     const manuallyExcluded = row.alreadyPaid && !alreadyPaidInZoho;
@@ -3870,41 +3905,53 @@ function xeroReference(name, invNum) {
 }
 
 function exportXeroCSV() {
-  // Xero Bills import template — 24 columns (matches BillTemplate.csv exactly)
+  // Xero Bills import template — 25 columns
   // Columns: *ContactName, EmailAddress, POAddressLine1-4, POCity, PORegion, POPostalCode,
-  //          POCountry, *InvoiceNumber, *InvoiceDate, *DueDate, InventoryItemCode,
+  //          POCountry, *InvoiceNumber, Reference, *InvoiceDate, *DueDate, InventoryItemCode,
   //          Description, *Quantity, *UnitAmount, *AccountCode, *TaxType,
   //          TrackingName1, TrackingOption1, TrackingName2, TrackingOption2, Currency
+  //
+  // Notes:
+  //   • Reference  = "Event(s): DD.MM.YY [DD.MM.YY …]" — matches the format used in Xero's bills list.
+  //   • InventoryItemCode is left blank — populating it causes Xero to override the AccountCode
+  //     and TaxType with whatever the inventory item has saved (often blank), breaking imports.
+  //   • Travel expenses use the same sub-contractors AccountCode as the main fee (not 493) because
+  //     they are a direct cost of sale and super may be calculated on them.
+  //   • InvoiceDate falls back to perfDate then today if the invoice had no date (e.g. Liam Krebs).
   const HDR = ['*ContactName','EmailAddress','POAddressLine1','POAddressLine2','POAddressLine3',
                'POAddressLine4','POCity','PORegion','POPostalCode','POCountry',
-               '*InvoiceNumber','*InvoiceDate','*DueDate','InventoryItemCode',
+               '*InvoiceNumber','Reference','*InvoiceDate','*DueDate','InventoryItemCode',
                'Description','*Quantity','*UnitAmount','*AccountCode','*TaxType',
                'TrackingName1','TrackingOption1','TrackingName2','TrackingOption2','Currency'];
   const rows = [HDR];
 
-  // Helper: build one data row with blanks for all unused columns
-  // InventoryItemCode is used to carry the MEC internal reference (initials-invoiceno)
-  const mkRow = (contact, invNum, invDate, dueDate, itemCode, desc, qty, amount, acctCode, taxType) =>
+  // Helper: build one data row with blanks for all unused columns.
+  // InventoryItemCode (col index 14) is always blank — see note above.
+  const mkRow = (contact, invNum, ref, invDate, dueDate, desc, qty, amount, acctCode, taxType) =>
     [contact, '', '', '', '', '', '', '', '', '',
-     invNum, invDate, dueDate, itemCode,
+     invNum, ref, invDate, dueDate, /*InventoryItemCode*/ '',
      desc, qty, amount, acctCode, taxType,
      '', '', '', '', ''];
+
+  // Resolve a non-empty invoice date: invoice date → perf date → today
+  const todayISO = () => new Date().toISOString().split('T')[0];
+  const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
 
   // ── Event contractor invoices (with super logic) ─────────────────────────────
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid).forEach(p => {
     const a = p.amounts;
     const c = p.contractor;
-    const invNum = p.invoiceNumber || autoInvNum(p);
-    const dateXero = formatDateXero(p.date);
+    const invNum    = p.invoiceNumber || autoInvNum(p);
+    const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.perfDate || p.date);
-    const acctCode = ACCOUNT_CODES[p.type];
-    const taxType  = TAX_TYPES[p.type];
-    const ref = xeroReference(c.name, p.invoiceNumber); // e.g. KC-INV001
+    const acctCode  = ACCOUNT_CODES[p.type];
+    const taxType   = TAX_TYPES[p.type];
+    const eventRef  = buildEventReference(p); // e.g. "Event(s): 09.05.26"
 
     // Line 1 — performance fee
     const grossAmt = (a.unitAmount + a.super).toFixed(2);
     const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
-    rows.push(mkRow(c.name, invNum, dateXero, dateXero, ref, feeDesc, 1, grossAmt, acctCode, taxType));
+    rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, grossAmt, acctCode, taxType));
 
     // Line 2 — super deduction (negative line, skipped if toggle OFF)
     if (c.superEligible !== false && superDeductionsEnabled()) {
@@ -3914,39 +3961,40 @@ function exportXeroCSV() {
       if (superAmt > 0) {
         const travelNote = (p.expenses?.travel || 0) > 0 ? ' (incl. travel)' : '';
         const superDesc = `SGC Super - ${c.name} | Inv: ${invNum} | $${superAmt.toFixed(2)} withheld${travelNote}`;
-        rows.push(mkRow(c.name, invNum, dateXero, '', ref, superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded'));
+        rows.push(mkRow(c.name, invNum, eventRef, dateXero, '', superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded'));
       }
     }
 
     // Lines 3+ — expense splits (parking / accommodation / travel)
+    // Travel uses the same sub-contractors account (acctCode) not 493 — it's a direct cost of sale.
+    // Parking and accommodation stay on their own codes (449, 493-C).
     if (p.expenses) {
       const isGSTContractor = ['B','D'].includes(p.type);
       const expTaxType = isGSTContractor ? 'Tax on Purchases' : 'GST Free Expenses';
       const expItems = [
-        { label: 'Parking',       amount: p.expenses.parking       || 0, account: '449'   },
-        { label: 'Accommodation', amount: p.expenses.accommodation || 0, account: '493-C' },
-        { label: 'Travel',        amount: p.expenses.travel        || 0, account: '493'   },
+        { label: 'Parking',       amount: p.expenses.parking       || 0, account: '449'     },
+        { label: 'Accommodation', amount: p.expenses.accommodation || 0, account: '493-C'   },
+        { label: 'Travel',        amount: p.expenses.travel        || 0, account: acctCode  },
       ];
       expItems.filter(x => x.amount > 0).forEach(x => {
         const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
         const expDesc  = `${x.label} - ${c.name} | Inv: ${invNum}`;
-        rows.push(mkRow(c.name, invNum, '', '', ref, expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
+        rows.push(mkRow(c.name, invNum, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
       });
     }
   });
 
   // ── Other AP invoices (supplier bills — no super, no splits) ─────────────────
   processed.filter(p => p.invoiceType === 'ap' && !p.alreadyPaid).forEach(p => {
-    const invNum = p.invoiceNumber || autoInvNum(p);
-    const dateXero = formatDateXero(p.date);
+    const invNum    = p.invoiceNumber || autoInvNum(p);
+    const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.date);
     const supplierName = p.name || '(Unknown Supplier)';
     const apTaxType  = p.hasGST ? 'Tax on Purchases' : 'GST Free Expenses';
     const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
-    const apRef = xeroReference(supplierName, p.invoiceNumber);
-    rows.push(mkRow(supplierName, invNum, dateXero, dateXero, apRef, apDesc, 1, apAmount, apAcctCode, apTaxType));
+    rows.push(mkRow(supplierName, invNum, '', dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType));
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_${today()}.csv`);
@@ -4145,6 +4193,32 @@ function formatDateXero(d) {
     return `${day}/${m}/${y}`;
   }
   return d;
+}
+
+// Format YYYY-MM-DD → DD.MM.YY  (used in Xero Reference field)
+function formatDateDotShort(d) {
+  if (!d || !d.match(/^\d{4}-\d{2}-\d{2}$/)) return '';
+  const [y,m,day] = d.split('-');
+  return `${day}.${m}.${y.slice(2)}`;
+}
+
+// Build "Event(s): DD.MM.YY" Reference string for Xero bills.
+// Uses linked booking event dates when multiple bookings are selected; falls back to
+// the single performance date or the invoice date.
+function buildEventReference(p) {
+  const seen = new Set();
+  const dates = [];
+  if (p.linkedBookings && p.linkedBookings.length > 0) {
+    p.linkedBookings.forEach(lb => {
+      const fmt = formatDateDotShort(lb.eventDate);
+      if (fmt && !seen.has(fmt)) { seen.add(fmt); dates.push(fmt); }
+    });
+  }
+  if (!dates.length) {
+    const fmt = formatDateDotShort(p.perfDate || p.date);
+    if (fmt) dates.push(fmt);
+  }
+  return dates.length ? `Event(s): ${dates.join(' ')}` : '';
 }
 
 function formatDateReadable(d) {
