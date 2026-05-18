@@ -731,7 +731,7 @@
         <button id="rv-save-next-btn" onclick="reviewConfirmAndNext()" tabindex="9"
           title="Save and automatically open the next unreviewed invoice"
           style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm &amp; Next</button>
-        <button id="rv-save-btn" onclick="reviewLooksGood()" tabindex="10"
+        <button id="rv-save-btn" onclick="rvValidateBeforeConfirm().then(ok=>{if(ok)reviewLooksGood()})" tabindex="10"
           title="Save all field values back to Stage 1 and mark this invoice as reviewed"
           style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm</button>
       </div>
@@ -763,18 +763,22 @@
       <div style="flex:1"></div>
       <div id="rv-service-fee-display" style="color:#8BAAC0;font-size:11px;white-space:nowrap"></div>
     </div>
-    <!-- Comparison panel: Zoho vs ABR (left 40%) + Dates/booking panel (right 60%) -->
-    <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;display:grid;grid-template-columns:2fr 3fr;gap:10px">
-      <!-- Left: Zoho vs ABR comparison table -->
+    <!-- Comparison panel: vertical stack — Zoho/ABR table, then dates, then booking list -->
+    <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;display:flex;flex-direction:column;gap:8px">
+      <!-- Zoho vs ABR comparison table (full width) -->
       <div style="border:1px solid rgba(255,255,255,0.1);border-radius:6px;overflow:hidden;font-size:11px">
         <table id="rv-comparison-table" style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:rgba(255,255,255,0.06)">
-              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8BAAC0;width:22%">Field</th>
-              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#60A5FA;border-left:1px solid rgba(255,255,255,0.07);width:39%"
+              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8BAAC0;width:16%">Field</th>
+              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#60A5FA;border-left:1px solid rgba(255,255,255,0.07);width:42%"
                 title="Data from your Zoho CRM contractor record">🔵 Zoho</th>
-              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#34D399;border-left:1px solid rgba(255,255,255,0.07);width:39%"
-                title="Live data from the Australian Business Register">🟢 ABR</th>
+              <th style="padding:5px 9px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#34D399;border-left:1px solid rgba(255,255,255,0.07);width:42%"
+                title="Live data from the Australian Business Register">🟢 ABR
+                <button onclick="reviewRunABR()" tabindex="-1"
+                  title="Pull live ABR data for this ABN without opening a new tab"
+                  style="margin-left:6px;background:rgba(52,211,153,0.15);color:#34D399;border:1px solid rgba(52,211,153,0.35);border-radius:4px;padding:1px 7px;font-size:9px;font-weight:600;cursor:pointer;text-transform:none;letter-spacing:0;vertical-align:middle">↻ Pull</button>
+              </th>
             </tr>
           </thead>
           <tbody id="rv-comparison-tbody">
@@ -805,12 +809,11 @@
             </tr>
           </tbody>
         </table>
-        <!-- Hidden legacy targets kept for backward compat with JS that writes to them -->
         <div id="rv-zoho-content" style="display:none"></div>
         <div id="rv-abr-content"  style="display:none"></div>
       </div>
-      <!-- Right: Dates + Booking link -->
-      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px 12px;display:flex;flex-direction:column;gap:8px">
+      <!-- Dates row -->
+      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px 12px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div>
             <div style="color:#8BAAC0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Invoice Date</div>
@@ -820,28 +823,38 @@
           </div>
           <div>
             <div style="color:#8BAAC0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px"
-              title="The date of the actual performance or event">Perf. Date</div>
+              title="The date of the actual performance or event — auto-filled from selected Zoho booking">Perf. Date <span style="color:#4ADE80;font-size:8px;font-weight:500">(auto from booking)</span></div>
             <input type="date" id="rv-perfdate" tabindex="6"
               onchange="updatePerfDateDOW()"
               onclick="try{this.showPicker()}catch(e){}"
               style="font-size:11px;padding:4px 7px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
           </div>
         </div>
-        <div id="rv-perfdate-dow" style="font-size:11px;color:#4ADE80;font-weight:500;min-height:16px"></div>
-        <div id="rv-booking-link" style="font-size:11px;overflow:hidden"></div>
+        <div id="rv-perfdate-dow" style="font-size:11px;color:#4ADE80;font-weight:500;margin-top:4px;min-height:16px"></div>
+      </div>
+      <!-- Booking link / matching section -->
+      <div id="rv-booking-link" style="font-size:11px;overflow:hidden"></div>
+      <!-- PDF upload widget (shown when no PDF loaded) -->
+      <div id="rv-pdf-upload-widget" style="display:none;background:rgba(255,255,255,0.04);border:1px dashed rgba(255,255,255,0.2);border-radius:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+        <span style="color:#8BAAC0;font-size:11px">📄 No PDF loaded —</span>
+        <label style="cursor:pointer;color:#60A5FA;font-size:11px;font-weight:600;text-decoration:underline">
+          Upload PDF
+          <input type="file" accept="application/pdf" style="display:none" onchange="rvLoadLocalPDF(this)">
+        </label>
+        <span style="color:#555;font-size:11px">to view alongside the form</span>
       </div>
     </div>
   </div>
   </div><!-- /inner fields div -->
   </div><!-- /left panel -->
   <!-- ── RIGHT: PDF viewer (remaining width, full height) ── -->
-  <div style="flex:1;height:100%;display:flex;flex-direction:column;background:#525659;min-width:0">
-    <div id="rv-no-pdf-msg" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;background:#1a2d44;color:#8BAAC0;gap:10px;padding:20px;text-align:center">
+  <div style="flex:1;position:relative;background:#525659;min-width:0;overflow:hidden">
+    <div id="rv-no-pdf-msg" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;background:#1a2d44;color:#8BAAC0;gap:10px;padding:20px;text-align:center;z-index:1">
       <div style="font-size:48px;opacity:.4">📄</div>
       <div style="font-size:14px;font-weight:600;color:#93c5fd">Enter invoice details on the left</div>
-      <div style="font-size:12px;max-width:340px;line-height:1.6">This PDF could not be read automatically. Fill in the fields on the left (contractor, invoice #, date, total, ABN) while referring to your physical or digital copy of the invoice.</div>
+      <div style="font-size:12px;max-width:340px;line-height:1.6">This PDF could not be read automatically. Fill in the fields on the left while referring to your physical copy, or use the Upload PDF button below the fields.</div>
     </div>
-    <iframe id="rv-pdf-frame" src="" style="flex:1;border:none;width:100%;height:100%;background:#525659"></iframe>
+    <iframe id="rv-pdf-frame" src="" style="position:absolute;inset:0;width:100%;height:100%;border:none;background:#525659"></iframe>
   </div><!-- /right panel -->
 </div>
 
@@ -2374,14 +2387,17 @@ function openReviewModal(id) {
 
   // Load PDF — or show placeholder for manual-entry rows
   const noPdfMsg = document.getElementById('rv-no-pdf-msg');
+  const uploadWidget = document.getElementById('rv-pdf-upload-widget');
   if (url) {
     g('rv-pdf-frame').style.display = '';
     g('rv-pdf-frame').src = url + '#navpanes=0&zoom=page-width';
     if (noPdfMsg) noPdfMsg.style.display = 'none';
+    if (uploadWidget) uploadWidget.style.display = 'none';
   } else {
     g('rv-pdf-frame').style.display = 'none';
     g('rv-pdf-frame').src = '';
     if (noPdfMsg) noPdfMsg.style.display = 'flex';
+    if (uploadWidget) uploadWidget.style.display = 'flex';
   }
 
   // Show modal
@@ -2406,6 +2422,55 @@ function updatePerfDateDOW() {
   } catch(e) { lbl.textContent = ''; }
 }
 
+// ── Load a locally-selected PDF into the review modal viewer ──
+function rvLoadLocalPDF(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const frame = document.getElementById('rv-pdf-frame');
+  const noPdfMsg = document.getElementById('rv-no-pdf-msg');
+  const uploadWidget = document.getElementById('rv-pdf-upload-widget');
+  if (frame) { frame.src = url + '#navpanes=0&zoom=page-width'; frame.style.display = ''; }
+  if (noPdfMsg) noPdfMsg.style.display = 'none';
+  if (uploadWidget) uploadWidget.style.display = 'none';
+  // Also store for this row so it persists if modal re-opened
+  if (reviewModalRowId) invoiceFileData['id_' + reviewModalRowId] = url;
+}
+
+// ── Validation check before Confirm ──
+function rvValidateBeforeConfirm() {
+  const missing = [];
+  const name  = (document.getElementById('rv-name')?.value  || '').trim();
+  const inv   = (document.getElementById('rv-inv')?.value   || '').trim();
+  const total = (document.getElementById('rv-total')?.value || '').trim();
+  const perf  = (document.getElementById('rv-perfdate')?.value || '').trim();
+  const abn   = (document.getElementById('rv-abn')?.value   || '').replace(/\s/g,'');
+  if (!name)  missing.push('Contractor name');
+  if (!inv)   missing.push('Invoice number');
+  if (!perf)  missing.push('Performance date');
+  if (!total) missing.push('Invoice total');
+  if (!abn || abn.length !== 11) missing.push('ABN (11 digits)');
+  if (!missing.length) return true; // all good
+  // Build a simple inline modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#1B2A4A;border:1px solid #2A3E5C;border-radius:10px;padding:24px 28px;max-width:380px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.5)">
+      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:12px">⚠ Missing fields</div>
+      <div style="font-size:12px;color:#ddd;margin-bottom:14px">The following fields are empty. The invoice can still be confirmed, but processing may be incomplete:</div>
+      <ul style="margin:0 0 16px 16px;padding:0;font-size:12px;color:#FC8181;line-height:1.8">${missing.map(m=>`<li>${m}</li>`).join('')}</ul>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="rv-val-cancel" style="background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">Go back</button>
+        <button id="rv-val-ok" style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Confirm anyway</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  return new Promise(resolve => {
+    overlay.querySelector('#rv-val-cancel').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.querySelector('#rv-val-ok').onclick    = () => { overlay.remove(); resolve(true); };
+  });
+}
+
 function closeReviewModal() {
   const modal = document.getElementById('review-modal');
   if (modal) modal.style.display = 'none';
@@ -2417,7 +2482,7 @@ function closeReviewModal() {
   reviewModalRowId = null;
 }
 
-function reviewConfirmAndNext() {
+async function reviewConfirmAndNext() {
   // Collect all reviewable row IDs in DOM order (pdf + ap + manual rows)
   const allRows = [
     ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
@@ -2426,6 +2491,10 @@ function reviewConfirmAndNext() {
   ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
 
   const currentId = reviewModalRowId;
+
+  // Validate before saving
+  const ok = await rvValidateBeforeConfirm();
+  if (!ok) return;
 
   // Save & close current invoice (this sets reviewedRows and nulls reviewModalRowId)
   reviewLooksGood();
@@ -2761,10 +2830,21 @@ async function reviewRunABR() {
   }
 }
 
-// Called whenever a booking checkbox is toggled — updates total bar
+// Called whenever a booking checkbox is toggled — updates total bar + auto-fills perf date
 function rvBookingSelectionChanged() {
   const allCbs = document.querySelectorAll('.rv-booking-cb');
   const checked = Array.from(allCbs).filter(cb => cb.checked);
+
+  // Auto-fill performance date from the FIRST checked booking's event date
+  // Only auto-fills if perf date is currently empty, or if there's exactly one checked booking
+  const perfEl = document.getElementById('rv-perfdate');
+  if (perfEl && checked.length >= 1) {
+    const firstDate = checked[0].dataset.date || '';
+    if (firstDate && (!perfEl.value || checked.length === 1)) {
+      perfEl.value = firstDate;
+      updatePerfDateDOW();
+    }
+  }
   const bar = document.getElementById('rv-booking-total-bar');
   if (!bar) return;
 
@@ -3560,8 +3640,15 @@ function updateSuperToggleUI() {
 // ══════════════════════════════════════════════════════════════════════════════
 // Export: Xero Bills CSV
 // ══════════════════════════════════════════════════════════════════════════════
+// Build a Xero reference string: first two initials of name + "-" + invoice number
+// e.g. "Kim Calapardo" + "INV001" → "KC-INV001"
+function xeroReference(name, invNum) {
+  const initials = (name || '').trim().split(/\s+/).slice(0,2).map(w => w[0]?.toUpperCase() || '').join('');
+  return invNum ? `${initials}-${invNum}` : initials;
+}
+
 function exportXeroCSV() {
-  const rows = [['ContactName','InvoiceNumber','InvoiceDate','DueDate',
+  const rows = [['ContactName','InvoiceNumber','Reference','InvoiceDate','DueDate',
                   'Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount']];
 
   // ── Event contractor invoices (with super logic) ─────────────────────────────
@@ -3578,7 +3665,8 @@ function exportXeroCSV() {
     // Line 1 — performance fee (service fee only; travel stays in its own line below)
     const grossAmt = (a.unitAmount + a.super).toFixed(2); // = serviceFee (passed to calculateAmounts)
     const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
-    rows.push([c.name, invNum, dateXero, dateXero, feeDesc, 1, grossAmt, acctCode, taxType, a.taxAmount > 0 ? a.taxAmount.toFixed(2) : '']);
+    const ref = xeroReference(c.name, p.invoiceNumber);
+    rows.push([c.name, invNum, ref, dateXero, dateXero, feeDesc, 1, grossAmt, acctCode, taxType, a.taxAmount > 0 ? a.taxAmount.toFixed(2) : '']);
 
     // Line 2 — super deduction (negative line on same bill)
     // Super is withheld on service + travel (time-based payments), NOT on parking/accommodation
@@ -3590,7 +3678,7 @@ function exportXeroCSV() {
       if (superAmt > 0) {
         const travelNote = (p.expenses?.travel || 0) > 0 ? ' (incl. travel)' : '';
         const superDesc = `SGC Super - ${c.name} | Inv: ${invNum} | $${superAmt.toFixed(2)} withheld${travelNote}`;
-        rows.push([c.name, invNum, '', '', superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded', '']);
+        rows.push([c.name, invNum, ref, '', '', superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded', '']);
       }
     }
 
@@ -3608,7 +3696,7 @@ function exportXeroCSV() {
         const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
         const taxAmt   = isGSTContractor ? (x.amount - exGSTAmt) : 0;
         const expDesc  = `${x.label} - ${c.name} | Inv: ${invNum}`;
-        rows.push([c.name, invNum, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType, taxAmt > 0 ? taxAmt.toFixed(2) : '']);
+        rows.push([c.name, invNum, ref, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType, taxAmt > 0 ? taxAmt.toFixed(2) : '']);
       });
     }
   });
@@ -3626,7 +3714,8 @@ function exportXeroCSV() {
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
     const apTax = p.hasGST ? (p.total - p.total / 1.1).toFixed(2) : '';
-    rows.push([supplierName, invNum, dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType, apTax]);
+    const apRef = xeroReference(supplierName, p.invoiceNumber);
+    rows.push([supplierName, invNum, apRef, dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType, apTax]);
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_${today()}.csv`);
