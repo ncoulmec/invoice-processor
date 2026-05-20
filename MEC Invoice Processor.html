@@ -1745,13 +1745,22 @@ function parseInvoiceText(text, filename) {
   // +61 4XX XXX XXX (mobile) → 614XXXXXXXX; +61 3XX XXXX XXXX (Vic landline) → 613XXXXXXXX
   const isPhoneABN = (n) => /^61[2-9]\d{8}$/.test(n);
 
+  // The contractor is the SENDER. Skip any ABN that belongs to MEC (the recipient) — it
+  // typically appears right after the bill-to party, e.g. "To: Melbourne Entertainment
+  // Company ABN: 45 627 873 644". We treat an ABN as MEC's if MEC appears in the ~60 chars
+  // before it. (Different contractors write different/incorrect MEC ABNs, so a context check
+  // is more reliable than a hard-coded number.)
+  const isRecipientABN = (idx) => MEC_RE.test(text.slice(Math.max(0, idx - 60), idx));
+
   let abn = '';
   // Strategy 1: explicitly labelled "ABN: NNN" or "ABN - NNN" (most reliable)
   // Allow dash separator: "ABN - 92 386 967 408"
-  const abnTagged = text.match(/\bABN\b[:\-\s]+(\d[\d\s]{9,14}\d)/i);
-  if (abnTagged) {
-    const candidate = abnTagged[1].replace(/\s/g,'');
-    if (candidate.length === 11 && !isPhoneABN(candidate)) abn = candidate;
+  for (const m of text.matchAll(/\bABN\b[:\-\s]+(\d[\d\s]{9,14}\d)/gi)) {
+    const candidate = m[1].replace(/\s/g,'');
+    if (candidate.length !== 11 || isPhoneABN(candidate)) continue;
+    if (isRecipientABN(m.index)) continue;   // MEC's ABN, not the contractor's
+    abn = candidate;
+    break;
   }
   // Strategy 2: space-formatted ABN "XX XXX XXX XXX" — but not near phone/mobile keywords
   if (!abn) {
@@ -1761,6 +1770,7 @@ function parseInvoiceText(text, filename) {
       const before = text.slice(Math.max(0, m.index - 50), m.index);
       if (/phone|mobile|mob|tel|fax|\+61/i.test(before)) continue;
       if (isPhoneABN(candidate)) continue;
+      if (isRecipientABN(m.index)) continue;   // MEC's ABN, not the contractor's
       abn = candidate;
       break;
     }
@@ -1769,6 +1779,7 @@ function parseInvoiceText(text, filename) {
   // Handles columnar layouts like "ABN  MEC  Emily Lawson  96471761158"
   if (!abn) {
     for (const m of text.matchAll(/\bABN\b/gi)) {
+      if (isRecipientABN(m.index)) continue;   // MEC's ABN, not the contractor's
       const window = text.slice(m.index, m.index + 200);
       // Try compact 11-digit run
       const compact = window.replace(/\s/g,'').match(/ABN[-:]?(\d{11})/i);
@@ -1796,15 +1807,23 @@ function parseInvoiceText(text, filename) {
     if (forM && !MEC_RE.test(forM[1])) name = forM[1].trim();
   }
 
+  // Declared at function scope so Strategy A3 (below) can reference them even when the
+  // block that populates them doesn't run. (Previously block-scoped here, which threw
+  // "billIdx is not defined" in A3 whenever all earlier name strategies failed — aborting
+  // the entire parse and leaving the row blank with no extracted text.)
+  let billIdx = -1;
+  let sender = '';
+  // STRAT_A_REJECT is used by both Strategy A (in this block) and Strategy A3 (later, outside
+  // this block), so it must live at function scope too.
+  const STRAT_A_REJECT = /^(Tax|Invoice|Receipt|Payment|Statement|Amount|Enclosed|Remittance|Description|Quantity|Service|Booking)/i;
   if (!name) {
     // Find sender section = text before "Bill To:", "BILL TO", "Attention:", "To:" etc.
-    const billIdx = text.search(/\b(?:Bill\s+[Tt]o|Bill\s*:|Attention\s*:|Issued\s+[Tt]o|Pay(?:able)?\s+[Tt]o\s*:(?!\s*\d))\b/i);
-    let sender = billIdx > 0 ? text.slice(0, billIdx).trim() : text.slice(0, 400);
+    billIdx = text.search(/\b(?:Bill\s+[Tt]o|Bill\s*:|Attention\s*:|Issued\s+[Tt]o|Pay(?:able)?\s+[Tt]o\s*:(?!\s*\d))\b/i);
+    sender = billIdx > 0 ? text.slice(0, billIdx).trim() : text.slice(0, 400);
     // Strip "To: ..." recipient prefix if it leads the sender block
     sender = sender.replace(/^\s*To\s*:.*/, '').trim();
 
     // Strategy A: proper-case name right at start of sender section (handles "Cormack-Brown")
-    const STRAT_A_REJECT = /^(Tax|Invoice|Receipt|Payment|Statement|Amount|Enclosed|Remittance|Description|Quantity|Service|Booking)/i;
     const nameA = sender.match(/^([A-Z][a-z]+(?:[-][A-Z][a-z]+)?(?:\s+[A-Z][a-z]+(?:[-][A-Z][a-z]+)?){1,3})/);
     if (nameA && !MEC_RE.test(nameA[1]) && !STRAT_A_REJECT.test(nameA[1])) name = nameA[1];
 
@@ -1974,7 +1993,14 @@ function parseInvoiceText(text, filename) {
         && /[A-Za-z]/.test(tokens[0]) && /\d/.test(tokens[0]) && tokens[0].length >= 4) {
       stripped = tokens[tokens.length - 1];
     } else {
-      stripped = raw.replace(/\s+/g, '');
+      // Take the leading token, then merge only PURE-DIGIT continuations (handles PDF-split
+      // numbers like "0 10" → "010"). Stop at the first token containing a letter — that's the
+      // next field bleeding in (e.g. "011 Issue date" → "011", "INV-9140620 Invoice" → "INV-9140620").
+      const parts = [tokens[0]];
+      for (let k = 1; k < tokens.length; k++) {
+        if (/^\d+$/.test(tokens[k])) parts.push(tokens[k]); else break;
+      }
+      stripped = parts.join('');
     }
     if (!/^(date|due|to|from|for|of|the|is|a|an|and)\b/i.test(stripped)) invoiceNumber = stripped;
   }
