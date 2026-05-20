@@ -18,7 +18,8 @@
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
     <span id="hdr-status" style="font-size:11px;opacity:.55;"></span>
-    <button onclick="toggleDataPanel()" title="Refresh contractor or bookings data" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Refresh data</button>
+    <button id="zoho-refresh-btn" onclick="refreshFromZoho()" title="Pull the latest bookings + contractors live from Zoho (Confirmed · −6/+2 months · still-unpaid only). Do this at the start of each pay run." style="font-size:11px;background:#27AE60;border:1px solid #27AE60;color:#fff;padding:4px 11px;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 Refresh from Zoho</button>
+    <button onclick="toggleDataPanel()" title="Manually load a contractor or bookings JSON file" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Manual data</button>
     <button onclick="toggleSettingsPanel()" title="Settings" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">⚙ Settings</button>
   </div>
 </div>
@@ -57,6 +58,17 @@
       </span>
     </div>
     <div style="font-size:11px;color:#888;margin-top:6px;">The GUID authenticates ABN lookups via the Australian Business Register API. Pre-configured for MEC — only needs updating if access is revoked.</div>
+
+    <div style="border-top:1px solid #E0E7EE;margin-top:14px;padding-top:14px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;">🔄 Zoho Refresh URL</span>
+        <input type="text" id="zoho-proxy-url" placeholder="https://script.google.com/macros/s/…/exec?key=…"
+               style="flex:1;min-width:340px;font-size:13px;"
+               oninput="localStorage.setItem('zohoProxyUrl', this.value.trim())"
+               title="The Apps Script / proxy deploy URL that returns fresh bookings + contractors from Zoho">
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:6px;">Paste the deploy URL of your Zoho refresh proxy. The header <strong>🔄 Refresh from Zoho</strong> button uses it to pull live, scoped bookings (Confirmed · −6/+2 months · still-unpaid only) plus the full contractor list — no file uploads.</div>
+    </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════

@@ -204,9 +204,49 @@ function initEmbeddedData() {
   bookings = EMBEDDED_BOOKINGS;
 
   // Update header status
-  const d = EMBEDDED_CONTRACTORS_META.generated.slice(0,10);
+  const d = (EMBEDDED_CONTRACTORS_META.generated || '').slice(0,16) || '—';
   document.getElementById('hdr-status').textContent =
-    `${contractors.length} contractors · ${bookings.length} bookings — refreshed ${d}`;
+    `${contractors.length} contractors · ${bookings.length} bookings — ${d}`;
+
+  // Restore the saved Zoho proxy URL into the Settings field (no default — must be pasted once)
+  const zp = document.getElementById('zoho-proxy-url');
+  if (zp) zp.value = localStorage.getItem('zohoProxyUrl') || '';
+}
+
+// ── Live "Refresh from Zoho" — calls the proxy (Apps Script) which holds the Zoho login,
+//    runs the scoped query, and returns { generated, contractors:[...], bookings:[...] }.
+//    Loads the result in memory for this session (no file upload, no commit needed). ──
+async function refreshFromZoho() {
+  const url = (localStorage.getItem('zohoProxyUrl') || '').trim();
+  if (!url) {
+    alert('No Zoho refresh URL is set yet.\n\nOpen ⚙ Settings and paste your Zoho proxy URL, then try again.');
+    if (typeof toggleSettingsPanel === 'function') toggleSettingsPanel();
+    return;
+  }
+  const btn = document.getElementById('zoho-refresh-btn');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Pulling…'; }
+  try {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error('Proxy returned HTTP ' + res.status);
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    const contr = Array.isArray(data.contractors) ? data.contractors : null;
+    const book  = Array.isArray(data.bookings)    ? data.bookings    : null;
+    if (!contr || !book) throw new Error('Unexpected response — expected { contractors:[…], bookings:[…] }');
+    const stamp = data.generated || new Date().toISOString().slice(0,16).replace('T',' ');
+    EMBEDDED_CONTRACTORS = contr;
+    EMBEDDED_CONTRACTORS_META = { generated: stamp, recordCount: contr.length };
+    EMBEDDED_BOOKINGS = book;
+    EMBEDDED_BOOKINGS_META = { generated: stamp, recordCount: book.length };
+    initEmbeddedData();
+    alert(`✓ Refreshed live from Zoho\n\n${contractors.length} contractors · ${bookings.length} bookings\n(Confirmed · −6/+2 months · still-unpaid only)\n\nas of ${stamp}`);
+  } catch (e) {
+    console.error('Zoho refresh failed', e);
+    alert('Zoho refresh failed:\n' + e.message + '\n\nCheck the URL in ⚙ Settings, and that the proxy is deployed and authorised.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
 }
 
 document.addEventListener('keydown', e => {
@@ -2356,19 +2396,25 @@ function updateReviewStatus() {
         // Auto-select: restore stored, or default to closest 1 booking if nothing stored
         const autoSelect = id => storedSel ? storedIds.has(id) : false;
 
-        const rows = cbList.slice(0, 20).map((m, idx) => {
+        // Split into UNPAID (select to pay) and ALREADY-PAID (history, for double-pay checks).
+        // Each list keeps the date-proximity order from getContractorBookings.
+        const unpaidList = cbList.filter(m => !m.entertainer.paid);
+        const paidList   = cbList.filter(m =>  m.entertainer.paid);
+        let autoDefaultDone = false;   // default-check the closest UNPAID booking only
+        const renderRow = (m) => {
           const url = `https://crm.zoho.com/crm/org657079535/tab/Potentials/${m.booking.id}`;
           const evtDate = m.booking.eventDate
-            ? new Date(m.booking.eventDate+'T12:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})
+            ? new Date(m.booking.eventDate+'T12:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short',year:'2-digit'})
             : '—';
           const daysLabel = m.daysDiff < 9999 ? `${Math.round(m.daysDiff)}d` : '';
           const paidDot = m.entertainer.paid
             ? '<span style="color:#FC8181;font-weight:700" title="Already paid in Zoho">●</span>'
             : '<span style="color:#4ADE80;font-weight:700" title="Not yet marked paid in Zoho">●</span>';
           const cost = m.entertainer.cost != null ? `$${m.entertainer.cost.toLocaleString()}` : '—';
-          const isChecked = autoSelect(m.booking.id) || (!storedSel && idx === 0);
+          let isChecked = autoSelect(m.booking.id);
+          if (!storedSel && !autoDefaultDone && !m.entertainer.paid) { isChecked = true; autoDefaultDone = true; }
           const cbId = 'rvcb-' + m.booking.id;
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);${m.entertainer.paid?'opacity:0.75':''}">
             <td style="padding:3px 4px;width:22px;vertical-align:middle">
               <input type="checkbox" class="rv-booking-cb" id="${cbId}"
                 onchange="rvBookingSelectionChanged()"
@@ -2380,19 +2426,40 @@ function updateReviewStatus() {
                 ${isChecked ? 'checked' : ''}
                 style="accent-color:#4ADE80;cursor:pointer;width:13px;height:13px">
             </td>
-            <td style="padding:3px 4px;white-space:nowrap">${paidDot}</td>
+            <td style="padding:3px 4px;white-space:nowrap;text-align:center">${paidDot}</td>
             <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0">${evtDate}</td>
             <td style="padding:3px 4px;font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
               <a href="${url}" target="_blank" style="color:#93c5fd;text-decoration:none" title="${escHtml(m.booking.bookingName||'')}">${escHtml(m.booking.bookingName||'—')}</a>
             </td>
             <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0;text-align:right">${cost}</td>
-            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0">${daysLabel}</td>
+            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0;text-align:right">${daysLabel}</td>
           </tr>`;
-        }).join('');
-        const remaining = cbList.length > 20 ? `<div style="font-size:10px;color:#8BAAC0;padding:3px 5px">+ ${cbList.length-20} more — see Pay Entertainer view</div>` : '';
-        const legend = '<div style="font-size:9px;color:#8BAAC0;margin-bottom:3px;display:flex;gap:8px"><span>☑ select booking(s) this invoice covers</span><span style="margin-left:4px"><span style="color:#FC8181">●</span> paid</span><span><span style="color:#4ADE80">●</span> unpaid</span></div>';
+        };
+        const sectionRow = (label, color) =>
+          `<tr><td colspan="6" style="padding:5px 6px;background:rgba(255,255,255,0.05);font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:${color}">${label}</td></tr>`;
+        const thStyle = 'padding:4px 4px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#8BAAC0;border-bottom:1px solid rgba(255,255,255,0.12)';
+        const thead = `<thead><tr>
+            <th style="${thStyle};width:22px"></th>
+            <th style="${thStyle};text-align:center">Paid?</th>
+            <th style="${thStyle};text-align:left">Event date</th>
+            <th style="${thStyle};text-align:left">Booking</th>
+            <th style="${thStyle};text-align:right">Cost</th>
+            <th style="${thStyle};text-align:right">Near</th>
+          </tr></thead>`;
+        let body = '';
+        if (unpaidList.length)
+          body += sectionRow('🟢 Unpaid — select the booking(s) this invoice covers', '#86EFAC')
+                + unpaidList.slice(0,15).map(renderRow).join('');
+        if (paidList.length)
+          body += sectionRow('🔴 Already paid (history — watch for double-invoicing)', '#FCA5A5')
+                + paidList.slice(0,8).map(renderRow).join('');
+        if (!body) body = '<tr><td colspan="6" style="padding:6px;color:#8BAAC0;font-size:10px">No bookings found.</td></tr>';
+        const extraUnpaid = Math.max(0, unpaidList.length - 15);
+        const extraPaid   = Math.max(0, paidList.length - 8);
+        const remaining = (extraUnpaid || extraPaid)
+          ? `<div style="font-size:10px;color:#8BAAC0;padding:3px 5px">${extraUnpaid?`+ ${extraUnpaid} more unpaid `:''}${extraPaid?`· ${extraPaid} more paid`:''} — see Pay Entertainer view</div>` : '';
         const totalBar = `<div id="rv-booking-total-bar" style="display:flex;align-items:center;gap:6px;padding:4px 7px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;margin-top:3px;flex-wrap:wrap"></div>`;
-        html = `${legend}<div style="overflow-y:auto;max-height:260px;border:1px solid rgba(255,255,255,0.1);border-radius:5px;background:rgba(0,0,0,0.2)"><table style="width:100%;border-collapse:collapse">${rows}</table></div>${remaining}${totalBar}`;
+        html = `<div style="overflow-y:auto;max-height:260px;border:1px solid rgba(255,255,255,0.1);border-radius:5px;background:rgba(0,0,0,0.2)"><table style="width:100%;border-collapse:collapse">${thead}<tbody>${body}</tbody></table></div>${remaining}${totalBar}`;
       } else {
         // Matched contractor but no bookings in cache window
         html = `<div style="font-size:11px;color:#8BAAC0">No bookings in cache (cache covers ~12 months). Check Zoho directly.</div>`;
@@ -3394,6 +3461,9 @@ function buildResultsView() {
   // Cash to performer = total when super isn't withheld for this row, else total − super.
   const cashFor = p => (!showsSuper(p) && (p.amounts?.super||0) > 0) ? (p.total||0) : (p.amounts?.cash||0);
   const totalCash = matched.reduce((s,p) => s + cashFor(p), 0);
+  // Column totals for the Stage 2 footer row.
+  const totalInvoice = matched.reduce((s,p) => s + (p.total||0), 0);
+  const totalGstCredit = matched.reduce((s,p) => s + (p.amounts?.gst||0), 0);
 
   // Stats
   document.getElementById('summary-stats').innerHTML = `
@@ -3550,8 +3620,13 @@ function buildResultsView() {
                  style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning</span>`)
         : '';
       const showSuperCell = showsSuper(p);
+      // Clickable name → re-open the Review modal for a final sense-check (cross-check the PDF
+      // + fields) without going back to Enter Invoice Data.
+      const nameCell = p.rowId
+        ? `<strong><a onclick="openReviewModal('${p.rowId}')" title="Open the Review screen to cross-check this invoice" style="color:var(--navy);cursor:pointer;text-decoration:underline;text-decoration-style:dotted">${escHtml(displayName)}</a></strong>`
+        : `<strong>${escHtml(displayName)}</strong>`;
       return `<tr>
-        <td><strong>${escHtml(displayName)}</strong>${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
+        <td>${nameCell}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
         <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
@@ -3570,7 +3645,17 @@ function buildResultsView() {
         </td>
       </tr>`;
     }
-  }).join('');
+  }).join('')
+  // TOTALS footer row — sums across matched contractor rows.
+  + (matched.length ? `<tr style="background:#F1F5F9;border-top:2px solid #CBD5E0;font-weight:700">
+      <td style="color:var(--navy)">TOTALS <span style="font-weight:400;color:#888;font-size:11px">(${matched.length} to pay)</span></td>
+      <td></td><td></td><td></td>
+      <td>$${fmt(totalInvoice)}</td>
+      <td style="color:var(--navy)">$${fmt(totalCash)}</td>
+      <td style="color:var(--green)">$${fmt(totalSuper)}</td>
+      <td></td>
+      <td>${totalGstCredit > 0 ? '$'+fmt(totalGstCredit) : '—'}</td>
+    </tr>` : '');
 
   // Export counts — exclude already-paid rows
   const xeroMatched = matched.filter(p => !p.alreadyPaid);
