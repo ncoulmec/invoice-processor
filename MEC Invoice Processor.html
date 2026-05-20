@@ -591,20 +591,30 @@
 
     <div class="export-grid">
       <div class="export-card">
-        <h3>📊 Xero Bills Import CSV</h3>
-        <p>Cash payment bills only — one row per contractor engagement. Import directly into Xero via
-           <strong>Accounting → Purchases → Import</strong>. Each bill is coded to the correct
-           expense account (301-A/B/C/D) with the correct GST treatment.</p>
+        <h3>📊 Xero Bills — Contractor</h3>
+        <p><strong>Bill 1.</strong> One bill per contractor engagement, paid <strong>net</strong> (invoice
+           total minus super). The super amount is noted on the first line; there is no separate super
+           line for non-GST contractors. Import via <strong>Accounting → Purchases → Import</strong> and
+           pay in the normal ABA batch.</p>
         <div id="xero-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Download Xero Bills CSV</button>
+        <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Download Contractor Bills CSV</button>
       </div>
       <div class="export-card">
-        <h3>🏦 Super Clearing House CSV</h3>
-        <p>SuperStream contribution data for super-eligible contractors only. Upload to
-           <strong>Hostplus QuickSuper</strong> or <strong>HeroClear</strong> employer portal.
-           Pay via BPAY — clearing house submits to each fund via SuperStream.</p>
+        <h3>🧾 Xero Bills — Super</h3>
+        <p><strong>Bill 2.</strong> One bill per super-eligible invoice, billed to the
+           <strong>clearing-house supplier</strong>, single description line, coded to
+           <strong>478-C</strong> (BAS Excluded). Import alongside the contractor bills but
+           <strong>pay as a separate ABA batch</strong>.</p>
+        <div id="super-bills-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Download Super Bills CSV</button>
+      </div>
+      <div class="export-card">
+        <h3>🏦 Clearing House CSV</h3>
+        <p>SuperStream contribution data for the clearing-house portal — performer name, super fund,
+           USI, member number and amount. Upload to your clearing house; it submits to each fund via
+           SuperStream.</p>
         <div id="super-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-green" onclick="exportSuperCSV()">⬇ Download Super CSV</button>
+        <button class="btn btn-green" onclick="exportSuperCSV()">⬇ Download Clearing House CSV</button>
       </div>
     </div>
 
@@ -922,6 +932,17 @@ const TAX_TYPES = {
   C: 'GST Free Expenses',
   D: 'Tax on Purchases',
 };
+
+// ── Two-bill super workflow (accountant-agreed, May 2026) ──────────────────────
+// Bill 1 = contractor (paid net). Bill 2 = super, billed to the clearing house and
+// paid as a separate ABA batch. Super is expensed above the line on account 478-C.
+// For GST-registered contractors (Type B/D) a matching BAS-excluded withholding line
+// on Bill 1 offsets 478-C so the GST credit stays on the full fee. The old liability
+// account 826-C is retired from this flow (the liability sits in AP/800 automatically).
+// CLEARINGHOUSE_NAME is the Xero supplier + the name shown in the contractor's super note.
+// Update it once a clearing-house provider is chosen (see TODO.md, item 11).
+const CLEARINGHOUSE_NAME = 'Contractor Super Clearinghouse';
+const SUPER_ACCOUNT = '478-C';
 
 const TYPE_LABELS = {
   A: 'No GST · Super ✓',
@@ -1983,9 +2004,14 @@ function parseInvoiceText(text, filename) {
   }
   // Fallback: "Reference No. 082" / "Reference Number: 082" / "Reference No\n082"
   // Allow space, period, colon or newline as separator (e.g. "Reference No. 082")
+  // Skip booking-reference-style codes like "KC-246" (2-3 caps + hyphen + 2-4 digits) —
+  // these are MEC's internal payment references written onto contractor invoices, not invoice numbers.
   if (!invoiceNumber) {
     const refM = text.match(/Reference\s+(?:No\.?|Number|#)\s*[\s:.\r\n]+([A-Za-z0-9][\w\-]{0,20})/i);
-    if (refM) invoiceNumber = refM[1].trim();
+    if (refM) {
+      const refVal = refM[1].trim();
+      if (!/^[A-Z]{2,3}-\d{2,4}$/i.test(refVal)) invoiceNumber = refVal;
+    }
   }
   // Fallback: "Inv: 2026011" — short "Inv:" prefix without qualifier word
   if (!invoiceNumber) {
@@ -3460,6 +3486,13 @@ function processInvoices() {
       matchSource = 'abr';
     }
 
+    // GST override: invoice is the legal document — if it charges GST, use the GST-inclusive type
+    // regardless of what Zoho says. The gstMismatch flag still alerts the user to investigate.
+    // A (no GST, super) → B (GST, super) | C (no GST, no super) → D (GST, no super)
+    if (type !== 'UNKNOWN' && row.hasGST && contractor && !contractor.gst) {
+      type = type === 'A' ? 'B' : type === 'C' ? 'D' : type;
+    }
+
     const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type) : null;
 
     // GST mismatch: invoice charges GST but Zoho says contractor is not GST-registered
@@ -3897,18 +3930,22 @@ function buildResultsView() {
     `${xeroCount} bill${xeroCount!==1?'s':''} (${xeroMatched.length} contractor + ${xeroAP.length} AP supplier)${paidNote}`;
   document.getElementById('super-preview-count').textContent =
     `${superCount} contribution row${superCount!==1?'s':''} for super-eligible contractors${paidNote}`;
+  const superBillsCount = superExport.filter(p => (p.amounts?.super || 0) > 0).length;
+  const superBillsEl = document.getElementById('super-bills-preview-count');
+  if (superBillsEl) superBillsEl.textContent =
+    `${superBillsCount} super bill${superBillsCount!==1?'s':''} to ${CLEARINGHOUSE_NAME}${paidNote}`;
 
-  // Journal entry
+  // Two-bill model: no manual journal needed — super is expensed via the clearing-house
+  // bill (478-C) and the payable sits in Accounts Payable (800) automatically.
   if (totalSuper > 0) {
     document.getElementById('journal-entry').innerHTML =
-      `<span style="color:#888">// Post this journal in Xero after processing each pay run</span>\n` +
-      `Dr  650-C  Superannuation Expense — Contractors    <strong>$${fmt(totalSuper)}</strong>\n` +
-      `  Cr  826-C  Superannuation Payable — Contractors              <strong>$${fmt(totalSuper)}</strong>\n` +
-      `<span style="color:#888">// Clear when clearing house BPAY processes:\n` +
-      `// Dr 826-C  $${fmt(totalSuper)}  Cr Bank  $${fmt(totalSuper)}</span>`;
+      `<span style="color:#888">// Two-bill model — no manual journal required.</span>\n` +
+      `<span style="color:#888">// Bill 1 (contractor): paid NET; super shown as a note on the first line.</span>\n` +
+      `Bill 2 → ${CLEARINGHOUSE_NAME}   <strong>$${fmt(totalSuper)}</strong>  to <strong>${SUPER_ACCOUNT}</strong> (BAS Excluded)\n` +
+      `<span style="color:#888">// Pay the super bills as a SEPARATE ABA batch; on reconciliation they clear against Accounts Payable (800).</span>`;
   } else {
     document.getElementById('journal-entry').textContent =
-      'No super contributions in this pay run — no journal entry required.';
+      'No super contributions in this pay run — no super bill required.';
   }
 }
 
@@ -3986,22 +4023,41 @@ function exportXeroCSV() {
     const acctCode  = ACCOUNT_CODES[p.type];
     const taxType   = TAX_TYPES[p.type];
     const eventRef  = buildEventReference(p); // e.g. "Event(s): 09.05.26"
+    const isGSTContractor = ['B','D'].includes(p.type);
 
-    // Line 1 — performance fee
-    const grossAmt = (a.unitAmount + a.super).toFixed(2);
-    const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
-    rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, grossAmt, acctCode, taxType));
+    // Super withheld for this invoice (on superBase = service fee + travel; never on
+    // parking/accommodation). This is also what Bill 2 (the clearing-house bill) charges.
+    const willWithholdSuper = c.superEligible !== false && superDeductionsEnabled();
+    const superAmt = willWithholdSuper
+      ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
+          ? calculateAmounts(p.superBase, p.type).super
+          : a.super)
+      : 0;
 
-    // Line 2 — super deduction (negative line, skipped if toggle OFF)
-    if (c.superEligible !== false && superDeductionsEnabled()) {
-      const superAmt = p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
-        ? calculateAmounts(p.superBase, p.type).super
-        : a.super;
+    // Two-bill model: Bill 1 pays the contractor NET. The super note goes in the
+    // first-line description (single line — Xero dislikes blank/multi-line text).
+    const superNote = superAmt > 0
+      ? ` | $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to ${CLEARINGHOUSE_NAME} on your behalf`
+      : '';
+    const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
+      .filter(Boolean).join(' | ') + superNote;
+
+    // The full ex-GST service fee (a.unitAmount + a.super == service fee for A, ex-GST fee for B).
+    const grossFee = a.unitAmount + a.super;
+
+    if (isGSTContractor) {
+      // Type B/D — record the FULL fee so Xero claims GST on the whole invoice, then
+      // offset the super with a BAS-excluded withholding line to 478-C (which Bill 2
+      // re-debits, netting 478-C to zero). This keeps the contractor's GST credit intact.
+      rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, grossFee.toFixed(2), acctCode, taxType));
       if (superAmt > 0) {
-        const travelNote = (p.expenses?.travel || 0) > 0 ? ' (incl. travel)' : '';
-        const superDesc = `SGC Super - ${c.name} | Inv: ${invNum} | $${superAmt.toFixed(2)} withheld${travelNote}`;
-        rows.push(mkRow(c.name, invNum, eventRef, dateXero, '', superDesc, 1, (-superAmt).toFixed(2), '826-C', 'BAS Excluded'));
+        const superLineDesc = `Super withheld (12%) - ${c.name} | Inv: ${invNum} | remitted to ${CLEARINGHOUSE_NAME}`;
+        rows.push(mkRow(c.name, invNum, eventRef, dateXero, '', superLineDesc, 1, (-superAmt).toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       }
+    } else {
+      // Type A/C — no GST. Single fee line, net of super; no separate super line on Bill 1.
+      const netFee = (grossFee - superAmt).toFixed(2);
+      rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, netFee, acctCode, taxType));
     }
 
     // Lines 3+ — expense splits (parking / accommodation / travel)
@@ -4036,7 +4092,61 @@ function exportXeroCSV() {
     rows.push(mkRow(supplierName, invNum, '', dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType));
   });
 
-  downloadCSV(rows, `MEC_Xero_Bills_${today()}.csv`);
+  downloadCSV(rows, `MEC_Xero_Bills_Contractor_${today()}.csv`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Export: Xero Super Bills CSV (Bill 2 — billed to the clearing house)
+// ══════════════════════════════════════════════════════════════════════════════
+// One bill per super-eligible contractor invoice, addressed to the clearing-house
+// supplier. Single description line carrying performer / event date(s) / invoice # /
+// invoice total / super % / super $. Coded to 478-C, BAS Excluded. These are paid as a
+// SEPARATE ABA batch from the contractor bills, so they live in their own CSV file.
+function exportSuperBillsCSV() {
+  if (!superDeductionsEnabled()) {
+    alert('Super deductions are currently OFF.\n\nTick "Withhold super deductions" in the export panel to generate the super bills.');
+    return;
+  }
+  const HDR = ['*ContactName','EmailAddress','POAddressLine1','POAddressLine2','POAddressLine3',
+               'POAddressLine4','POCity','PORegion','POPostalCode','POCountry',
+               '*InvoiceNumber','Reference','*InvoiceDate','*DueDate','InventoryItemCode',
+               'Description','*Quantity','*UnitAmount','*AccountCode','*TaxType',
+               'TrackingName1','TrackingOption1','TrackingName2','TrackingOption2','Currency'];
+  const rows = [HDR];
+  const mkRow = (contact, invNum, ref, invDate, dueDate, desc, qty, amount, acctCode, taxType) =>
+    [contact, '', '', '', '', '', '', '', '', '',
+     invNum, ref, invDate, dueDate, /*InventoryItemCode*/ '',
+     desc, qty, amount, acctCode, taxType,
+     '', '', '', '', ''];
+  const todayISO = () => new Date().toISOString().split('T')[0];
+  const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
+
+  processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid
+                     && p.contractor?.superEligible && p.amounts?.super > 0)
+    .forEach(p => {
+      const c = p.contractor;
+      const invNum   = p.invoiceNumber || autoInvNum(p);
+      const dateXero = resolveDate(p);
+      const eventRef = buildEventReference(p); // "Event(s): DD.MM.YY …"
+      const superAmt = (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
+        ? calculateAmounts(p.superBase, p.type).super
+        : p.amounts.super;
+      if (!(superAmt > 0)) return;
+
+      const eventLabel = eventRef || `Event: ${formatDateReadable(p.perfDate || p.date) || dateXero}`;
+      // Single-line detail per accountant (name | events | invoice # | total | super % | super $)
+      const desc = `${c.name} | ${eventLabel} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
+      const ref  = `${eventRef ? eventRef + ' · ' : ''}${c.name}`;
+      // Distinct invoice number so the super bill doesn't collide with the contractor bill in Xero.
+      rows.push(mkRow(CLEARINGHOUSE_NAME, `${invNum}-SUPER`, ref, dateXero, dateXero,
+                      desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
+    });
+
+  if (rows.length === 1) {
+    alert('No super-eligible contractor invoices in this run — no super bills to generate.');
+    return;
+  }
+  downloadCSV(rows, `MEC_Xero_Bills_Super_${today()}.csv`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4210,8 +4320,10 @@ function confirmGSTUpdate() {
 function downloadCSV(rows, filename) {
   const csv = rows.map(row =>
     row.map(cell => {
-      const s = String(cell ?? '');
-      return (s.includes(',') || s.includes('"') || s.includes('\n'))
+      // Collapse any newlines to spaces — Xero imports choke on blank/multi-line
+      // description cells, so every cell is kept strictly single-line.
+      const s = String(cell ?? '').replace(/[\r\n]+/g, ' ');
+      return (s.includes(',') || s.includes('"'))
         ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(',')
   ).join('\n');
