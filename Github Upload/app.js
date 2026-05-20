@@ -1236,8 +1236,11 @@ function parseInvoiceText(text, filename) {
     if (endInvM) invoiceNumber = endInvM[1].trim().replace(/\s+/g, '');
   }
 
-  // ── Date normalisation: collapse spaces around date separators (PDF artifact) ──
-  // "02 / 05 / 2026" → "02/05/2026". Leaves ABN spacing intact (slashes, not spaces, are the signal).
+  // ── Date normalisation: collapse spaces around AND inside date sequences (PDF artifact) ──
+  // pdf.js often splits dates like "17 / 0 5 /202 6" or "16 / 0 5 /202 6". First de-space whole
+  // date-shaped runs (two separators), then tidy any remaining spaces around separators.
+  // Requires two /-. separators, so ABNs/account numbers (no double separator) are untouched.
+  text = text.replace(/\b\d(?:\s?\d)?\s*[\/\-.]\s*\d(?:\s?\d)?\s*[\/\-.]\s*\d(?:\s?\d){1,3}\b/g, m => m.replace(/\s+/g, ''));
   text = text.replace(/(\d)\s*\/\s*(\d)/g, '$1/$2');
 
   // ── Date (prefer "Invoice Date:" label; handle 2-digit years) ────────────
@@ -1255,8 +1258,13 @@ function parseInvoiceText(text, filename) {
     if (dateOnlyM) date = parseDate(dateOnlyM[1], dateOnlyM[2], dateOnlyM[3]);
   }
   if (!date) {
-    const d1 = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
-    if (d1) date = parseDate(d1[1], d1[2], d1[3]);
+    // First numeric date that is NOT a Due date (so "Due 11/05/2026" doesn't masquerade as the
+    // issue date — e.g. Freya Boltman, where the real issue date is the worded "3 May 2026").
+    for (const m of text.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g)) {
+      if (/\bdue\b[^\d]{0,12}$/i.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
+      if (+m[1] > 31 || +m[2] > 12) continue;
+      date = parseDate(m[1], m[2], m[3]); break;
+    }
   }
   if (!date) {
     const d2 = text.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})\b/i);
@@ -1387,56 +1395,65 @@ function parseInvoiceText(text, filename) {
   if (AP_RE.test(text)) invoiceTypeHint = 'ap';
   else if (EVENT_RE.test(text)) invoiceTypeHint = 'event';
 
-  // ── Performance date (event/service date — distinct from invoice issue date) ──
-  // Must be DIFFERENT from the invoice date to count as a separate performance date.
+  // ── Performance / event date ──────────────────────────────────────────────
+  // Prefer an event date found in the BODY (line items); fall back to the invoice/issue date as
+  // a best guess. `perfDateGuess` flags anything that isn't an explicitly-labelled event date so
+  // the UI can show a "best guess — verify" note. Handles /, -, . separators, 2- or 4-digit years,
+  // ordinals ("9th May"), worded months ("28-Apr-26", "8 May 2026"), and D/M with no year ("18/4").
   let performanceDate = '';
+  let perfDateGuess = false;
   const mn2 = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-  // Pattern A: explicit label — "Date of service", "Event date", "Performance date", etc.
+  const invYear = (date && /^\d{4}/.test(date)) ? date.slice(0,4) : String(new Date().getFullYear());
+
+  // Pattern A: explicit "Event/Performance/Service date" label → confident (NOT flagged a guess).
   const perfLabelM = text.match(
-    /(?:date\s+of\s+(?:service|performance|event)|service\s+date|event\s+date|performance\s+date)\s*[:\s]+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4})/i
+    /(?:date\s+of\s+(?:service|performance|event)|service\s+date|event\s+date|performance\s+date)\s*[:\s]+(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\.?\s+\d{2,4})/i
   );
   if (perfLabelM) {
     const raw = perfLabelM[1].trim();
-    const nm = raw.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-    if (nm) { const pd = parseDate(nm[1], nm[2], nm[3]); if (pd !== date) performanceDate = pd; }
+    const nm = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (nm) performanceDate = parseDate(nm[1], nm[2], nm[3]);
     else {
-      const wm = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
-      if (wm) { const mo = mn2[wm[2].toLowerCase().slice(0,3)]; if (mo) { const pd = parseDate(wm[1], mo, wm[3]); if (pd !== date) performanceDate = pd; } }
+      const wm = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?\s+(\d{2,4})$/);
+      if (wm) { const mo = mn2[wm[2].toLowerCase().slice(0,3)]; if (mo) performanceDate = parseDate(wm[1], mo, wm[3]); }
     }
   }
-  // Pattern B: date embedded in description/item lines that differs from invoice date
-  if (!performanceDate && date) {
-    const descIdx = text.search(/\b(?:description|item|quantity|for\s*:|service)\b/i);
-    const descSection = descIdx >= 0 ? text.slice(descIdx) : text.slice(Math.floor(text.length / 3));
-    // Skip dates that are actually the DUE date (preceded by "due" within ~15 chars).
-    const isDueDate = (idx) => /due\b[^\d]{0,15}$/i.test(descSection.slice(Math.max(0, idx - 18), idx));
-    // Numeric date in description (DD/MM/YY or DD/MM/YYYY)
-    for (const m of descSection.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g)) {
-      if (isDueDate(m.index)) continue;
-      const pd = parseDate(m[1], m[2], m[3]);
-      if (pd && pd !== date) { performanceDate = pd; break; }
+
+  // Pattern B: scan the body for date-like tokens (the event date usually sits in the line items).
+  if (!performanceDate) {
+    const descIdx = text.search(/\b(?:description|item|quantity|service|performance)\b|@|for\s*:/i);
+    const body = descIdx >= 0 ? text.slice(descIdx) : text;
+    const after = (idx, len) => body.slice(idx + len, idx + len + 35);
+    const skip  = (idx) => /\b(?:due|issue|issued|invoice|tax)\b[^\d]{0,15}$/i.test(body.slice(Math.max(0, idx - 18), idx));
+    const cands = [];
+    const okDM = (d, mo) => { d = +d; mo = +mo; return d >= 1 && d <= 31 && mo >= 1 && mo <= 12; };
+    // numeric  DD ? MM ? YY(YY)  with /  -  or .  (full date)
+    for (const m of body.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)) {
+      if (skip(m.index) || !okDM(m[1], m[2])) continue;
+      const pd = parseDate(m[1], m[2], m[3]); if (pd) cands.push({ i: m.index, iso: pd });
     }
-    // Word date in description ("2 May 2026")
-    if (!performanceDate) {
-      for (const m of descSection.matchAll(/\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/g)) {
-        if (isDueDate(m.index)) continue;
-        const mo = mn2[m[2].toLowerCase().slice(0,3)];
-        if (!mo) continue;
-        const pd = parseDate(m[1], mo, m[3]);
-        if (pd && pd !== date) { performanceDate = pd; break; }
-      }
+    // worded month: "9th May 2026", "9 May 26", "28-Apr-26", "Saturday 9th May 2026"
+    for (const m of body.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[\s\-\/]+([A-Za-z]{3,9})\.?[\s\-\/]+(\d{2,4})\b/g)) {
+      if (skip(m.index) || +m[1] < 1 || +m[1] > 31) continue;
+      const mo = mn2[m[2].toLowerCase().slice(0,3)]; if (!mo) continue;
+      const pd = parseDate(m[1], mo, m[3]); if (pd) cands.push({ i: m.index, iso: pd });
     }
-    // Word date with 2-digit year ("09 May 26") — common on MEC-template invoices
-    if (!performanceDate) {
-      for (const m of descSection.matchAll(/\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{2})\b/g)) {
-        if (isDueDate(m.index)) continue;
-        const mo = mn2[m[2].toLowerCase().slice(0,3)];
-        if (!mo) continue;
-        const pd = parseDate(m[1], mo, m[3]);
-        if (pd && pd !== date) { performanceDate = pd; break; }
-      }
+    // D/M with NO year ("18/4", "9/5") → assume invoice year. Lookbehind/ahead avoid matching a
+    // fragment of a full date ("05/26" inside "16/05/26"); also skip address fragments ("2/4 Kennedy St").
+    for (const m of body.matchAll(/(?<![\d\/.\-])(\d{1,2})\/(\d{1,2})(?![\d\/.\-])/g)) {
+      if (skip(m.index) || !okDM(m[1], m[2])) continue;
+      if (/^\s*[A-Za-z][A-Za-z ]{0,20}\b(st|street|rd|road|ave|avenue|ct|court|cres|crescent|dr|drive|lane|pl|place|vic|nsw|qld|sa|wa|nt|tas|act)\b|^\s*\w*\s*\d{4}\b/i.test(after(m.index, m[0].length))) continue;
+      const pd = parseDate(m[1], m[2], invYear); if (pd) cands.push({ i: m.index, iso: pd });
     }
+    cands.sort((a, b) => a.i - b.i);
+    // Multiple event dates on one invoice → take the FIRST. Prefer one that differs from the
+    // invoice date, else the first found (covers "event date == invoice date" invoices).
+    const chosen = cands.find(c => c.iso !== date) || cands[0];
+    if (chosen) { performanceDate = chosen.iso; perfDateGuess = true; }
   }
+
+  // Pattern C: nothing usable in the body → fall back to the invoice/issue date as a best guess.
+  if (!performanceDate && date) { performanceDate = date; perfDateGuess = true; }
 
   // ── Expense detection (best-effort guess from raw text) ──────────────────
   // These are pre-filled into the expense fields in the Review modal.
@@ -1458,7 +1475,7 @@ function parseInvoiceText(text, filename) {
                || text.match(/\b(?:accommodation|accom|hotel|motel|lodging)(?:\s+(?:expense|fee|cost))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
   if (accomM) detectedExpenses.accommodation = parseFloat(accomM[1]);
 
-  return { name, invoiceNumber, date, performanceDate, total, abn, hasGST, alreadyPaid, invoiceTypeHint, detectedExpenses };
+  return { name, invoiceNumber, date, performanceDate, perfDateGuess, total, abn, hasGST, alreadyPaid, invoiceTypeHint, detectedExpenses };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1682,9 +1699,13 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
     <td><input type="text" value="${escHtml(data.invoiceNumber)}" id="inv-${id}"></td>
     <td style="min-width:115px">
       ${!isAP ? `<input type="date" value="${data.performanceDate||''}" id="perfdate-${id}"
-        style="font-size:11px;padding:2px 4px;width:115px;${!data.performanceDate ? 'border-color:#F6AD55' : ''}"
-        title="${data.performanceDate ? 'Performance / event date' : '⚠ Perf date not found — please enter'}">
-        ${!data.performanceDate ? '<div style="font-size:9px;color:#B7791F;font-weight:600;margin-top:2px">⚠ Check invoice</div>' : ''}` : `<input type="date" value="${data.date}" id="date-${id}" style="font-size:11px;padding:2px 4px;width:115px">`}
+        style="font-size:11px;padding:2px 4px;width:115px;${(!data.performanceDate || data.perfDateGuess) ? 'border-color:#F6AD55' : 'border-color:#9AE6B4'}"
+        title="${!data.performanceDate ? '⚠ Perf date not found — please enter' : data.perfDateGuess ? '⚠ Best-guess event date — verify against the invoice' : 'Performance / event date'}">
+        ${!data.performanceDate
+          ? '<div style="font-size:9px;color:#B7791F;font-weight:600;margin-top:2px">⚠ Check invoice</div>'
+          : data.perfDateGuess
+            ? '<div style="font-size:9px;color:#B7791F;font-weight:600;margin-top:2px" title="Auto-detected — please confirm this is the event date">⚠ Best guess — verify</div>'
+            : '<div style="font-size:9px;color:#2F855A;font-weight:600;margin-top:2px">✓ from invoice</div>'}` : `<input type="date" value="${data.date}" id="date-${id}" style="font-size:11px;padding:2px 4px;width:115px">`}
       <!-- Keep hidden invoice date field for backward compatibility with extractRow() -->
       ${!isAP ? `<input type="hidden" id="date-${id}" value="${data.date}">` : ''}
     </td>
