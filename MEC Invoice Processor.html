@@ -701,7 +701,7 @@
               title="The contractor's name as it appears in Zoho CRM. Start typing to search.">Contractor</div>
             <div style="position:relative">
               <input type="text" id="rv-name" tabindex="1" placeholder="Start typing to search Zoho…"
-                oninput="reviewSearchContractor(this.value); updateReviewStatus();"
+                oninput="reviewSearchContractor(this.value); updateReviewStatus(); rvHighlightMissing();"
                 onblur="setTimeout(()=>{const d=document.getElementById('rv-drop');if(d)d.style.display='none'},200)"
                 style="font-size:14px;padding:8px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
               <div id="rv-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>
@@ -711,7 +711,7 @@
           <div style="display:grid;grid-template-columns:130px 1fr;gap:8px">
             <div>
               <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
-              <input type="text" id="rv-inv" tabindex="3"
+              <input type="text" id="rv-inv" tabindex="3" oninput="rvHighlightMissing()"
                 style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
             </div>
             <div>
@@ -721,7 +721,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:8px">
                 <input type="date" id="rv-perfdate" tabindex="4"
-                  onchange="updatePerfDateDOW()"
+                  onchange="updatePerfDateDOW(); rvHighlightMissing()"
                   onclick="try{this.showPicker()}catch(e){}"
                   style="font-size:13px;padding:7px 9px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
                 <span id="rv-perfdate-dow" style="font-size:12px;color:#4ADE80;font-weight:600;min-width:70px"></span>
@@ -959,11 +959,13 @@ const ACCOUNT_CODES = {
   D: '301-A',  // GST registered
 };
 
+// Xero AU tax type names exactly as Xero expects on bill import. "Tax on Purchases" is NOT a
+// valid Xero AU rate (it imported blank); the GST-on-purchases rate is "GST on Expenses".
 const TAX_TYPES = {
   A: 'GST Free Expenses',
-  B: 'Tax on Purchases',
+  B: 'GST on Expenses',
   C: 'GST Free Expenses',
-  D: 'Tax on Purchases',
+  D: 'GST on Expenses',
 };
 
 // ── Two-bill super workflow (accountant-agreed, May 2026) ──────────────────────
@@ -2927,15 +2929,18 @@ function rvValidateBeforeConfirm() {
   if (!name)  missingFields.push({ key:'name',  label:'Contractor name',  targetId:'rv-name',  type:'text',   placeholder:'e.g. James Brown' });
   if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total', type:'number', placeholder:'0.00' });
 
-  // Already-paid-in-Zoho check — surfaced here as a warning (instead of a Stage 2 column).
+  // Already-paid check — driven ONLY by the booking(s) the user TICKED in the Zoho picker
+  // (a red dot = paid). Reads the live checkboxes (invoiceBookingData isn't saved until Confirm),
+  // so it never fuzzy-matches an unrelated booking like it used to.
   let alreadyPaidWarn = '';
+  let paidBookingId = '';
   try {
-    const id = reviewModalRowId;
-    const linked = (typeof invoiceBookingData !== 'undefined') ? invoiceBookingData['id_' + id] : null;
-    const bm = getBookingMatchForRow(name, parseFloat(total) || 0, perf, linked);
-    if (bm && bm.alreadyPaid) {
-      const bn = bm.booking?.bookingName ? ` (“${bm.booking.bookingName}”)` : '';
-      alreadyPaidWarn = `This booking${bn} appears <strong>already marked paid in Zoho</strong>. If you confirm, the invoice stays in the list but is excluded from the Xero &amp; super exports.`;
+    const checked = Array.from(document.querySelectorAll('.rv-booking-cb:checked'));
+    const paidCb = checked.find(cb => cb.dataset.paid === '1');
+    if (paidCb) {
+      paidBookingId = paidCb.dataset.bid || '';
+      const bn = paidCb.dataset.name ? ` (“${paidCb.dataset.name}”)` : '';
+      alreadyPaidWarn = `The booking you selected${bn} appears <strong>already marked paid in Zoho</strong>. Confirm only if you intend to pay it again.`;
     }
   } catch (e) { /* non-fatal */ }
 
@@ -2944,8 +2949,12 @@ function rvValidateBeforeConfirm() {
   const headerTxt = alreadyPaidWarn && !missingFields.length ? '⚠ Already paid in Zoho'
                   : alreadyPaidWarn ? '⚠ Check before confirming'
                   : '⚠ Missing fields';
+  const bookingLink = paidBookingId
+    ? `<a href="https://crm.zoho.com/crm/org657079535/tab/Potentials/${paidBookingId}" target="_blank" rel="noopener"
+         style="display:inline-block;margin-top:7px;font-size:11px;font-weight:600;color:#93c5fd;text-decoration:none;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.35);border-radius:5px;padding:4px 9px">↗ Check that Zoho booking</a>`
+    : '';
   const paidBanner = alreadyPaidWarn
-    ? `<div style="font-size:12px;color:#FCA5A5;background:rgba(197,48,48,0.15);border:1px solid rgba(252,129,129,0.4);border-radius:6px;padding:8px 10px;margin-bottom:${missingFields.length?'12px':'16px'};line-height:1.5">${alreadyPaidWarn}</div>`
+    ? `<div style="font-size:12px;color:#FCA5A5;background:rgba(197,48,48,0.15);border:1px solid rgba(252,129,129,0.4);border-radius:6px;padding:8px 10px;margin-bottom:${missingFields.length?'12px':'16px'};line-height:1.5">${alreadyPaidWarn}${bookingLink}</div>`
     : '';
 
   // Build popup with an editable input for each missing field
@@ -3010,13 +3019,23 @@ function closeReviewModal() {
   reviewModalRowId = null;
 }
 
-function reviewViewPrevious() {
-  // Navigate to the previous invoice in DOM order without confirming the current one
-  const allRows = [
+// A reviewable row must have at least a name or a total — the blank starter manual row is
+// skipped so "Last Invoice — Finish" doesn't navigate into an empty Review screen.
+function reviewableRowIds() {
+  return [
     ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
     ...Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')),
     ...Array.from(document.querySelectorAll('#manual-tbody tr[id]')),
-  ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
+  ].map(tr => tr.id.replace('row-', '')).filter(Boolean).filter(id => {
+    const n = (document.getElementById('name-' + id)?.value || '').trim();
+    const t = (document.getElementById('total-' + id)?.value || '').trim();
+    return !!(n || t) || String(reviewModalRowId) === String(id);
+  });
+}
+
+function reviewViewPrevious() {
+  // Navigate to the previous invoice in DOM order without confirming the current one
+  const allRows = reviewableRowIds();
   const currentIdx = allRows.indexOf(String(reviewModalRowId));
   if (currentIdx <= 0) return; // already at the first
   const prevId = allRows[currentIdx - 1];
@@ -3025,12 +3044,8 @@ function reviewViewPrevious() {
 }
 
 async function reviewConfirmAndNext() {
-  // Collect all reviewable row IDs in DOM order (pdf + ap + manual rows)
-  const allRows = [
-    ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
-    ...Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')),
-    ...Array.from(document.querySelectorAll('#manual-tbody tr[id]')),
-  ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
+  // Collect all reviewable row IDs in DOM order (skips the blank starter row)
+  const allRows = reviewableRowIds();
 
   const currentId = reviewModalRowId;
 
@@ -3063,11 +3078,7 @@ async function reviewConfirmAndNext() {
 
 function rvUpdateNextPrevButtons() {
   // Called from openReviewModal — updates Previous button visibility and Next button label
-  const allRows = [
-    ...Array.from(document.querySelectorAll('#pdf-tbody tr[id]')),
-    ...Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')),
-    ...Array.from(document.querySelectorAll('#manual-tbody tr[id]')),
-  ].map(tr => tr.id.replace('row-', '')).filter(Boolean);
+  const allRows = reviewableRowIds();
 
   const currentIdx = allRows.indexOf(String(reviewModalRowId));
 
@@ -3314,6 +3325,7 @@ function updateReviewStatus() {
                 data-cost="${m.entertainer.cost || 0}"
                 data-date="${m.booking.eventDate || ''}"
                 data-name="${escHtml(m.booking.bookingName||'')}"
+                data-paid="${m.entertainer.paid ? '1' : ''}"
                 ${isChecked ? 'checked' : ''}
                 style="accent-color:#4ADE80;cursor:pointer;width:13px;height:13px">
             </td>
@@ -3380,9 +3392,22 @@ function reviewOpenABR() {
 }
 
 // Auto-calculated Subtotal / GST / Total breakdown shown in the prominent Total card.
+// Live red-highlight of empty key fields (name / invoice # / event date / total) so they
+// stand out before the user clicks Confirm.
+function rvHighlightMissing() {
+  ['rv-name','rv-inv','rv-perfdate','rv-total'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const empty = !(el.value || '').trim();
+    el.style.borderColor = empty ? '#FC8181' : '#3A5068';
+    el.style.boxShadow  = empty ? '0 0 0 2px rgba(252,129,129,0.30)' : '';
+  });
+}
+
 function rvUpdateTotalBreakdown() {
   const total = parseFloat(document.getElementById('rv-total')?.value || '0') || 0;
   const gstOn = !!document.getElementById('rv-gst')?.checked;
+  rvHighlightMissing();
   const subEl = document.getElementById('rv-bd-subtotal');
   const gstEl = document.getElementById('rv-bd-gst');
   const totEl = document.getElementById('rv-bd-total');
@@ -4016,7 +4041,9 @@ function processInvoices() {
     let matchSource = 'none';
 
     if (contractor) {
-      type = contractor.type;
+      // Default to a valid type if the Zoho record has none (else account/tax/super come out
+      // blank in the export — e.g. Heidi Milne). GST-registered → B, otherwise A.
+      type = contractor.type || (contractor.gst ? 'B' : 'A');
       matchSource = 'zoho';
     } else if (row.abrData && row.abrData.isActive) {
       // Derive type from ABR: sole traders default to super-eligible (s12(8))
@@ -4043,7 +4070,10 @@ function processInvoices() {
     // Booking cross-check: use explicitly-linked bookings from Review modal if available,
     // otherwise fall back to fuzzy match
     const bookingMatch = getBookingMatchForRow(row.name, row.total, row.date, row.linkedBookings);
-    const alreadyPaidInZoho = !!(bookingMatch?.alreadyPaid);
+    // Only flag "paid in Zoho" when the user actually LINKED (ticked) a booking in Review and
+    // that exact booking is paid — never from a fuzzy guess against an unrelated event.
+    const hasLinkedBooking = !!(row.linkedBookings && row.linkedBookings.length);
+    const alreadyPaidInZoho = hasLinkedBooking && !!(bookingMatch?.alreadyPaid);
     const manuallyExcluded = false;
     // Exclusion removed (May 2026): all invoices are payable. alreadyPaidInZoho is kept purely
     // to show an informational "⚠ Warning" chip (linking to the Zoho booking) in Stage 2.
@@ -4600,10 +4630,11 @@ function exportXeroCSV() {
     const invNum    = p.invoiceNumber || autoInvNum(p);
     const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.perfDate || p.date);
-    const acctCode  = ACCOUNT_CODES[p.type];
-    const taxType   = TAX_TYPES[p.type];
+    const typeCode  = p.type || 'A';   // default so account/tax never export blank (e.g. Heidi)
+    const acctCode  = ACCOUNT_CODES[typeCode];
+    const taxType   = TAX_TYPES[typeCode];
     const eventRef  = buildEventReference(p); // e.g. "Event(s): 09.05.26"
-    const isGSTContractor = ['B','D'].includes(p.type);
+    const isGSTContractor = ['B','D'].includes(typeCode);
 
     // Super withheld for this invoice (on superBase = service fee + travel; never on
     // parking/accommodation). This is also what Bill 2 (the clearing-house bill) charges.
@@ -4644,8 +4675,7 @@ function exportXeroCSV() {
     // Travel uses the same sub-contractors account (acctCode) not 493 — it's a direct cost of sale.
     // Parking and accommodation stay on their own codes (449, 493-C).
     if (p.expenses) {
-      const isGSTContractor = ['B','D'].includes(p.type);
-      const expTaxType = isGSTContractor ? 'Tax on Purchases' : 'GST Free Expenses';
+      const expTaxType = isGSTContractor ? 'GST on Expenses' : 'GST Free Expenses';
       const expItems = [
         { label: 'Parking',       amount: p.expenses.parking       || 0, account: '449'     },
         { label: 'Accommodation', amount: p.expenses.accommodation || 0, account: '493-C'   },
@@ -4665,7 +4695,7 @@ function exportXeroCSV() {
     const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.date);
     const supplierName = p.name || '(Unknown Supplier)';
-    const apTaxType  = p.hasGST ? 'Tax on Purchases' : 'GST Free Expenses';
+    const apTaxType  = p.hasGST ? 'GST on Expenses' : 'GST Free Expenses';
     const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
@@ -4715,15 +4745,15 @@ function exportSuperBillsCSV() {
 
       const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                        || formatDateReadable(p.perfDate || p.date) || dateXero;
-      // Single-line detail (name | events | invoice # | total | super % | super $)
-      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
-      // Reference (exact format requested): Full Name | Event Date(s): … | Invoice Number | Super
+      // The reference must go in the *InvoiceNumber field: Xero bills have no separate "Reference"
+      // import column (see BillTemplate.csv), and the bills list shows InvoiceNumber as the
+      // reference. Exact format requested: "Full Name | Event Date(s): … | Invoice Number | Super".
+      // It's also naturally unique per contractor+invoice, so two performers sharing an invoice
+      // number (Sabrina & Jake both "011") no longer merge into one Xero bill — and there's no
+      // initials hack to mangle bracketed aliases like "Jake (Jacob) Fehily" into "J(".
       const ref  = `${cName} | Event Date(s): ${eventDates} | ${invNum} | Super`;
-      // Unique invoice number per super bill — all super bills share the clearing-house contact,
-      // so the InvoiceNumber must be unique or Xero merges them. Two performers can legitimately
-      // use the same invoice # (e.g. Sabrina & Jake both "011"), so prefix the contractor initials.
-      const initials = cName.trim().split(/\s+/).slice(0,2).map(w => w[0] ? w[0].toUpperCase() : '').join('') || 'X';
-      rows.push(mkRow(CLEARINGHOUSE_NAME, `${initials}-${invNum}-SUPER`, ref, dateXero, dateXero,
+      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
+      rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateXero, dateXero,
                       desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
     });
 
