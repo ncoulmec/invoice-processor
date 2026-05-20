@@ -1,0 +1,16 @@
+{
+  "accountCodes": {
+    "A": "301",
+    "B": "301-A",
+    "C": "301",
+    "D": "301-A"
+  },
+  "taxTypes": {
+    "A": "GST Free Expenses",
+    "B": "GST on Expenses",
+    "C": "GST Free Expenses",
+    "D": "GST on Expenses"
+  },
+  "clearinghouseName": "Contractor Super Clearinghouse",
+  "superAccount": "478-C"
+}
