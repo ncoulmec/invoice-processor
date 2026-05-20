@@ -547,8 +547,16 @@
           <span class="badge badge-c">C — Company, no GST</span>
           <span class="badge badge-d">D — Company + GST</span>
         </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <span style="font-size:11px;color:#888">Sort:</span>
+          <select id="results-sort" onchange="sortResults(this.value)" style="font-size:12px;padding:4px 7px;border:1px solid #D0D8E0;border-radius:5px;background:#fff;cursor:pointer">
+            <option value="name">Contractor name A→Z</option>
+            <option value="total-desc">Amount high→low</option>
+            <option value="total-asc">Amount low→high</option>
+          </select>
+        </div>
       </div>
-      <p style="margin-bottom:10px">Performer and contractor payments — Xero bills + super calculated below. Rows detected as already paid in Zoho are shown struck-through and excluded from CSV exports (verified in the Review step).</p>
+      <p style="margin-bottom:10px">Performer and contractor payments — Xero bills + super calculated below. All invoices are included in the exports; any that may already be paid in Zoho show a <strong>⚠ Warning</strong> chip (click it to open the booking).</p>
       <table>
         <thead><tr>
           <th>Contractor</th><th>Invoice #</th><th>Date</th>
@@ -941,11 +949,14 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+// Sub-contractor expense accounts — only two exist in MEC's Xero chart:
+//   301   = sub-contractors, NO GST   (Type A individual, Type C company)
+//   301-A = sub-contractors, GST registered (Type B individual+GST, Type D company+GST)
 const ACCOUNT_CODES = {
-  A: '301-A',  // No GST, super eligible
-  B: '301-C',  // GST, super eligible
-  C: '301-B',  // No GST, no super
-  D: '301-D',  // GST, no super
+  A: '301',    // No GST
+  B: '301-A',  // GST registered
+  C: '301',    // No GST
+  D: '301-A',  // GST registered
 };
 
 const TAX_TYPES = {
@@ -1773,6 +1784,16 @@ function parseInvoiceText(text, filename) {
   // +61 4XX XXX XXX (mobile) → 614XXXXXXXX; +61 3XX XXXX XXXX (Vic landline) → 613XXXXXXXX
   const isPhoneABN = (n) => /^61[2-9]\d{8}$/.test(n);
 
+  // ABN checksum (ATO algorithm) — used to safely accept BARE, unlabelled 11-digit ABNs
+  // without grabbing random account/phone numbers.
+  const isValidABN = (n) => {
+    if (!/^\d{11}$/.test(n)) return false;
+    const w = [10,1,3,5,7,9,11,13,15,17,19];
+    let sum = 0;
+    for (let i = 0; i < 11; i++) sum += (parseInt(n[i],10) - (i === 0 ? 1 : 0)) * w[i];
+    return sum % 89 === 0;
+  };
+
   // The contractor is the SENDER. Skip any ABN that belongs to MEC (the recipient) — it
   // typically appears right after the bill-to party, e.g. "To: Melbourne Entertainment
   // Company ABN: 45 627 873 644". We treat an ABN as MEC's if MEC appears in the ~60 chars
@@ -1815,6 +1836,19 @@ function parseInvoiceText(text, filename) {
       // Try standalone 11-digit number (not part of a larger run)
       const standalone = window.match(/\b(\d{11})\b/);
       if (standalone && !isPhoneABN(standalone[1])) { abn = standalone[1]; break; }
+    }
+  }
+  // Strategy 4: bare, unlabelled 11-digit ABN (no "ABN" keyword, no spacing). Accept only if it
+  // passes the ABN checksum, isn't phone-shaped, and isn't MEC's (recipient). Handles invoices
+  // that print the payee's ABN as a plain number under their name — e.g. Heidi Milne:
+  // "Heidi Milne 32365862556".
+  if (!abn) {
+    for (const m of text.matchAll(/\b(\d{11})\b/g)) {
+      const cand = m[1];
+      if (isPhoneABN(cand) || !isValidABN(cand)) continue;
+      if (isRecipientABN(m.index)) continue;   // MEC's ABN, not the contractor's
+      abn = cand;
+      break;
     }
   }
 
@@ -2160,9 +2194,11 @@ function parseInvoiceText(text, filename) {
     const val = parseFloat(`${m[1]}${m[2]}.${m[3]}`);
     if (val >= 1) totals.push(val);
   }
-  // Pattern 1d: "TOTAL ... $ NN NN" — spaced whole dollar, no decimal
-  // e.g. "Total $ 33 00" → $3300
+  // Pattern 1d: "TOTAL ... $ NN NN" — spaced whole dollar, no decimal e.g. "Total $ 33 00" → $3300.
+  // Guard: only concatenate when the FIRST group is 1–2 digits (a true split prefix). A 3+ digit
+  // first group like "$450" is already a complete amount — gluing a trailing "17" wrongly made 45017.
   for (const m of text.matchAll(/(?<![Ss]ub)[Tt][Oo][Tt][Aa][Ll][^A-Za-z\d]{0,40}?\$\s*(\d+)\s+(\d{2,3})\b(?!\s*[.,\d])/g)) {
+    if (m[1].length > 2) continue;
     const val = parseFloat(`${m[1]}${m[2]}`);
     if (val >= 10) totals.push(val);
   }
@@ -2194,6 +2230,7 @@ function parseInvoiceText(text, filename) {
   }
   // Pattern 3c: "Balance due $ NN NN" — spaced whole dollar (PDF artifact)
   for (const m of text.matchAll(/(?:Balance\s+due|Amount\s+due)[:\s]*\$?\s*(\d+)\s+(\d{2,3})\b(?!\s*[.,\d])/gi)) {
+    if (m[1].length > 2) continue;
     const val = parseFloat(`${m[1]}${m[2]}`);
     if (val > 0) totals.push(val);
   }
@@ -4007,10 +4044,10 @@ function processInvoices() {
     // otherwise fall back to fuzzy match
     const bookingMatch = getBookingMatchForRow(row.name, row.total, row.date, row.linkedBookings);
     const alreadyPaidInZoho = !!(bookingMatch?.alreadyPaid);
-    // manuallyExcluded = invoice auto-detected as $0 due (PDF) but not via a Zoho booking
-    const manuallyExcluded = row.alreadyPaid && !alreadyPaidInZoho;
-    // Combine all exclusion signals
-    const alreadyPaid = (row.alreadyPaid || false) || alreadyPaidInZoho;
+    const manuallyExcluded = false;
+    // Exclusion removed (May 2026): all invoices are payable. alreadyPaidInZoho is kept purely
+    // to show an informational "⚠ Warning" chip (linking to the Zoho booking) in Stage 2.
+    const alreadyPaid = false;
 
     // Super withholding: applies to sole traders (types A/B) only. Driven by the per-row
     // "Withhold super?" toggle — defaults ON for A/B, OFF for C/D — NOT by the Zoho flag
@@ -4245,6 +4282,21 @@ function setManualType(id, type) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Step 3: Results View
 // ══════════════════════════════════════════════════════════════════════════════
+// Re-sort the Stage 2 results table by name or amount and re-render.
+function sortResults(criterion) {
+  if (!Array.isArray(processed)) return;
+  const key = p => (p.contractor?.name || p.name || '').toLowerCase();
+  const tot = p => (p.total || 0);
+  processed.sort((a,b) => {
+    if (a.invoiceType === 'ap' && b.invoiceType !== 'ap') return 1;   // AP rows last
+    if (a.invoiceType !== 'ap' && b.invoiceType === 'ap') return -1;
+    if (criterion === 'total-desc') return tot(b) - tot(a);
+    if (criterion === 'total-asc')  return tot(a) - tot(b);
+    return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
+  });
+  buildResultsView();
+}
+
 function buildResultsView() {
   // Split event vs AP invoices
   const eventProcessed = processed.filter(p => p.invoiceType !== 'ap');
@@ -4252,11 +4304,14 @@ function buildResultsView() {
 
   const matched = eventProcessed.filter(p => p.matched);
   const unmatched = eventProcessed.filter(p => !p.matched);
-  // Super is driven by the per-row withholdSuper flag (sole traders / types A-B), not the Zoho flag.
-  const superRows = matched.filter(p => p.withholdSuper && (p.amounts?.super||0) > 0);
+  // Super is driven by the per-row withholdSuper flag (sole traders / A-B) AND the global
+  // "Withhold super deductions" toggle — when the toggle is OFF, super is hidden everywhere.
+  const superOn = (typeof superDeductionsEnabled === 'function') ? superDeductionsEnabled() : true;
+  const showsSuper = p => p.withholdSuper && superOn && (p.amounts?.super||0) > 0;
+  const superRows = matched.filter(showsSuper);
   const totalSuper = superRows.reduce((s,p) => s + (p.amounts?.super||0), 0);
-  // Cash to performer = total when super isn't withheld, else total − super (a.cash).
-  const cashFor = p => (!p.withholdSuper && (p.amounts?.super||0) > 0) ? (p.total||0) : (p.amounts?.cash||0);
+  // Cash to performer = total when super isn't withheld for this row, else total − super.
+  const cashFor = p => (!showsSuper(p) && (p.amounts?.super||0) > 0) ? (p.total||0) : (p.amounts?.cash||0);
   const totalCash = matched.reduce((s,p) => s + cashFor(p), 0);
 
   // Stats
@@ -4402,21 +4457,28 @@ function buildResultsView() {
              title="No Zoho record found — super estimated from ABR registration. Verify this contractor is actually super-eligible.">
              ⚠ ABR-only: super estimated — verify
            </span></div>` : '';
-      const paidStyle = p.alreadyPaid ? 'opacity:0.45;text-decoration:line-through' : '';
-      const paidReason = p.alreadyPaidInZoho ? 'Zoho booking' : p.manuallyExcluded ? 'excluded manually' : 'excluded';
-      const paidBadge = p.alreadyPaid
-        ? `<span style="display:inline-block;font-size:10px;background:#FEF2F2;color:#C53030;border:1px solid #FEB2B2;border-radius:4px;padding:1px 5px;font-weight:600;text-decoration:none;vertical-align:middle;margin-left:4px">${paidReason}</span>`
+      // Already-paid-in-Zoho is now informational only (no strikethrough, not excluded).
+      // Show a warning chip that links to the Zoho booking in a new tab.
+      const paidBookingId = p.alreadyPaidInZoho ? p.bookingMatch?.booking?.id : null;
+      const paidWarn = p.alreadyPaidInZoho
+        ? (paidBookingId
+            ? `<a href="https://crm.zoho.com/crm/org${ZOHO_ORG}/tab/Potentials/${paidBookingId}" target="_blank" rel="noopener"
+                 title="Our records show this invoice may already have been paid in Zoho — click to view the booking"
+                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;text-decoration:none;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning</a>`
+            : `<span title="Our records show this invoice may already have been paid in Zoho"
+                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning</span>`)
         : '';
-      return `<tr style="${p.alreadyPaid ? 'background:#FAFAFA' : ''}">
-        <td style="${paidStyle}"><strong>${escHtml(displayName)}</strong>${paidBadge}${gstWarn}${abrSuperNote}${zohoBtn}</td>
-        <td style="${paidStyle}">${p.invoiceNumber||'—'}</td>
-        <td style="${paidStyle}">${p.date||'—'}</td>
-        <td style="${paidStyle}"><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
-        <td style="${paidStyle}">$${fmt(p.total)}</td>
-        <td style="${paidStyle}"><strong>$${fmt(!p.withholdSuper && a.super > 0 ? p.total : a.cash)}</strong></td>
-        <td style="${paidStyle}">${(a.super > 0 && p.withholdSuper) ? `<strong style="color:var(--green)">$${fmt(a.super)}</strong>` : (a.super > 0 && !p.withholdSuper ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice (toggle off in Stage 1)">—</span>` : '—')}</td>
-        <td style="${paidStyle}"><code style="font-size:11px">${ACCOUNT_CODES[typeCode]||typeCode}</code></td>
-        <td style="${paidStyle}">${gstCell}</td>
+      const showSuperCell = showsSuper(p);
+      return `<tr>
+        <td><strong>${escHtml(displayName)}</strong>${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
+        <td>${p.invoiceNumber||'—'}</td>
+        <td>${p.date||'—'}</td>
+        <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
+        <td>$${fmt(p.total)}</td>
+        <td><strong>$${fmt(!showSuperCell && a.super > 0 ? p.total : a.cash)}</strong></td>
+        <td>${showSuperCell ? `<strong style="color:var(--green)">$${fmt(a.super)}</strong>` : (a.super > 0 ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice">—</span>` : '—')}</td>
+        <td><code style="font-size:11px">${ACCOUNT_CODES[typeCode]||typeCode}</code></td>
+        <td>${gstCell}</td>
       </tr>`;
     } catch(rowErr) {
       // Show the row with an error message so we can see what went wrong
@@ -4479,6 +4541,10 @@ function updateSuperToggleUI() {
   }
   // Dim the Super CSV card when disabled
   if (superCard) superCard.style.opacity = on ? '' : '0.45';
+  // Re-render the results table so the Super Contribution column reflects the toggle.
+  if (Array.isArray(processed) && processed.length && typeof buildResultsView === 'function') {
+    buildResultsView();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4647,12 +4713,17 @@ function exportSuperBillsCSV() {
         : p.amounts.super;
       if (!(superAmt > 0)) return;
 
-      const eventLabel = eventRef || `Event: ${formatDateReadable(p.perfDate || p.date) || dateXero}`;
-      // Single-line detail per accountant (name | events | invoice # | total | super % | super $)
-      const desc = `${cName} | ${eventLabel} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
-      const ref  = `${eventRef ? eventRef + ' · ' : ''}${cName}`;
-      // Distinct invoice number so the super bill doesn't collide with the contractor bill in Xero.
-      rows.push(mkRow(CLEARINGHOUSE_NAME, `${invNum}-SUPER`, ref, dateXero, dateXero,
+      const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
+                       || formatDateReadable(p.perfDate || p.date) || dateXero;
+      // Single-line detail (name | events | invoice # | total | super % | super $)
+      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
+      // Reference (exact format requested): Full Name | Event Date(s): … | Invoice Number | Super
+      const ref  = `${cName} | Event Date(s): ${eventDates} | ${invNum} | Super`;
+      // Unique invoice number per super bill — all super bills share the clearing-house contact,
+      // so the InvoiceNumber must be unique or Xero merges them. Two performers can legitimately
+      // use the same invoice # (e.g. Sabrina & Jake both "011"), so prefix the contractor initials.
+      const initials = cName.trim().split(/\s+/).slice(0,2).map(w => w[0] ? w[0].toUpperCase() : '').join('') || 'X';
+      rows.push(mkRow(CLEARINGHOUSE_NAME, `${initials}-${invNum}-SUPER`, ref, dateXero, dateXero,
                       desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
     });
 
@@ -4676,7 +4747,10 @@ function exportSuperCSV() {
                   'ContributionType','ContributionAmount','PaymentDate',
                   'PayPeriodStart','PayPeriodEnd']];
 
-  const payDate = today();
+  // Dates as DD/MM/YYYY — NOT the compact YYYYMMDD that today() returns (Xero/clearing-house
+  // upload rejected "20260520" with "could not be converted to a date").
+  const todayISO = new Date().toISOString().split('T')[0];
+  const payDate = formatDateXero(todayISO);
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid && p.withholdSuper && p.amounts?.super > 0)
     .forEach(p => {
       const c = p.contractor || {};
@@ -4684,6 +4758,7 @@ function exportSuperCSV() {
       const nameParts = fullName.split(' ');
       const firstName = nameParts.slice(0,-1).join(' ') || fullName;
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length-1] : '';
+      const periodDate = formatDateXero(p.date || todayISO);
       rows.push([
         'Melbourne Entertainment Company',
         firstName, lastName,
@@ -4695,8 +4770,8 @@ function exportSuperCSV() {
         'SGC',
         p.amounts.super.toFixed(2),
         payDate,
-        p.date || payDate,
-        p.date || payDate,
+        periodDate,
+        periodDate,
       ]);
     });
 
