@@ -365,7 +365,7 @@
             <thead><tr>
               <th>Contractor Name</th><th>Invoice #</th><th>Perf. Date</th>
               <th>Total (inc GST if applicable)</th><th style="width:140px">ABN</th><th>Matched / ABR</th>
-              <th>Exclude? <span class="rv-tip" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Exclude from exports?</strong>Tick to exclude this invoice from the Xero Bills CSV and Super CSV.<br><br>Use this for invoices already paid outside this run. Rows auto-detected as already paid in Zoho bookings are also excluded — use the Override button in Stage 2 to reverse that.</span></span></th>
+              <th>Withhold Super? <span class="rv-tip" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Withhold 12% super?</strong>Ticked = super is withheld and remitted to the clearing house for this invoice. Defaults ON for sole traders (Type A/B) and OFF for companies/partnerships (Type C/D).<br><br>To exclude an invoice from the run entirely, remove it with the red ✕ button instead.</span></span></th>
               <th></th>
             </tr></thead>
             <tbody id="pdf-tbody"></tbody>
@@ -380,7 +380,7 @@
               <thead><tr>
                 <th>Supplier</th><th>Invoice #</th><th>Date</th>
                 <th>Total (inc GST)</th><th style="width:140px">ABN</th><th>Matched / ABR</th>
-                <th title="Tick to exclude from Xero Bills CSV export (e.g. already handled separately)">Exclude?</th>
+                <th title="Super doesn't apply to AP supplier bills. Remove a bill with ✕ to exclude it.">Withhold Super?</th>
                 <th></th>
               </tr></thead>
               <tbody id="ap-review-tbody"></tbody>
@@ -403,7 +403,7 @@
             <th style="width:120px">Total Amount ($)</th>
             <th style="width:140px">ABN</th>
             <th style="width:80px">Matched / ABR</th>
-            <th title="Tick to exclude from exports">Exclude?</th>
+            <th title="Ticked = withhold 12% super (sole traders / Type A-B). Remove the row with ✕ to exclude it.">Withhold Super?</th>
             <th style="width:40px"></th>
           </tr></thead>
           <tbody id="manual-tbody"></tbody>
@@ -548,14 +548,13 @@
           <span class="badge badge-d">D — Company + GST</span>
         </div>
       </div>
-      <p style="margin-bottom:10px">Performer and contractor payments — Xero bills + super calculated below. Already-paid rows (ticked in Stage 1) are shown but excluded from CSV exports.</p>
+      <p style="margin-bottom:10px">Performer and contractor payments — Xero bills + super calculated below. Rows detected as already paid in Zoho are shown struck-through and excluded from CSV exports (verified in the Review step).</p>
       <table>
         <thead><tr>
           <th>Contractor</th><th>Invoice #</th><th>Date</th>
           <th>Type</th><th>Invoice Total</th>
           <th>Cash to Performer</th><th>Super Contribution</th>
           <th>Account Code</th><th>GST Credit</th>
-          <th style="min-width:90px">Checks</th>
         </tr></thead>
         <tbody id="results-tbody"></tbody>
       </table>
@@ -568,7 +567,6 @@
         <thead><tr>
           <th>Supplier</th><th>Invoice #</th><th>Date</th>
           <th>Total (inc GST)</th><th>Description hint</th>
-          <th style="min-width:110px">Checks</th>
         </tr></thead>
         <tbody id="ap-tbody"></tbody>
       </table>
@@ -2573,9 +2571,9 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
       <input type="hidden" id="itype-${id}" value="${isAP ? 'ap' : 'event'}">
     </td>
     <td style="text-align:center;vertical-align:middle;">
-      <input type="checkbox" id="s1-paid-${id}" ${data.alreadyPaid ? 'checked' : ''}
-        style="cursor:pointer;width:15px;height:15px;"
-        title="Mark as already paid — will exclude from Xero + Super exports">
+      <input type="checkbox" id="s1-super-${id}" ${(match && ['C','D'].includes(match.type)) ? '' : 'checked'}
+        style="cursor:pointer;width:15px;height:15px;accent-color:#27AE60"
+        title="Withhold 12% super for this invoice. Defaults ON for sole traders (Type A/B), OFF for companies/partnerships. Untick to skip super for this contractor. To exclude the whole invoice, remove it with the ✕ button.">
     </td>
     <td style="white-space:nowrap">
       <button class="btn btn-secondary btn-sm" onclick="openReviewModal('${id}')" id="rv-btn-${id}" title="Review invoice — verify &amp; correct extracted fields" style="margin-right:3px">👁 Review</button>
@@ -2712,15 +2710,18 @@ function openReviewModal(id) {
   const storedGST = invoiceGSTData['id_' + id];
   g('rv-gst').checked = storedGST !== undefined ? !!storedGST : false;
 
-  // Super checkbox — default based on contractor's superEligible, overrideable
+  // Super checkbox — sync with the Stage 1 "Withhold super?" toggle (the source of truth),
+  // then a stored review override, then a sensible default (on unless matched company/partnership).
   const storedSuper = invoiceSuperData?.['id_' + id];
-  if (storedSuper !== undefined) {
+  const s1SuperEl = document.getElementById('s1-super-' + id);
+  if (s1SuperEl) {
+    g('rv-super') && (g('rv-super').checked = s1SuperEl.checked);
+  } else if (storedSuper !== undefined) {
     g('rv-super') && (g('rv-super').checked = !!storedSuper);
   } else {
-    // Default: on for Type A/B (superEligible), off for C/D
     const abn0check = (g('rv-abn')?.value||'').replace(/\s/g,'');
     const matchCheck = contractors.find(c => c.name.toLowerCase() === (g('rv-name')?.value||'').toLowerCase() || (abn0check.length===11 && c.abn && c.abn.replace(/\s/g,'')=== abn0check));
-    g('rv-super') && (g('rv-super').checked = matchCheck ? !!matchCheck.superEligible : true);
+    g('rv-super') && (g('rv-super').checked = matchCheck ? !['C','D'].includes(matchCheck.type) : true);
   }
 
   // Restore expense splits
@@ -2877,27 +2878,47 @@ function rvLoadLocalPDF(input) {
 
 // ── Validation check before Confirm ──
 function rvValidateBeforeConfirm() {
-  // Collect missing field descriptors
+  // Only the essentials are required. Invoice # auto-generates, ABN is pulled from Zoho when
+  // not printed, and the performance date isn't always derivable — so none of those block
+  // confirming (this was the "prompts for info that doesn't exist" bug).
   const missingFields = [];
   const name  = (document.getElementById('rv-name')?.value  || '').trim();
   const inv   = (document.getElementById('rv-inv')?.value   || '').trim();
   const total = (document.getElementById('rv-total')?.value || '').trim();
   const perf  = (document.getElementById('rv-perfdate')?.value || '').trim();
   const abn   = (document.getElementById('rv-abn')?.value   || '').replace(/\s/g,'');
-  if (!name)  missingFields.push({ key:'name',  label:'Contractor name',  targetId:'rv-name',     type:'text',   placeholder:'e.g. James Brown' });
-  if (!inv)   missingFields.push({ key:'inv',   label:'Invoice number',   targetId:'rv-inv',      type:'text',   placeholder:'e.g. INV-001' });
-  if (!perf)  missingFields.push({ key:'perf',  label:'Performance date', targetId:'rv-perfdate', type:'date',   placeholder:'' });
-  if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total',    type:'number', placeholder:'0.00' });
-  if (!abn || abn.length !== 11) missingFields.push({ key:'abn', label:'ABN (11 digits)', targetId:'rv-abn', type:'text', placeholder:'XX XXX XXX XXX' });
-  if (!missingFields.length) return Promise.resolve(true); // all good — nothing missing
+  if (!name)  missingFields.push({ key:'name',  label:'Contractor name',  targetId:'rv-name',  type:'text',   placeholder:'e.g. James Brown' });
+  if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total', type:'number', placeholder:'0.00' });
+
+  // Already-paid-in-Zoho check — surfaced here as a warning (instead of a Stage 2 column).
+  let alreadyPaidWarn = '';
+  try {
+    const id = reviewModalRowId;
+    const linked = (typeof invoiceBookingData !== 'undefined') ? invoiceBookingData['id_' + id] : null;
+    const bm = getBookingMatchForRow(name, parseFloat(total) || 0, perf, linked);
+    if (bm && bm.alreadyPaid) {
+      const bn = bm.booking?.bookingName ? ` (“${bm.booking.bookingName}”)` : '';
+      alreadyPaidWarn = `This booking${bn} appears <strong>already marked paid in Zoho</strong>. If you confirm, the invoice stays in the list but is excluded from the Xero &amp; super exports.`;
+    }
+  } catch (e) { /* non-fatal */ }
+
+  if (!missingFields.length && !alreadyPaidWarn) return Promise.resolve(true); // nothing to flag
+
+  const headerTxt = alreadyPaidWarn && !missingFields.length ? '⚠ Already paid in Zoho'
+                  : alreadyPaidWarn ? '⚠ Check before confirming'
+                  : '⚠ Missing fields';
+  const paidBanner = alreadyPaidWarn
+    ? `<div style="font-size:12px;color:#FCA5A5;background:rgba(197,48,48,0.15);border:1px solid rgba(252,129,129,0.4);border-radius:6px;padding:8px 10px;margin-bottom:${missingFields.length?'12px':'16px'};line-height:1.5">${alreadyPaidWarn}</div>`
+    : '';
 
   // Build popup with an editable input for each missing field
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `
     <div style="background:#1B2A4A;border:1px solid #2A3E5C;border-radius:10px;padding:22px 26px;max-width:400px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.55)">
-      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:6px">⚠ Missing fields</div>
-      <div style="font-size:12px;color:#9DB5CC;margin-bottom:14px">Fill in below and click <strong style="color:#fff">Confirm</strong>, or <strong style="color:#fff">Go back</strong> to complete the form.</div>
+      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:6px">${headerTxt}</div>
+      ${paidBanner}
+      ${missingFields.length ? '<div style="font-size:12px;color:#9DB5CC;margin-bottom:14px">Fill in below and click <strong style="color:#fff">Confirm</strong>, or <strong style="color:#fff">Go back</strong> to complete the form.</div>' : ''}
       <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:16px">
         ${missingFields.map(f => `
           <div>
@@ -3446,9 +3467,13 @@ function reviewLooksGood() {
   // Persist GST toggle to invoiceGSTData store
   invoiceGSTData['id_' + id] = document.getElementById('rv-gst')?.checked || false;
 
-  // Persist super toggle
+  // Persist super toggle — and sync the Stage 1 "Withhold super?" checkbox, which is what
+  // collectRows reads (the per-row super source of truth).
   if (!window.invoiceSuperData) window.invoiceSuperData = {};
-  window.invoiceSuperData['id_' + id] = document.getElementById('rv-super')?.checked ?? true;
+  const rvSuperChecked = document.getElementById('rv-super')?.checked ?? true;
+  window.invoiceSuperData['id_' + id] = rvSuperChecked;
+  const s1SuperEl = document.getElementById('s1-super-' + id);
+  if (s1SuperEl) s1SuperEl.checked = rvSuperChecked;
 
   // Save expense splits
   const expParking       = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
@@ -3740,8 +3765,8 @@ function addManualRow() {
     </td>
     <td id="match-${id}"><span style="color:#ccc;font-size:12px">— type name —</span></td>
     <td style="text-align:center;vertical-align:middle;">
-      <input type="checkbox" id="s1-paid-${id}" style="cursor:pointer;width:15px;height:15px;"
-        title="Tick to exclude this row from Xero + Super CSV exports (e.g. already paid)">
+      <input type="checkbox" id="s1-super-${id}" checked style="cursor:pointer;width:15px;height:15px;accent-color:#27AE60"
+        title="Withhold 12% super for this invoice. Defaults ON for sole traders (Type A/B); has no effect for companies/partnerships (C/D). To exclude the whole invoice, remove it with the ✕ button.">
     </td>
     <td style="white-space:nowrap">
       <button class="btn btn-secondary btn-sm" onclick="openReviewModal('${id}')" id="rv-btn-${id}" title="Review invoice — verify &amp; correct fields" style="margin-right:3px">👁 Review</button>
@@ -3888,9 +3913,14 @@ function collectRows() {
     const abn = document.getElementById('abn-'+id)?.value.replace(/\s/g,'') || '';
     const abrData = abrRowData['id_'+id] || null;
     const hasGST = invoiceGSTData['id_'+id] || false;
-    // Read the Stage 1 checkbox first; fall back to PDF-extracted or cached value
-    const alreadyPaid = document.getElementById('s1-paid-'+id)?.checked
-      || invoicePaidData['id_'+id] || false;
+    // Already-paid now comes only from PDF auto-detection ($0 due) + Zoho booking check.
+    // (The old manual "Exclude" checkbox was replaced by the "Withhold super?" toggle; to
+    // exclude an invoice from the run, remove it with the red ✕ button instead.)
+    const alreadyPaid = invoicePaidData['id_'+id] || false;
+    // Per-row super-withholding toggle (the Stage 1 "Withhold super?" checkbox). Undefined if
+    // the checkbox isn't present → treated as default (decided by type in processInvoices).
+    const superCb = document.getElementById('s1-super-'+id);
+    const withholdSuper = superCb ? superCb.checked : undefined;
     const invoiceType = document.getElementById('itype-'+id)?.value || defaultType;
     if (!name && !total) return null;
     const perfDate = document.getElementById('perfdate-'+id)?.value || '';
@@ -3903,7 +3933,7 @@ function collectRows() {
     const superBase = total - superExcluded;
     // Explicitly-linked bookings from the Review modal (takes precedence over fuzzy match for paid check)
     const linkedBookings = invoiceBookingData['id_'+id] || null;
-    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, invoiceType, source, rowId: id, linkedBookings};
+    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, withholdSuper, invoiceType, source, rowId: id, linkedBookings};
   }
   // PDF event rows
   document.querySelectorAll('#pdf-tbody tr[id]').forEach(tr => {
@@ -3977,10 +4007,17 @@ function processInvoices() {
     // otherwise fall back to fuzzy match
     const bookingMatch = getBookingMatchForRow(row.name, row.total, row.date, row.linkedBookings);
     const alreadyPaidInZoho = !!(bookingMatch?.alreadyPaid);
-    // manuallyExcluded = user ticked the Stage 1 Exclude? checkbox
+    // manuallyExcluded = invoice auto-detected as $0 due (PDF) but not via a Zoho booking
     const manuallyExcluded = row.alreadyPaid && !alreadyPaidInZoho;
     // Combine all exclusion signals
     const alreadyPaid = (row.alreadyPaid || false) || alreadyPaidInZoho;
+
+    // Super withholding: applies to sole traders (types A/B) only. Driven by the per-row
+    // "Withhold super?" toggle — defaults ON for A/B, OFF for C/D — NOT by the Zoho flag
+    // (which was unreliable and left some sole traders with no super). The user can override
+    // per row. Type C/D never accrue super (calculateAmounts returns super:0 for them).
+    const superByType = ['A','B'].includes(type);
+    const withholdSuper = (row.withholdSuper != null) ? (row.withholdSuper && superByType) : superByType;
 
     return {
       ...row,
@@ -3993,6 +4030,7 @@ function processInvoices() {
       alreadyPaid,
       alreadyPaidInZoho,
       manuallyExcluded,
+      withholdSuper,
       bookingMatch,
       id: i,
     };
@@ -4122,6 +4160,10 @@ function linkContractorS1(rowId, contractorId) {
       </div>
       <input type="hidden" id="itype-${rowId}" value="event">`;
   }
+  // Update the "Withhold super?" toggle default based on the linked contractor's type
+  // (sole traders A/B → on; companies/partnerships C/D → off).
+  const s1SuperEl = document.getElementById('s1-super-' + rowId);
+  if (s1SuperEl) s1SuperEl.checked = !['C','D'].includes(c.type);
   hideDropdownS1(rowId);
 }
 
@@ -4210,10 +4252,12 @@ function buildResultsView() {
 
   const matched = eventProcessed.filter(p => p.matched);
   const unmatched = eventProcessed.filter(p => !p.matched);
-  // p.contractor may be null for ABR-derived rows (no Zoho match) — use optional chaining
-  const superRows = matched.filter(p => p.contractor?.superEligible);
+  // Super is driven by the per-row withholdSuper flag (sole traders / types A-B), not the Zoho flag.
+  const superRows = matched.filter(p => p.withholdSuper && (p.amounts?.super||0) > 0);
   const totalSuper = superRows.reduce((s,p) => s + (p.amounts?.super||0), 0);
-  const totalCash = matched.reduce((s,p) => s + (p.amounts?.cash||0), 0);
+  // Cash to performer = total when super isn't withheld, else total − super (a.cash).
+  const cashFor = p => (!p.withholdSuper && (p.amounts?.super||0) > 0) ? (p.total||0) : (p.amounts?.cash||0);
+  const totalCash = matched.reduce((s,p) => s + cashFor(p), 0);
 
   // Stats
   document.getElementById('summary-stats').innerHTML = `
@@ -4294,7 +4338,6 @@ function buildResultsView() {
   // Render AP table
   const apTbody = document.getElementById('ap-tbody');
   apTbody.innerHTML = apProcessed.map(p => {
-    const checksCol = checksCell(p);
     // Infer a description hint from what we know
     const descHint = p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : '—';
     // contractor may be null for ABR-matched rows — safe fallback
@@ -4305,7 +4348,6 @@ function buildResultsView() {
       <td style="font-size:12px">${p.date||'—'}</td>
       <td><strong>$${fmt(p.total)}</strong></td>
       <td style="font-size:11px;color:#888">${descHint}</td>
-      <td>${checksCol}</td>
     </tr>`;
   }).join('');
 
@@ -4313,8 +4355,6 @@ function buildResultsView() {
   tbody.innerHTML = eventProcessed.map(p => {
     // Wrap each row in its own try-catch so one bad row can't blank the whole table
     try {
-      const checksCol = checksCell(p);
-
       if (!p.matched) return `<tr style="background:#FDF0F0" id="result-row-${p.id}">
         <td>
           <strong>${escHtml(p.name||'—')}</strong>
@@ -4346,7 +4386,6 @@ function buildResultsView() {
         </td>
         <td>$${fmt(p.total)}</td>
         <td colspan="3" style="color:#aaa;font-size:12px">— link or type above →</td>
-        <td>${checksCol}</td>
       </tr>`;
 
       const a = p.amounts || { cash: p.total||0, super: 0, gst: 0, unitAmount: p.total||0, taxAmount: 0 };
@@ -4374,17 +4413,16 @@ function buildResultsView() {
         <td style="${paidStyle}">${p.date||'—'}</td>
         <td style="${paidStyle}"><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
         <td style="${paidStyle}">$${fmt(p.total)}</td>
-        <td style="${paidStyle}"><strong>$${fmt(p.contractor?.superEligible === false && a.super > 0 ? p.total : a.cash)}</strong></td>
-        <td style="${paidStyle}">${(a.super > 0 && p.contractor?.superEligible !== false) ? `<strong style="color:var(--green)">$${fmt(a.super)}</strong>` : (a.super > 0 && p.contractor?.superEligible === false ? `<span style="color:#aaa;font-size:11px" title="Zoho: not super-eligible — no super withheld">—</span>` : '—')}</td>
+        <td style="${paidStyle}"><strong>$${fmt(!p.withholdSuper && a.super > 0 ? p.total : a.cash)}</strong></td>
+        <td style="${paidStyle}">${(a.super > 0 && p.withholdSuper) ? `<strong style="color:var(--green)">$${fmt(a.super)}</strong>` : (a.super > 0 && !p.withholdSuper ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice (toggle off in Stage 1)">—</span>` : '—')}</td>
         <td style="${paidStyle}"><code style="font-size:11px">${ACCOUNT_CODES[typeCode]||typeCode}</code></td>
         <td style="${paidStyle}">${gstCell}</td>
-        <td>${checksCol}</td>
       </tr>`;
     } catch(rowErr) {
       // Show the row with an error message so we can see what went wrong
       const safeName = escHtml(p.name || p.invoiceNumber || `Row ${p.id}`);
       return `<tr style="background:#FFF5F5">
-        <td colspan="10" style="color:#C53030;font-size:11px;padding:8px 12px">
+        <td colspan="9" style="color:#C53030;font-size:11px;padding:8px 12px">
           ⚠ Render error on <strong>${safeName}</strong>: ${escHtml(String(rowErr))}
         </td>
       </tr>`;
@@ -4489,7 +4527,10 @@ function exportXeroCSV() {
   // ── Event contractor invoices (with super logic) ─────────────────────────────
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid).forEach(p => {
     const a = p.amounts;
-    const c = p.contractor;
+    // contractor may be null for ABR-derived rows (no Zoho match, e.g. Queen of Hearts) —
+    // use a safe fallback so the export never crashes on a missing contractor.
+    const c = p.contractor || {};
+    const cName     = p.contractor?.name || p.name || '(Unknown)';
     const invNum    = p.invoiceNumber || autoInvNum(p);
     const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.perfDate || p.date);
@@ -4500,7 +4541,7 @@ function exportXeroCSV() {
 
     // Super withheld for this invoice (on superBase = service fee + travel; never on
     // parking/accommodation). This is also what Bill 2 (the clearing-house bill) charges.
-    const willWithholdSuper = c.superEligible !== false && superDeductionsEnabled();
+    const willWithholdSuper = p.withholdSuper && superDeductionsEnabled();
     const superAmt = willWithholdSuper
       ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
           ? calculateAmounts(p.superBase, p.type).super
@@ -4512,7 +4553,7 @@ function exportXeroCSV() {
     const superNote = superAmt > 0
       ? ` | $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to ${CLEARINGHOUSE_NAME} on your behalf`
       : '';
-    const feeDesc = [c.name, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
+    const feeDesc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
       .filter(Boolean).join(' | ') + superNote;
 
     // The full ex-GST service fee (a.unitAmount + a.super == service fee for A, ex-GST fee for B).
@@ -4522,15 +4563,15 @@ function exportXeroCSV() {
       // Type B/D — record the FULL fee so Xero claims GST on the whole invoice, then
       // offset the super with a BAS-excluded withholding line to 478-C (which Bill 2
       // re-debits, netting 478-C to zero). This keeps the contractor's GST credit intact.
-      rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, grossFee.toFixed(2), acctCode, taxType));
+      rows.push(mkRow(cName, invNum, eventRef, dateXero, dateXero, feeDesc, 1, grossFee.toFixed(2), acctCode, taxType));
       if (superAmt > 0) {
-        const superLineDesc = `Super withheld (12%) - ${c.name} | Inv: ${invNum} | remitted to ${CLEARINGHOUSE_NAME}`;
-        rows.push(mkRow(c.name, invNum, eventRef, dateXero, '', superLineDesc, 1, (-superAmt).toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
+        const superLineDesc = `Super withheld (12%) - ${cName} | Inv: ${invNum} | remitted to ${CLEARINGHOUSE_NAME}`;
+        rows.push(mkRow(cName, invNum, eventRef, dateXero, '', superLineDesc, 1, (-superAmt).toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       }
     } else {
       // Type A/C — no GST. Single fee line, net of super; no separate super line on Bill 1.
       const netFee = (grossFee - superAmt).toFixed(2);
-      rows.push(mkRow(c.name, invNum, eventRef, dateXero, dateXero, feeDesc, 1, netFee, acctCode, taxType));
+      rows.push(mkRow(cName, invNum, eventRef, dateXero, dateXero, feeDesc, 1, netFee, acctCode, taxType));
     }
 
     // Lines 3+ — expense splits (parking / accommodation / travel)
@@ -4595,9 +4636,9 @@ function exportSuperBillsCSV() {
   const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
 
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid
-                     && p.contractor?.superEligible && p.amounts?.super > 0)
+                     && p.withholdSuper && p.amounts?.super > 0)
     .forEach(p => {
-      const c = p.contractor;
+      const cName    = p.contractor?.name || p.name || '(Unknown)';
       const invNum   = p.invoiceNumber || autoInvNum(p);
       const dateXero = resolveDate(p);
       const eventRef = buildEventReference(p); // "Event(s): DD.MM.YY …"
@@ -4608,8 +4649,8 @@ function exportSuperBillsCSV() {
 
       const eventLabel = eventRef || `Event: ${formatDateReadable(p.perfDate || p.date) || dateXero}`;
       // Single-line detail per accountant (name | events | invoice # | total | super % | super $)
-      const desc = `${c.name} | ${eventLabel} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
-      const ref  = `${eventRef ? eventRef + ' · ' : ''}${c.name}`;
+      const desc = `${cName} | ${eventLabel} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
+      const ref  = `${eventRef ? eventRef + ' · ' : ''}${cName}`;
       // Distinct invoice number so the super bill doesn't collide with the contractor bill in Xero.
       rows.push(mkRow(CLEARINGHOUSE_NAME, `${invNum}-SUPER`, ref, dateXero, dateXero,
                       desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
@@ -4636,11 +4677,12 @@ function exportSuperCSV() {
                   'PayPeriodStart','PayPeriodEnd']];
 
   const payDate = today();
-  processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid && p.contractor?.superEligible && p.amounts?.super > 0)
+  processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid && p.withholdSuper && p.amounts?.super > 0)
     .forEach(p => {
-      const c = p.contractor;
-      const nameParts = c.name.split(' ');
-      const firstName = nameParts.slice(0,-1).join(' ') || c.name;
+      const c = p.contractor || {};
+      const fullName = c.name || p.name || '';
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts.slice(0,-1).join(' ') || fullName;
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length-1] : '';
       rows.push([
         'Melbourne Entertainment Company',
