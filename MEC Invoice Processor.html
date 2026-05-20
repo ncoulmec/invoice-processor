@@ -2264,7 +2264,7 @@ function extractLineItems(raw){
     if (/set[\s-]?up|bump[\s-]?(in|out)|pack[\s-]?down|rehears/.test(d)) return 'Setup';
     return 'Performance';
   };
-  const SKIP = /^(total|sub\s?total|gst|amount|balance|due|invoice|tax|payment|account|bsb|abn|date)\b/i;
+  const SKIP = /^(total|sub\s?total|gst|amount|balance|due|invoice|tax|payment|account|bsb|abn|date|description|qty|quantity|unit|price|rate|item|ref|reference|terms|issued|bank|pay\b)/i;
   // "$600 description"  OR  "description $600"
   const re = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s+([A-Za-z][A-Za-z0-9 '’()&,.:\-–—]{2,55}?)(?=\s+\$|\s*$)|([A-Za-z][A-Za-z0-9 '’()&,.:\-–—]{2,55}?)\s*[:\-–—]?\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/g;
   let m;
