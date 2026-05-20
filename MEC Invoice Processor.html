@@ -1968,6 +1968,22 @@ function parseInvoiceText(text, filename) {
     }
   }
 
+  // Strategy H2 (last resort): bank "Account Name:" — for invoices with no sender-name header
+  // and no usable filename, the payee name in the bank block is often the only place the
+  // contractor is named (e.g. "Payable To: Account Name: Ricardo Ferrao" → "Ricardo Ferrao").
+  // Runs AFTER the filename fallback so it never overrides a cleaner name; truncates at the
+  // bank-name words that follow it in payment blocks (e.g. "...National Australia Bank").
+  if (!name) {
+    const acctNameM = text.match(/Account\s*Name\s*[:\-]?\s*([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,2})/i);
+    if (acctNameM) {
+      const candidate = acctNameM[1].trim().replace(
+        /\s+\b(National|Australia|Commonwealth|Westpac|ANZ|NAB|Bendigo|Bankwest|Suncorp|Macquarie|ING|Bank|BSB|Account|Acc|Number|No|ABN|Pay|For|Date|Reference)\b.*$/i, ''
+      ).trim();
+      const words = candidate.split(/\s+/);
+      if (candidate && !MEC_RE.test(candidate) && words.length >= 2 && words.length <= 4) name = candidate;
+    }
+  }
+
   // Final: strip trailing noise words from any extracted name
   // e.g. "Jake Fehily Invoice" → "Jake Fehily", "Olivia Bradbury AD" → "Olivia Bradbury"
   if (name) {
@@ -2170,7 +2186,24 @@ function parseInvoiceText(text, filename) {
   const gstAmt = text.match(/\bGST\b[^$\d]{0,10}\$?\s*([\d,]+\.\d{2})/i);
   const hasExplicitGSTAmount = gstAmt && parseFloat(gstAmt[1].replace(/,/g,'')) > 0;
   const hasGSTLabel = /(?:includes?\s+gst|gst\s*10(?:\.0)?\s*%|tax\s*10(?:\.0)?\s*%|10\s*%\s*(?:tax|gst))/i.test(text);
-  const hasGST = !!(hasExplicitGSTAmount || hasGSTLabel);
+  // GST-by-arithmetic: columnar templates (e.g. INV12245) detach the "Total GST $X" label from
+  // its amount, so the adjacency patterns above miss it. If the invoice mentions GST AND there
+  // exist amounts sub / gst / grand with gst ≈ sub×10% and sub+gst ≈ grand, GST was charged.
+  let gstArith = false;
+  if (/\bGST\b/i.test(text)) {
+    const cents = [...new Set(
+      [...text.matchAll(/\$\s*([\d,]+\.\d{2})/g)]
+        .map(m => Math.round(parseFloat(m[1].replace(/,/g,'')) * 100))
+        .filter(c => c > 0)
+    )];
+    const near = (c, t) => cents.some(x => Math.abs(x - t) <= 1);
+    for (const sub of cents) {
+      if (sub < 5000) continue;                 // subtotal ≥ $50
+      const gst = Math.round(sub * 0.10);
+      if (near(cents, gst) && near(cents, sub + gst)) { gstArith = true; break; }
+    }
+  }
+  const hasGST = !!(hasExplicitGSTAmount || hasGSTLabel || gstArith);
 
   // Detect already-paid invoices (AMOUNT DUE: $0.00 + Less Amount Paid shown)
   const alreadyPaid = /AMOUNT\s+DUE[:\s]+\$?\s*0[\.,]00/i.test(text)
@@ -2207,14 +2240,28 @@ function parseInvoiceText(text, filename) {
   if (!performanceDate && date) {
     const descIdx = text.search(/\b(?:description|item|quantity|for\s*:|service)\b/i);
     const descSection = descIdx >= 0 ? text.slice(descIdx) : text.slice(Math.floor(text.length / 3));
+    // Skip dates that are actually the DUE date (preceded by "due" within ~15 chars).
+    const isDueDate = (idx) => /due\b[^\d]{0,15}$/i.test(descSection.slice(Math.max(0, idx - 18), idx));
     // Numeric date in description (DD/MM/YY or DD/MM/YYYY)
     for (const m of descSection.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g)) {
+      if (isDueDate(m.index)) continue;
       const pd = parseDate(m[1], m[2], m[3]);
       if (pd && pd !== date) { performanceDate = pd; break; }
     }
     // Word date in description ("2 May 2026")
     if (!performanceDate) {
       for (const m of descSection.matchAll(/\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/g)) {
+        if (isDueDate(m.index)) continue;
+        const mo = mn2[m[2].toLowerCase().slice(0,3)];
+        if (!mo) continue;
+        const pd = parseDate(m[1], mo, m[3]);
+        if (pd && pd !== date) { performanceDate = pd; break; }
+      }
+    }
+    // Word date with 2-digit year ("09 May 26") — common on MEC-template invoices
+    if (!performanceDate) {
+      for (const m of descSection.matchAll(/\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{2})\b/g)) {
+        if (isDueDate(m.index)) continue;
         const mo = mn2[m[2].toLowerCase().slice(0,3)];
         if (!mo) continue;
         const pd = parseDate(m[1], mo, m[3]);
