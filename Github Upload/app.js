@@ -82,7 +82,8 @@ let invoiceGSTData = {};        // keyed by row id, stores hasGST from PDF extra
 let invoiceSuperData = {};      // keyed by row id, stores superWithhold override
 let invoicePaidData = {};      // keyed by row id, stores alreadyPaid from PDF extraction
 let invoiceBookingData = {};   // keyed by row id, stores [{bookingId,bookingName,eventDate,cost}] — selected booking matches
-let invoiceExpenseData = {};   // keyed by row id, stores {parking:0, accommodation:0, travel:0}
+let invoiceExpenseData = {};   // keyed by row id, stores {parking:0, accommodation:0, travel:0, other:0}
+let invoicePerfGuess = {};     // keyed by row id, true if the perf date was a best-guess (not an explicit event-date label) — surfaced in Review, not Stage 1
 let invoiceTypeData = {};      // keyed by row id, stores 'event' | 'ap' | 'unknown'
 let invoiceFileData = {};      // keyed by row id, stores object URL for PDF preview
 let invoiceRawText = {};       // keyed by row id, stores raw PDF text for debugging
@@ -803,6 +804,7 @@ async function handlePDFs(input) {
       appendInvoiceRow(tbody, id, data, match, file.name, dupWarning);
       invoiceGSTData['id_' + id] = !!data.hasGST;
       invoicePaidData['id_' + id] = !!data.alreadyPaid;
+      invoicePerfGuess['id_' + id] = !!data.perfDateGuess;
       invoiceTypeData['id_' + id] = data.invoiceTypeHint || 'unknown';
       // Pre-populate expense fields from PDF text detection (only if non-zero amounts found)
       if (data.detectedExpenses) {
@@ -1699,13 +1701,8 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
     <td><input type="text" value="${escHtml(data.invoiceNumber)}" id="inv-${id}"></td>
     <td style="min-width:115px">
       ${!isAP ? `<input type="date" value="${data.performanceDate||''}" id="perfdate-${id}"
-        style="font-size:11px;padding:2px 4px;width:115px;${(!data.performanceDate || data.perfDateGuess) ? 'border-color:#F6AD55' : 'border-color:#9AE6B4'}"
-        title="${!data.performanceDate ? '⚠ Perf date not found — please enter' : data.perfDateGuess ? '⚠ Best-guess event date — verify against the invoice' : 'Performance / event date'}">
-        ${!data.performanceDate
-          ? '<div style="font-size:9px;color:#B7791F;font-weight:600;margin-top:2px">⚠ Check invoice</div>'
-          : data.perfDateGuess
-            ? '<div style="font-size:9px;color:#B7791F;font-weight:600;margin-top:2px" title="Auto-detected — please confirm this is the event date">⚠ Best guess — verify</div>'
-            : '<div style="font-size:9px;color:#2F855A;font-weight:600;margin-top:2px">✓ from invoice</div>'}` : `<input type="date" value="${data.date}" id="date-${id}" style="font-size:11px;padding:2px 4px;width:115px">`}
+        style="font-size:11px;padding:2px 4px;width:115px"
+        title="Performance / event date — confirm in the Review screen">` : `<input type="date" value="${data.date}" id="date-${id}" style="font-size:11px;padding:2px 4px;width:115px">`}
       <!-- Keep hidden invoice date field for backward compatibility with extractRow() -->
       ${!isAP ? `<input type="hidden" id="date-${id}" value="${data.date}">` : ''}
     </td>
@@ -1806,6 +1803,7 @@ function clearAllInvoices() {
   if (window.invoiceSuperData) Object.keys(invoiceSuperData).forEach(k => delete invoiceSuperData[k]);
   if (window.invoicePaidData)  Object.keys(invoicePaidData).forEach(k => delete invoicePaidData[k]);
   if (window.invoiceTypeData)  Object.keys(invoiceTypeData).forEach(k => delete invoiceTypeData[k]);
+  Object.keys(invoicePerfGuess).forEach(k => delete invoicePerfGuess[k]);
   reviewedRows.clear();
   flaggedRows.clear();
 
@@ -1880,10 +1878,19 @@ function openReviewModal(id) {
   g('rv-exp-parking').value       = storedExp.parking       || '';
   g('rv-exp-accommodation').value = storedExp.accommodation || '';
   g('rv-exp-travel').value        = storedExp.travel        || '';
+  if (g('rv-exp-other')) g('rv-exp-other').value = storedExp.other || '';
   rvUpdateServiceFee();
 
   // Trigger perf date day-of-week display
   updatePerfDateDOW();
+
+  // Best-guess perf-date warning — surfaced HERE (Review), not on the Stage 1 row.
+  // The amber box + amber input border tells the user to confirm the auto-detected date.
+  const perfGuessWarn = g('rv-perfdate-warn');
+  const perfInput = g('rv-perfdate');
+  const isGuess = !!invoicePerfGuess['id_' + id] && !!(perfInput && perfInput.value);
+  if (perfGuessWarn) perfGuessWarn.style.display = isGuess ? 'block' : 'none';
+  if (perfInput) perfInput.style.borderColor = isGuess ? '#F6AD55' : '#3A5068';
 
   // Modal title
   const name = g('rv-name').value || 'Invoice';
@@ -2010,6 +2017,25 @@ function updatePerfDateDOW() {
     const full = d.toLocaleDateString('en-AU', {day:'numeric', month:'long', year:'numeric'});
     lbl.textContent = `${day}, ${full}`;
   } catch(e) { lbl.textContent = ''; }
+}
+
+// When the user manually edits the performance date, it's no longer a best-guess —
+// clear the amber warning + border.
+function rvClearPerfGuess() {
+  if (reviewModalRowId != null) invoicePerfGuess['id_' + reviewModalRowId] = false;
+  const warn = document.getElementById('rv-perfdate-warn');
+  const input = document.getElementById('rv-perfdate');
+  if (warn) warn.style.display = 'none';
+  if (input) input.style.borderColor = '#3A5068';
+}
+
+// Render readable [weekday], [date] [month] [year] for an ISO date string
+function fmtReadableDOW(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  } catch(e) { return ''; }
 }
 
 // ── Load a locally-selected PDF into the review modal viewer ──
@@ -2565,16 +2591,18 @@ function rvUpdateServiceFee() {
   const parking = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
   const accommodation = parseFloat(document.getElementById('rv-exp-accommodation')?.value || '0') || 0;
   const travel = parseFloat(document.getElementById('rv-exp-travel')?.value || '0') || 0;
-  const expTotal = parking + accommodation + travel;
+  const other = parseFloat(document.getElementById('rv-exp-other')?.value || '0') || 0;
+  const expTotal = parking + accommodation + travel + other;
   const serviceFee = total - expTotal;
-  const superBase = total - parking - accommodation; // travel stays in super base
+  // Super base = total minus the pure reimbursements (parking, accom, OTHER). Travel stays in.
+  const superBase = total - parking - accommodation - other;
   const el = document.getElementById('rv-service-fee-display');
   if (!el) return;
   if (expTotal > 0) {
     const color = serviceFee >= 0 ? '#4ADE80' : '#F87171';
     const superNote = travel > 0
       ? `super on <strong>$${superBase.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> (service + travel)`
-      : `super on service fee only`;
+      : `super on <strong>$${superBase.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> (service fee)`;
     el.innerHTML = `Service: <span style="color:${color};font-weight:700">$${serviceFee.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span> <span style="color:#8BAAC0;font-size:10px">${superNote}</span>`;
   } else {
     el.innerHTML = '';
@@ -2604,7 +2632,9 @@ async function reviewRunABR() {
   }
 }
 
-// Called whenever a booking checkbox is toggled — updates total bar + auto-fills perf date
+// Called whenever a booking checkbox is toggled — updates total bar, auto-fills perf date(s),
+// renders one editable date input per ticked booking, and flags the Total card if the invoice
+// total is HIGHER than the matched Zoho booking value.
 function rvBookingSelectionChanged() {
   const allCbs = document.querySelectorAll('.rv-booking-cb');
   const checked = Array.from(allCbs).filter(cb => cb.checked);
@@ -2617,8 +2647,13 @@ function rvBookingSelectionChanged() {
     if (firstDate && (!perfEl.value || checked.length === 1)) {
       perfEl.value = firstDate;
       updatePerfDateDOW();
+      rvClearPerfGuess(); // a date pulled from a confirmed booking is no longer a guess
     }
   }
+
+  // ── Multiple event dates: one editable date input per ticked booking ──
+  // The first booking fills the main rv-perfdate field; bookings 2..N get extra inputs here.
+  rvRenderExtraPerfDates(checked);
 
   // Auto-fill Total (inc. GST) from booking cost if total is currently empty and one booking selected
   const totalEl = document.getElementById('rv-total');
@@ -2629,16 +2664,17 @@ function rvBookingSelectionChanged() {
       rvUpdateServiceFee();
     }
   }
-  const bar = document.getElementById('rv-booking-total-bar');
-  if (!bar) return;
-
-  if (checked.length === 0) {
-    bar.style.display = 'none';
-    return;
-  }
 
   const selectedTotal = checked.reduce((s, cb) => s + (parseFloat(cb.dataset.cost) || 0), 0);
   const invoiceTotal  = parseFloat(document.getElementById('rv-total')?.value || '0');
+
+  // ── Total-card flag: quiet red border when the invoice is billed for MORE than Zoho expected ──
+  rvFlagTotalVsBooking(invoiceTotal, selectedTotal, checked.length);
+
+  const bar = document.getElementById('rv-booking-total-bar');
+  if (!bar) return;
+  if (checked.length === 0) { bar.style.display = 'none'; return; }
+
   const diff = Math.abs(selectedTotal - invoiceTotal);
   const match = diff <= 1 && invoiceTotal > 0;
   const matchColor = match ? '#4ADE80' : '#FBD38D';
@@ -2650,6 +2686,58 @@ function rvBookingSelectionChanged() {
     <span style="color:#fff;font-size:11px;font-weight:600">$${selectedTotal.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
     <span style="color:${matchColor};font-size:10px;font-weight:600;margin-left:4px">${matchIcon}</span>
   `;
+}
+
+// Render an editable date input for each ticked booking beyond the first.
+// Editing one writes the new date back onto its checkbox's data-date so it flows through to
+// the saved booking links (and the Xero "Event(s):" reference) on Confirm.
+function rvRenderExtraPerfDates(checked) {
+  const wrap = document.getElementById('rv-perfdate-extra');
+  if (!wrap) return;
+  if (!checked || checked.length <= 1) { wrap.innerHTML = ''; return; }
+  const extras = checked.slice(1);
+  wrap.innerHTML = extras.map((cb, i) => {
+    const bid = cb.dataset.bid || '';
+    const dateVal = cb.dataset.date || '';
+    const bname = cb.dataset.name || '';
+    const readable = dateVal ? fmtReadableDOW(dateVal) : '';
+    return `<div>
+      <div style="color:#8BAAC0;font-size:9px;margin-bottom:2px;font-weight:600;letter-spacing:.3px">EVENT DATE ${i + 2}${bname ? ` · <span style="color:#93c5fd;font-weight:500">${escHtml(bname)}</span>` : ''}</div>
+      <input type="date" value="${dateVal}" data-extra-bid="${bid}"
+        onchange="rvExtraPerfDateChanged('${bid}', this.value); this.nextElementSibling.textContent=fmtReadableDOW(this.value)"
+        onclick="try{this.showPicker()}catch(e){}"
+        style="font-size:12px;padding:6px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
+      <div style="font-size:11px;color:#9DB5CC;font-weight:600;margin-top:2px">${readable}</div>
+    </div>`;
+  }).join('');
+}
+
+// Write an edited extra date back onto the matching booking checkbox
+function rvExtraPerfDateChanged(bid, val) {
+  const cb = document.querySelector(`.rv-booking-cb[data-bid="${bid}"]`);
+  if (cb) cb.dataset.date = val;
+}
+
+// Quiet red flag on the Total card when the invoice total exceeds the Zoho booking value.
+function rvFlagTotalVsBooking(invoiceTotal, selectedTotal, numChecked) {
+  const card = document.getElementById('rv-total-card');
+  const warn = document.getElementById('rv-total-warn');
+  if (!card) return;
+  const over = numChecked > 0 && selectedTotal > 0 && invoiceTotal > selectedTotal + 1;
+  if (over) {
+    const diff = invoiceTotal - selectedTotal;
+    card.style.borderColor = 'rgba(252,129,129,0.85)';
+    card.style.background   = 'rgba(197,48,48,0.10)';
+    if (warn) {
+      warn.style.display = 'block';
+      warn.textContent = `▲ $${diff.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})} over Zoho quote`;
+      warn.title = `This invoice is billed for more than the matched Zoho booking value ($${selectedTotal.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}). Confirm the higher amount is correct before paying.`;
+    }
+  } else {
+    card.style.borderColor = 'rgba(39,174,96,0.45)';
+    card.style.background   = 'rgba(39,174,96,0.08)';
+    if (warn) warn.style.display = 'none';
+  }
 }
 
 function reviewLooksGood() {
@@ -2680,8 +2768,9 @@ function reviewLooksGood() {
   const expParking       = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
   const expAccommodation = parseFloat(document.getElementById('rv-exp-accommodation')?.value || '0') || 0;
   const expTravel        = parseFloat(document.getElementById('rv-exp-travel')?.value || '0') || 0;
-  if (expParking > 0 || expAccommodation > 0 || expTravel > 0) {
-    invoiceExpenseData['id_' + id] = { parking: expParking, accommodation: expAccommodation, travel: expTravel };
+  const expOther         = parseFloat(document.getElementById('rv-exp-other')?.value || '0') || 0;
+  if (expParking > 0 || expAccommodation > 0 || expTravel > 0 || expOther > 0) {
+    invoiceExpenseData['id_' + id] = { parking: expParking, accommodation: expAccommodation, travel: expTravel, other: expOther };
   } else {
     delete invoiceExpenseData['id_' + id];
   }
@@ -2872,7 +2961,8 @@ function applyFieldTable(){
     else if (it.category === 'Travel') travel += it.amount;
   });
   if (parking || accommodation || travel) {
-    invoiceExpenseData['id_' + id] = { parking, accommodation, travel };
+    const prevOther = invoiceExpenseData['id_' + id]?.other || 0;
+    invoiceExpenseData['id_' + id] = { parking, accommodation, travel, other: prevOther };
   }
 
   // Re-run Zoho matching on the (possibly updated) name
@@ -3127,10 +3217,11 @@ function collectRows() {
     const perfDate = document.getElementById('perfdate-'+id)?.value || '';
     // Expense splits
     const expenses = invoiceExpenseData['id_'+id] || null;
-    const expTotal = expenses ? ((expenses.parking||0) + (expenses.accommodation||0) + (expenses.travel||0)) : 0;
+    const expTotal = expenses ? ((expenses.parking||0) + (expenses.accommodation||0) + (expenses.travel||0) + (expenses.other||0)) : 0;
     const serviceFee = total - expTotal;
-    // Super is withheld on service fee + travel (time-based), but NOT on parking/accommodation (pure reimbursements)
-    const superExcluded = expenses ? ((expenses.parking||0) + (expenses.accommodation||0)) : 0;
+    // Super is withheld on service fee + travel (time-based), but NOT on parking/accommodation/other
+    // (pure reimbursements — e.g. parking, accom, and "other" out-of-pocket purchases like a table or cord)
+    const superExcluded = expenses ? ((expenses.parking||0) + (expenses.accommodation||0) + (expenses.other||0)) : 0;
     const superBase = total - superExcluded;
     // Explicitly-linked bookings from the Review modal (takes precedence over fuzzy match for paid check)
     const linkedBookings = invoiceBookingData['id_'+id] || null;
@@ -3618,27 +3709,23 @@ function buildResultsView() {
       const a = p.amounts || { cash: p.total||0, super: 0, gst: 0, unitAmount: p.total||0, taxAmount: 0 };
       const gstCell = (a.gst > 0) ? `<span class="badge badge-ok">$${fmt(a.gst)}</span>` : '—';
       const gstWarn = p.gstMismatch
-        ? `<div style="margin-top:4px"><span class="gst-mismatch-pill" onclick="showGSTUpdatePrompt(${p.id})" title="Click for details">⚠ GST mismatch — tap to review</span></div>`
+        ? `<div style="margin-top:4px"><span class="gst-mismatch-pill s2-tip" onclick="showGSTUpdatePrompt(${p.id})">⚠ GST mismatch — tap to review<span class="s2-tip-box"><strong>GST mismatch</strong>This invoice charges GST, but Zoho has this contractor as not GST-registered. Tap to review and update the contractor record. The export uses the GST-inclusive type so the bill is still correct.</span></span></div>`
         : '';
       const zohoBtn = zohoLink(p.contractor?.id);
       const displayName = p.contractor?.name || p.name || '—';
       const typeCode = p.type || 'A';
       // ABR-only rows: super estimated but not verified against Zoho — show a prompt
       const abrSuperNote = (p.matchSource === 'abr' && ['A','B'].includes(typeCode) && a.super > 0)
-        ? `<div style="margin-top:3px"><span style="font-size:10px;background:#FFF3E8;color:#C05621;border:1px solid #FBD38D;border-radius:4px;padding:2px 6px;cursor:default"
-             title="No Zoho record found — super estimated from ABR registration. Verify this contractor is actually super-eligible.">
-             ⚠ ABR-only: super estimated — verify
-           </span></div>` : '';
+        ? `<div style="margin-top:3px"><span class="s2-tip" style="font-size:10px;background:#FFF3E8;color:#C05621;border:1px solid #FBD38D;border-radius:4px;padding:2px 6px;cursor:help">⚠ ABR-only: super estimated — verify<span class="s2-tip-box"><strong>Super estimated from ABR</strong>No Zoho record was found for this contractor — super has been estimated from their ABR registration. Verify they are actually super-eligible before paying.</span></span></div>` : '';
       // Already-paid-in-Zoho is now informational only (no strikethrough, not excluded).
       // Show a warning chip that links to the Zoho booking in a new tab.
       const paidBookingId = p.alreadyPaidInZoho ? p.bookingMatch?.booking?.id : null;
       const paidWarn = p.alreadyPaidInZoho
         ? (paidBookingId
-            ? `<a href="https://crm.zoho.com/crm/org${ZOHO_ORG}/tab/Potentials/${paidBookingId}" target="_blank" rel="noopener"
-                 title="Our records show this invoice may already have been paid in Zoho — click to view the booking"
-                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;text-decoration:none;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning</a>`
-            : `<span title="Our records show this invoice may already have been paid in Zoho"
-                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning</span>`)
+            ? `<a href="https://crm.zoho.com/crm/org${ZOHO_ORG}/tab/Potentials/${paidBookingId}" target="_blank" rel="noopener" class="s2-tip"
+                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;text-decoration:none;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Warning<span class="s2-tip-box"><strong>Possibly already paid</strong>Our records show this invoice may already have been paid in Zoho. Click to open the booking and check before paying it again.</span></a>`
+            : `<span class="s2-tip"
+                 style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-weight:700;vertical-align:middle;white-space:nowrap;cursor:help">⚠ Warning<span class="s2-tip-box"><strong>Possibly already paid</strong>Our records show this invoice may already have been paid in Zoho. Check the booking before paying it again.</span></span>`)
         : '';
       const showSuperCell = showsSuper(p);
       // Clickable name → re-open the Review modal for a final sense-check (cross-check the PDF
@@ -3832,9 +3919,12 @@ function exportXeroCSV() {
     if (p.expenses) {
       const expTaxType = isGSTContractor ? 'GST on Expenses' : 'GST Free Expenses';
       const expItems = [
-        { label: 'Parking',       amount: p.expenses.parking       || 0, account: '449'     },
-        { label: 'Accommodation', amount: p.expenses.accommodation || 0, account: '493-C'   },
-        { label: 'Travel',        amount: p.expenses.travel        || 0, account: acctCode  },
+        { label: 'Parking',             amount: p.expenses.parking       || 0, account: '449'    },
+        { label: 'Accommodation',       amount: p.expenses.accommodation || 0, account: '493-C'  },
+        { label: 'Travel',              amount: p.expenses.travel        || 0, account: acctCode },
+        // "Other" = a subcontractor direct cost of the performance (same account as the fee/travel),
+        // just with NO super deducted on it.
+        { label: 'Other (no super)',    amount: p.expenses.other         || 0, account: acctCode },
       ];
       expItems.filter(x => x.amount > 0).forEach(x => {
         const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
@@ -4835,11 +4925,12 @@ async function gmailIngestPDF(file, item) {
     appendInvoiceRow(tbody, id, data, match, item.filename, dupWarning);
     invoiceGSTData['id_' + id] = !!data.hasGST;
     invoicePaidData['id_' + id] = !!data.alreadyPaid;
+    invoicePerfGuess['id_' + id] = !!data.perfDateGuess;
     invoiceTypeData['id_' + id] = data.invoiceTypeHint || 'unknown';
     if (data.detectedExpenses) {
       const de = data.detectedExpenses;
       if (de.parking > 0 || de.accommodation > 0 || de.travel > 0) {
-        invoiceExpenseData['id_' + id] = { parking: de.parking, accommodation: de.accommodation, travel: de.travel };
+        invoiceExpenseData['id_' + id] = { parking: de.parking, accommodation: de.accommodation, travel: de.travel, other: 0 };
       }
     }
     invoiceFileData['id_' + id] = URL.createObjectURL(file);

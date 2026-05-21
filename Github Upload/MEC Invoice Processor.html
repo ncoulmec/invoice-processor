@@ -517,55 +517,72 @@
     <!-- Hidden invoice date (kept for code compatibility — not shown in UI) -->
     <input type="date" id="rv-date" style="display:none">
 
-    <!-- ─── INPUT CARD: all fillable fields in sequential Tab order ─── -->
-    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:12px 14px;margin-bottom:9px;display:flex;flex-direction:column;gap:9px">
+    <!-- ─── INPUT CARD: key cross-check fields in a sequential top-to-bottom flow ─── -->
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:12px 14px;margin-bottom:9px;display:flex;flex-direction:column;gap:10px">
 
-      <!-- Top row: Contractor + Inv#/Perf (left) · prominent Total card (right) -->
+      <!-- Top row: sequential field stack (left) · prominent Total card (right) -->
       <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start">
 
-        <!-- LEFT: contractor, then invoice # + perf date on one line -->
-        <div style="display:flex;flex-direction:column;gap:9px">
-          <div>
-            <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
-              title="The contractor's name as it appears in Zoho CRM. Start typing to search.">Contractor</div>
-            <div style="position:relative">
-              <input type="text" id="rv-name" tabindex="1" placeholder="Start typing to search Zoho…"
-                oninput="reviewSearchContractor(this.value); updateReviewStatus(); rvHighlightMissing();"
-                onblur="setTimeout(()=>{const d=document.getElementById('rv-drop');if(d)d.style.display='none'},200)"
-                style="font-size:14px;padding:8px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-              <div id="rv-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>
-            </div>
-          </div>
-          <!-- Invoice # (compact) + Performance date on one line -->
-          <div style="display:grid;grid-template-columns:130px 1fr;gap:8px">
-            <div>
-              <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
-              <input type="text" id="rv-inv" tabindex="3" oninput="rvHighlightMissing()"
-                style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-            </div>
+        <!-- LEFT: Contractor (+ABN), Performance Date, Invoice # — read top to bottom -->
+        <div style="display:flex;flex-direction:column;gap:10px">
+
+          <!-- 1 · Contractor (+ ABN beside it) -->
+          <div style="display:grid;grid-template-columns:1fr 170px;gap:8px;align-items:start">
             <div>
               <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
-                title="The date of the actual performance or event — auto-filled when a Zoho booking is selected below">
-                Event / Perf. Date <span style="color:#4ADE80;font-size:8px;font-weight:500;text-transform:none;letter-spacing:0">(auto from booking)</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px">
-                <input type="date" id="rv-perfdate" tabindex="4"
-                  onchange="updatePerfDateDOW(); rvHighlightMissing()"
-                  onclick="try{this.showPicker()}catch(e){}"
-                  style="font-size:13px;padding:7px 9px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
-                <span id="rv-perfdate-dow" style="font-size:12px;color:#4ADE80;font-weight:600;min-width:70px"></span>
+                title="The contractor's name as it appears in Zoho CRM. Start typing to search.">1 · Contractor</div>
+              <div style="position:relative">
+                <input type="text" id="rv-name" tabindex="1" placeholder="Start typing to search Zoho…"
+                  oninput="reviewSearchContractor(this.value); updateReviewStatus(); rvHighlightMissing();"
+                  onblur="setTimeout(()=>{const d=document.getElementById('rv-drop');if(d)d.style.display='none'},200)"
+                  style="font-size:14px;padding:8px 10px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+                <div id="rv-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>
               </div>
             </div>
+            <div>
+              <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">
+                ABN <span id="rv-abn-zoho-badge" style="display:none;font-size:9px;color:#60A5FA;font-weight:600;text-transform:none;letter-spacing:0;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:3px;padding:1px 5px;vertical-align:middle">from Zoho</span>
+              </div>
+              <input type="text" id="rv-abn" tabindex="2" maxlength="14" placeholder="XX XXX XXX XXX"
+                oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#3A5068'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
+                style="font-size:13px;padding:8px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+            </div>
+          </div>
+
+          <!-- 2 · Performance / event date -->
+          <div>
+            <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px"
+              title="The date of the actual performance or event — auto-filled when a Zoho booking is selected below">
+              2 · Performance Date <span style="color:#4ADE80;font-size:8px;font-weight:500;text-transform:none;letter-spacing:0">(auto from booking)</span>
+            </div>
+            <input type="date" id="rv-perfdate" tabindex="3"
+              onchange="updatePerfDateDOW(); rvHighlightMissing(); rvClearPerfGuess()"
+              onclick="try{this.showPicker()}catch(e){}"
+              style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
+            <div id="rv-perfdate-dow" style="font-size:12px;color:#9DB5CC;font-weight:600;margin-top:3px;min-height:15px"></div>
+            <div id="rv-perfdate-warn" style="display:none;font-size:11px;color:#F6AD55;font-weight:600;margin-top:2px">⚠ Best-guess date — please confirm against the invoice</div>
+            <!-- extra perf-date inputs appear here when more than one Zoho booking is ticked -->
+            <div id="rv-perfdate-extra" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+          </div>
+
+          <!-- 3 · Invoice number -->
+          <div>
+            <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">3 · Invoice #</div>
+            <input type="text" id="rv-inv" tabindex="4" oninput="rvHighlightMissing()"
+              style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
           </div>
         </div>
 
         <!-- RIGHT: prominent Total card with auto-calculated breakdown -->
-        <div style="background:rgba(39,174,96,0.08);border:1.5px solid rgba(39,174,96,0.45);border-radius:9px;padding:11px 13px">
-          <div style="color:#8BAAC0;font-size:10px;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST)</div>
+        <div id="rv-total-card" style="background:rgba(39,174,96,0.08);border:1.5px solid rgba(39,174,96,0.45);border-radius:9px;padding:11px 13px;transition:border-color .15s,background .15s">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">
+            <div style="color:#8BAAC0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST)</div>
+            <div id="rv-total-warn" style="display:none;font-size:9px;font-weight:700;color:#FCA5A5;background:rgba(197,48,48,0.20);border:1px solid rgba(252,129,129,0.55);border-radius:4px;padding:2px 6px;white-space:nowrap"></div>
+          </div>
           <div style="display:flex;align-items:center;gap:5px">
             <span style="font-size:24px;color:#7Fd1a3;font-weight:700;line-height:1">$</span>
-            <input type="number" id="rv-total" tabindex="2" step="0.01" placeholder="0.00"
-              oninput="rvUpdateServiceFee(); rvUpdateTotalBreakdown();"
+            <input type="number" id="rv-total" tabindex="5" step="0.01" placeholder="0.00"
+              oninput="rvUpdateServiceFee(); rvUpdateTotalBreakdown(); rvBookingSelectionChanged();"
               title="Invoice total including GST (if applicable). Super and Xero amounts are calculated from this."
               style="font-size:26px;font-weight:700;padding:4px 8px;width:100%;border:1px solid #3A5068;border-radius:6px;background:#16263c;color:#fff;outline:none">
           </div>
@@ -576,7 +593,7 @@
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;color:#9DB5CC">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
-                <input type="checkbox" id="rv-gst" tabindex="9"
+                <input type="checkbox" id="rv-gst" tabindex="10"
                   onchange="rvUpdateTotalBreakdown(); updateReviewStatus();"
                   style="width:15px;height:15px;cursor:pointer;accent-color:#1D7A8C">
                 <span>+ GST (10%)</span>
@@ -590,25 +607,33 @@
         </div>
       </div>
 
-      <!-- 5-7. Expense splits -->
+      <!-- 4-7 · Reimbursements / expense splits -->
       <div>
-        <div style="color:#8BAAC0;font-size:10px;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Expense splits</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div style="color:#8BAAC0;font-size:10px;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Reimbursements &amp; expense splits</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+          <div>
+            <label style="color:#9DB5CC;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">✈ Travel $
+              <span class="rv-tip">?<span class="rv-tip-box"><strong>Travel</strong>Stays inside the super base — super IS calculated on travel (treated as part of the service). Split it out only for accounting visibility.</span></span></label>
+            <input type="number" id="rv-exp-travel" tabindex="6" step="0.01" min="0" placeholder="0"
+              oninput="rvUpdateServiceFee()"
+              style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+          </div>
           <div>
             <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🚗 Parking $</label>
-            <input type="number" id="rv-exp-parking" tabindex="5" step="0.01" min="0" placeholder="0"
+            <input type="number" id="rv-exp-parking" tabindex="7" step="0.01" min="0" placeholder="0"
               oninput="rvUpdateServiceFee()"
               style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
           </div>
           <div>
-            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🏨 Accommodation $</label>
-            <input type="number" id="rv-exp-accommodation" tabindex="6" step="0.01" min="0" placeholder="0"
+            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🏨 Accom $</label>
+            <input type="number" id="rv-exp-accommodation" tabindex="8" step="0.01" min="0" placeholder="0"
               oninput="rvUpdateServiceFee()"
               style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
           </div>
           <div>
-            <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">✈ Travel $</label>
-            <input type="number" id="rv-exp-travel" tabindex="7" step="0.01" min="0" placeholder="0"
+            <label style="color:#9DB5CC;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">📦 Other $
+              <span class="rv-tip">?<span class="rv-tip-box"><strong>Other reimbursement</strong>A straight reimbursement for anything that isn't labour — e.g. buying a table, an extra cord, consumables they bought for the job. <strong style="display:inline;color:#FBD38D">No super is deducted on this amount.</strong> Use it when the contractor has attached a receipt/invoice for an out-of-pocket purchase.</span></span></label>
+            <input type="number" id="rv-exp-other" tabindex="9" step="0.01" min="0" placeholder="0"
               oninput="rvUpdateServiceFee()"
               style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
           </div>
@@ -616,24 +641,17 @@
         <div id="rv-service-fee-display" style="color:#8BAAC0;font-size:11px;margin-top:4px"></div>
       </div>
 
-      <!-- 8. ABN + ABR buttons + GST + Super toggles -->
-      <div style="display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap">
-        <div>
-          <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">
-            ABN <span id="rv-abn-zoho-badge" style="display:none;font-size:9px;color:#60A5FA;font-weight:600;text-transform:none;letter-spacing:0;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:3px;padding:1px 5px;vertical-align:middle">from Zoho</span>
-          </div>
-          <input type="text" id="rv-abn" tabindex="8" maxlength="14" placeholder="XX XXX XXX XXX"
-            oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#3A5068'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
-            style="font-size:12px;padding:6px 9px;width:155px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
-        </div>
+      <!-- ABR lookup buttons + Super toggle -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,0.08);padding-top:9px">
         <button onclick="reviewOpenABR()" tabindex="-1"
           title="Open this ABN on the Australian Business Register website"
           style="background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:6px 10px;font-size:11px;cursor:pointer;white-space:nowrap">🔗 View on ABR</button>
         <button onclick="reviewRunABR()" tabindex="-1"
           title="Pull live ABR data for this ABN without opening a new tab"
           style="background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">↻ Pull ABR</button>
+        <div style="flex:1"></div>
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding-bottom:1px">
-          <input type="checkbox" id="rv-super" tabindex="10" style="width:14px;height:14px;cursor:pointer;accent-color:#27AE60">
+          <input type="checkbox" id="rv-super" tabindex="11" style="width:14px;height:14px;cursor:pointer;accent-color:#27AE60">
           Withhold super?
           <span class="rv-tip">?<span class="rv-tip-box"><strong>Withhold super on this invoice?</strong>Tick to deduct the employer super contribution (SGC) from this payment. Defaults to on for Type A/B contractors (individuals). Untick to override — e.g. if the contractor has confirmed they hold a private super arrangement.</span></span>
         </label>
@@ -707,17 +725,17 @@
       <button onclick="showFieldTable(reviewModalRowId)" tabindex="-1"
         title="Open the parsed field table — review &amp; correct extracted values, then apply them to this invoice"
         style="background:rgba(255,255,255,0.08);color:#9DB5CC;border:1px solid rgba(255,255,255,0.15);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">📊 Fields</button>
-      <button id="rv-flag-btn" onclick="reviewFlagIssue()" tabindex="-1"
-        title="Mark this invoice as needing attention — shows an amber warning on the Stage 1 row"
-        style="background:rgba(232,160,32,0.18);color:#FBD38D;border:1px solid rgba(232,160,32,0.35);border-radius:5px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚠ Needs attention</button>
       <div style="flex:1"></div>
       <button id="rv-prev-btn" onclick="reviewViewPrevious()" tabindex="-1"
         title="Go to the previous invoice (without confirming)"
         style="background:rgba(255,255,255,0.07);color:#9DB5CC;border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap">← Previous</button>
-      <button id="rv-save-next-btn" onclick="reviewConfirmAndNext()" tabindex="11"
+      <button id="rv-flag-btn" onclick="reviewFlagIssue()" tabindex="-1"
+        title="Mark this invoice as needing attention — shows an amber warning on the Stage 1 row"
+        style="background:rgba(232,160,32,0.18);color:#FBD38D;border:1px solid rgba(232,160,32,0.35);border-radius:5px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚠ Needs attention</button>
+      <button id="rv-save-next-btn" onclick="reviewConfirmAndNext()" tabindex="12"
         title="Save and open the next unreviewed invoice"
         style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm &amp; Next</button>
-      <button id="rv-save-btn" onclick="rvValidateBeforeConfirm().then(ok=>{if(ok)reviewLooksGood()})" tabindex="12"
+      <button id="rv-save-btn" onclick="rvValidateBeforeConfirm().then(ok=>{if(ok)reviewLooksGood()})" tabindex="13"
         title="Save all field values back to Stage 1 and mark this invoice as reviewed"
         style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirm</button>
     </div>

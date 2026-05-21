@@ -180,3 +180,17 @@
   .rv-tip-box strong { color:#93c5fd; display:block; margin-bottom:4px; font-size:11px; }
   .rv-tip-box::after { content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
                        border:6px solid transparent; border-bottom-color:#1e3a5f; }
+  /* ── Stage 2 warning chips: instant, nicely-formatted hover tooltip ── */
+  .s2-tip { position:relative; display:inline-block; }
+  .s2-tip .s2-tip-box {
+    opacity:0; visibility:hidden; pointer-events:none;
+    position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%) translateY(-3px);
+    transition:opacity .12s ease, transform .12s ease;
+    background:#1e3a5f; color:#e2e8f0; font-size:11px; font-weight:400; line-height:1.5;
+    border-radius:7px; padding:9px 12px; width:236px; text-align:left;
+    box-shadow:0 8px 24px rgba(0,0,0,0.30); border:1px solid rgba(96,165,250,0.30);
+    white-space:normal; z-index:9999; }
+  .s2-tip:hover .s2-tip-box { opacity:1; visibility:visible; transform:translateX(-50%) translateY(0); }
+  .s2-tip .s2-tip-box strong { color:#93c5fd; display:block; margin-bottom:3px; font-size:11px; }
+  .s2-tip .s2-tip-box::after { content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+                               border:6px solid transparent; border-bottom-color:#1e3a5f; }
