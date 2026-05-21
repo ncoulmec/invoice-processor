@@ -1405,6 +1405,16 @@ function parseInvoiceText(text, filename) {
   let performanceDate = '';
   let perfDateGuess = false;
   const mn2 = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  const FULL_MONTHS = {january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+  // Validate a worded month: full name, 3-letter abbrev, or a clean prefix ("Sept"). Rejects
+  // lookalikes like "Mayfield" (not a prefix of any month) to avoid false positives.
+  const monthNum = (w) => {
+    w = String(w || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (FULL_MONTHS[w]) return FULL_MONTHS[w];
+    const abbr = mn2[w.slice(0,3)];
+    if (abbr && Object.keys(FULL_MONTHS).some(fm => fm.startsWith(w))) return abbr;
+    return null;
+  };
   const invYear = (date && /^\d{4}/.test(date)) ? date.slice(0,4) : String(new Date().getFullYear());
 
   // Pattern A: explicit "Event/Performance/Service date" label → confident (NOT flagged a guess).
@@ -1417,7 +1427,7 @@ function parseInvoiceText(text, filename) {
     if (nm) performanceDate = parseDate(nm[1], nm[2], nm[3]);
     else {
       const wm = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?\s+(\d{2,4})$/);
-      if (wm) { const mo = mn2[wm[2].toLowerCase().slice(0,3)]; if (mo) performanceDate = parseDate(wm[1], mo, wm[3]); }
+      if (wm) { const mo = monthNum(wm[2]); if (mo) performanceDate = parseDate(wm[1], mo, wm[3]); }
     }
   }
 
@@ -1434,11 +1444,29 @@ function parseInvoiceText(text, filename) {
       if (skip(m.index) || !okDM(m[1], m[2])) continue;
       const pd = parseDate(m[1], m[2], m[3]); if (pd) cands.push({ i: m.index, iso: pd });
     }
-    // worded month: "9th May 2026", "9 May 26", "28-Apr-26", "Saturday 9th May 2026"
+    // worded month, day-first: "9th May 2026", "9 May 26", "28-Apr-26", "Saturday 9th May 2026"
     for (const m of body.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[\s\-\/]+([A-Za-z]{3,9})\.?[\s\-\/]+(\d{2,4})\b/g)) {
       if (skip(m.index) || +m[1] < 1 || +m[1] > 31) continue;
-      const mo = mn2[m[2].toLowerCase().slice(0,3)]; if (!mo) continue;
+      const mo = monthNum(m[2]); if (!mo) continue;
       const pd = parseDate(m[1], mo, m[3]); if (pd) cands.push({ i: m.index, iso: pd });
+    }
+    // worded month, MONTH-FIRST: "April 18, 2026", "Apr 18 26", "April 18th 2026"
+    for (const m of body.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2,4})\b/g)) {
+      if (skip(m.index) || +m[2] < 1 || +m[2] > 31) continue;
+      const mo = monthNum(m[1]); if (!mo) continue;
+      const pd = parseDate(m[2], mo, m[3]); if (pd) cands.push({ i: m.index, iso: pd });
+    }
+    // worded month with NO year ("18th April", "April 18th") → assume invoice year. The negative
+    // lookahead/behind stops it double-matching when a year is actually present (handled above).
+    for (const m of body.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\b(?![\s\-\/]*\d)/g)) {
+      if (skip(m.index) || +m[1] < 1 || +m[1] > 31) continue;
+      const mo = monthNum(m[2]); if (!mo) continue;
+      const pd = parseDate(m[1], mo, invYear); if (pd) cands.push({ i: m.index, iso: pd });
+    }
+    for (const m of body.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)\b(?![\s,\-\/]*\d)/g)) {
+      if (skip(m.index) || +m[2] < 1 || +m[2] > 31) continue;
+      const mo = monthNum(m[1]); if (!mo) continue;
+      const pd = parseDate(m[2], mo, invYear); if (pd) cands.push({ i: m.index, iso: pd });
     }
     // D/M with NO year ("18/4", "9/5") → assume invoice year. Lookbehind/ahead avoid matching a
     // fragment of a full date ("05/26" inside "16/05/26"); also skip address fragments ("2/4 Kennedy St").
@@ -2464,7 +2492,7 @@ function updateReviewStatus() {
           return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);${m.entertainer.paid?'opacity:0.75':''}">
             <td style="padding:3px 4px;width:22px;vertical-align:middle">
               <input type="checkbox" class="rv-booking-cb" id="${cbId}"
-                onchange="rvBookingSelectionChanged()"
+                onchange="rvBookingSelectionChanged(true)"
                 data-bid="${m.booking.id}"
                 data-cost="${m.entertainer.cost || 0}"
                 data-date="${m.booking.eventDate || ''}"
@@ -2635,19 +2663,33 @@ async function reviewRunABR() {
 // Called whenever a booking checkbox is toggled — updates total bar, auto-fills perf date(s),
 // renders one editable date input per ticked booking, and flags the Total card if the invoice
 // total is HIGHER than the matched Zoho booking value.
-function rvBookingSelectionChanged() {
+function rvBookingSelectionChanged(userInitiated) {
   const allCbs = document.querySelectorAll('.rv-booking-cb');
   const checked = Array.from(allCbs).filter(cb => cb.checked);
 
-  // Auto-fill performance date from the FIRST checked booking's event date
-  // Only auto-fills if perf date is currently empty, or if there's exactly one checked booking
+  // Persist the current selection IMMEDIATELY (not just on Confirm) so that re-renders of the
+  // booking list — which happen on GST toggle, name/ABN edits, etc. via updateReviewStatus() —
+  // restore exactly what's ticked instead of snapping back to the closest-unpaid auto-default.
+  if (reviewModalRowId != null) {
+    invoiceBookingData['id_' + reviewModalRowId] = checked.map(cb => ({
+      bookingId:   cb.dataset.bid,
+      bookingName: cb.dataset.name,
+      eventDate:   cb.dataset.date,
+      cost:        parseFloat(cb.dataset.cost) || 0
+    }));
+  }
+
+  // Auto-fill performance date from the FIRST checked booking's event date.
+  // Fill ONLY when the field is empty, OR when the user actively (re)selected a booking
+  // (userInitiated). The initial auto-default render passes no flag, so it will NOT overwrite
+  // a date the invoice already gave us (this was clobbering the extracted line-item date).
   const perfEl = document.getElementById('rv-perfdate');
   if (perfEl && checked.length >= 1) {
     const firstDate = checked[0].dataset.date || '';
-    if (firstDate && (!perfEl.value || checked.length === 1)) {
+    if (firstDate && (!perfEl.value || userInitiated)) {
       perfEl.value = firstDate;
       updatePerfDateDOW();
-      rvClearPerfGuess(); // a date pulled from a confirmed booking is no longer a guess
+      rvClearPerfGuess(); // a date the user pinned to a chosen booking is no longer a guess
     }
   }
 

@@ -180,6 +180,11 @@
   .rv-tip-box strong { color:#93c5fd; display:block; margin-bottom:4px; font-size:11px; }
   .rv-tip-box::after { content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
                        border:6px solid transparent; border-bottom-color:#1e3a5f; }
+  /* Right-anchored variant — for ? icons near the right edge of the panel so the box
+     opens leftward and doesn't get clipped by the panel's overflow. */
+  .rv-tip-box.rv-tip-box--right { left:auto; right:-4px; transform:translateY(-4px); }
+  .rv-tip:hover .rv-tip-box.rv-tip-box--right { transform:translateY(0); }
+  .rv-tip-box.rv-tip-box--right::after { left:auto; right:9px; transform:none; }
   /* ── Stage 2 warning chips: instant, nicely-formatted hover tooltip ── */
   .s2-tip { position:relative; display:inline-block; }
   .s2-tip .s2-tip-box {
