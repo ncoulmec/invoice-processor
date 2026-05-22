@@ -190,14 +190,29 @@ function initEmbeddedData() {
   // Auto-load contractors from embedded cache
   contractors = EMBEDDED_CONTRACTORS.map(r => ({
     name:         r.name || '',
+    firstName:    r.firstName || '',
+    lastName:     r.lastName  || '',
     abn:          r.abn  || '',
     type:         r.type || null,
     superEligible: !!(r.super || r.superEligible),
+    superPercentage: r.superPercentage ?? null,   // Zoho Super_Percentage; null → tool uses 12% default
     gst:          !!(r.gst),
     structure:    r.structure || '',
     fundName:     r.fundName  || '',
     fundUSI:      r.fundUSI   || '',
+    fundABN:      r.fundABN   || '',
     memberNumber: r.memberNumber || '',
+    // SAFF member fields — present only after a live "Refresh from Zoho" (NOT baked into the
+    // committed contractors.json, as TFN/DOB are sensitive PII). Empty on the static cache load.
+    tfn:          r.tfn   || '',
+    dob:          r.dob   || '',
+    gender:       r.gender || '',
+    email:        r.email || '',
+    phone:        r.phone || '',
+    address:      r.address  || '',
+    suburb:       r.suburb   || '',
+    state:        r.state    || '',
+    postcode:     r.postcode || '',
     zohoId:       r.id || '',
   })).filter(c => c.name && c.name !== 'TBC' && !c.name.startsWith('TEST '));
 
@@ -3202,20 +3217,31 @@ function matchContractor(name, abn) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Calculations (Super-inclusive model)
 // ══════════════════════════════════════════════════════════════════════════════
-function calculateAmounts(total, type) {
+// Resolve the super % for a contractor: their Zoho Super_Percentage if set (>0), else 12% default.
+function superRateFor(contractor) {
+  const v = contractor && (contractor.superPercentage ?? contractor.super_percentage ?? contractor.superPct);
+  const n = parseFloat(v);
+  return (isFinite(n) && n > 0) ? n : 12;
+}
+
+// `rate` is the super % to apply. Defaults to 12 (the SG rate from 1 July 2025); a contractor's
+// Zoho `Super_Percentage` overrides it when set higher (e.g. a performer on 15%). Pass the
+// contractor's rate through from processInvoices/exports — see superRateFor().
+function calculateAmounts(total, type, rate) {
   const r = n => Math.round(n * 100) / 100;
+  const pct = (typeof rate === 'number' && rate > 0) ? rate : 12;
   if (type === 'A') {
-    // No GST, super-inclusive: total = cash + super; super = total × 12/112
-    const super_ = r(total * 12 / 112);
+    // No GST, super-inclusive: total = cash + super; super = total × pct/(100+pct)
+    const super_ = r(total * pct / (100 + pct));
     const cash = r(total - super_);
     return { cash, super: super_, gst: 0, unitAmount: cash, taxAmount: 0 };
   }
   if (type === 'B') {
-    // GST-inclusive total: total = (exGST × 1.1); super = exGST × 12%; cash = exGST × 88% + GST
+    // GST-inclusive total: total = (exGST × 1.1); super = exGST × pct%; cash = exGST × (1−pct%) + GST
     const exGST = r(total / 1.1);
     const gst = r(total - exGST);
-    const super_ = r(exGST * 0.12);
-    const cashExGST = r(exGST * 0.88);
+    const super_ = r(exGST * pct / 100);
+    const cashExGST = r(exGST * (1 - pct / 100));
     const cash = r(cashExGST + gst);
     return { cash, super: super_, gst, unitAmount: cashExGST, taxAmount: gst };
   }
@@ -3332,7 +3358,8 @@ function processInvoices() {
       type = type === 'A' ? 'B' : type === 'C' ? 'D' : type;
     }
 
-    const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type) : null;
+    const superRate = superRateFor(contractor);
+    const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type, superRate) : null;
 
     // GST mismatch: invoice charges GST but Zoho says contractor is not GST-registered
     const gstMismatch = contractor && row.hasGST && !contractor.gst
@@ -3370,6 +3397,7 @@ function processInvoices() {
       alreadyPaidInZoho,
       manuallyExcluded,
       withholdSuper,
+      superRate,
       bookingMatch,
       id: i,
     };
@@ -3548,14 +3576,19 @@ function linkContractor(rowId, contractorId) {
   p.contractor = {
     name: c.name,
     superEligible: !!(c.super),
-    tfn: null,
+    superPercentage: c.superPercentage ?? null,
+    tfn: c.tfn || null,
+    dob: c.dob || null,
     fundName: c.fundName || null,
     fundUSI: c.fundUSI || null,
-    fundABN: null,
+    fundABN: c.fundABN || null,
     memberNumber: c.memberNumber || null,
+    email: c.email || null,
+    phone: c.phone || null,
     abn: c.abn || p.abn || null,
   };
-  p.amounts = calculateAmounts(p.serviceFee ?? p.total, p.type);
+  p.superRate = superRateFor(p.contractor);
+  p.amounts = calculateAmounts(p.serviceFee ?? p.total, p.type, p.superRate);
   buildResultsView();
 }
 
@@ -3566,7 +3599,8 @@ function setManualType(id, type) {
   p.type = type;
   p.matched = true;
   p.matchSource = 'manual';
-  p.amounts = calculateAmounts(p.serviceFee ?? p.total, type);
+  p.superRate = superRateFor(p.contractor);
+  p.amounts = calculateAmounts(p.serviceFee ?? p.total, type, p.superRate);
   // Synthetic contractor record — name from extracted PDF, no super fund details
   p.contractor = {
     name: p.name || '(unknown)',
@@ -3815,10 +3849,16 @@ function buildResultsView() {
   const superCount = superExport.length;
   const paidCount = processed.filter(p => p.alreadyPaid).length;
   const paidNote = paidCount ? ` · ${paidCount} excluded (paid)` : '';
-  document.getElementById('xero-preview-count').textContent =
+  const xeroPreviewEl = document.getElementById('xero-preview-count');
+  if (xeroPreviewEl) xeroPreviewEl.textContent =
     `${xeroCount} bill${xeroCount!==1?'s':''} (${xeroMatched.length} contractor + ${xeroAP.length} AP supplier)${paidNote}`;
-  document.getElementById('super-preview-count').textContent =
-    `${superCount} contribution row${superCount!==1?'s':''} for super-eligible contractors${paidNote}`;
+  // SAFF preview: count distinct super-eligible members (rows are aggregated per member)
+  const saffMembers = new Set(superExport.filter(p => (p.amounts?.super||0) > 0)
+    .map(p => p.contractor?.zohoId || (p.contractor?.name || p.name || '').toLowerCase()));
+  const saffEl = document.getElementById('saff-preview-count');
+  if (saffEl) saffEl.textContent =
+    `${saffMembers.size} member${saffMembers.size!==1?'s':''} in the SAFF file${paidNote}`;
+  initSaffPeriodDefaults();
   const superBillsCount = superExport.filter(p => (p.amounts?.super || 0) > 0).length;
   const superBillsEl = document.getElementById('super-bills-preview-count');
   if (superBillsEl) superBillsEl.textContent =
@@ -3848,7 +3888,7 @@ function superDeductionsEnabled() {
 function updateSuperToggleUI() {
   const on = superDeductionsEnabled();
   const status = document.getElementById('super-toggle-status');
-  const superCard = document.querySelector('#super-preview-count')?.closest('.export-card');
+  const superCard = document.querySelector('#saff-preview-count')?.closest('.export-card');
   if (status) {
     status.style.color = on ? '#27AE60' : '#C05621';
     status.textContent = on
@@ -3927,7 +3967,7 @@ function exportXeroCSV() {
     const willWithholdSuper = p.withholdSuper && superDeductionsEnabled();
     const superAmt = willWithholdSuper
       ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
-          ? calculateAmounts(p.superBase, p.type).super
+          ? calculateAmounts(p.superBase, p.type, p.superRate).super
           : a.super)
       : 0;
 
@@ -4026,7 +4066,7 @@ function exportSuperBillsCSV() {
       const dateXero = resolveDate(p);
       const eventRef = buildEventReference(p); // "Event(s): DD.MM.YY …"
       const superAmt = (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
-        ? calculateAmounts(p.superBase, p.type).super
+        ? calculateAmounts(p.superBase, p.type, p.superRate).super
         : p.amounts.super;
       if (!(superAmt > 0)) return;
 
@@ -4093,6 +4133,160 @@ function exportSuperCSV() {
     });
 
   downloadCSV(rows, `MEC_Super_Contributions_${today()}.csv`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Export: AustralianSuper SAFF (SuperStream) CSV — QuickSuper Contribution spec (cols A–AM)
+// ══════════════════════════════════════════════════════════════════════════════
+// One row PER super-eligible contractor (super amounts summed if they have several invoices in
+// the run). Built to the QuickSuper Contribution CSV File Specification. Upload via the
+// AustralianSuper Employer Portal / QuickSuper → Contribution Files → Upload File.
+// Dates use the spec's D-MMM-YY format (e.g. 6-MAY-26). TFN/DOB are sensitive — handled in
+// memory only (never committed to the repo).
+const SAFF_HEADER = [
+  'Your File Reference','Your File Date','Contribution Period Start Date','Contribution Period End Date',
+  'Employer ID','Payroll ID','Name Title','Family Name','Given Name','Other Given Name','Name Suffix',
+  'Date of Birth','Gender','Tax File Number','Phone Number','Mobile Number','Email Address',
+  'Address Line 1','Address Line 2','Address Line 3','Address Line 4','Suburb','State','Post Code','Country',
+  'Employment Start Date','Employment End Date','Employment End Reason',
+  'Fund ID','Fund Name','Fund Employer ID','Member ID',
+  'Employer Super Guarantee Amount','Employer Additional Amount','Member Salary Sacrifice Amount',
+  'Member Additional Amount','Other Contributor Type','Other Contributor Name','Your Contribution Reference'
+];
+
+function fmtSaffDate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return '';
+  const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const [y, m, d] = iso.slice(0,10).split('-');
+  return `${parseInt(d,10)}-${MON[parseInt(m,10)-1]}-${y.slice(2)}`;
+}
+
+// Map a Zoho gender label/value to the SAFF code (M/F/I/N). N = not stated (safe default).
+function saffGender(g) {
+  const v = String(g || '').trim().toLowerCase();
+  if (!v) return 'N';
+  if (v === 'f' || v.startsWith('female')) return 'F';
+  if (v === 'm' || v.startsWith('male'))   return 'M';
+  if (v === 'i' || v.startsWith('intersex') || v.startsWith('indeterminate') || v.startsWith('non')) return 'I';
+  return 'N';
+}
+
+function saffGivenName(c, p) {
+  // Prefer the Zoho Given Name; strip bracketed aliases e.g. "Ian (Henry)" → "Ian".
+  let g = (c.firstName || '').replace(/\(.*?\)/g, '').trim();
+  if (!g) { const parts = (c.name || p.name || '').split(/\s+/); g = parts.slice(0,-1).join(' ') || (c.name||p.name||''); }
+  return g;
+}
+function saffFamilyName(c, p) {
+  let f = (c.lastName || '').trim();
+  if (!f) { const parts = (c.name || p.name || '').split(/\s+/); f = parts.length > 1 ? parts[parts.length-1] : ''; }
+  return f;
+}
+
+// Pre-fill the contribution-period inputs with the CURRENT pay week (Monday → Sunday),
+// only if the user hasn't already set them. They stay editable for in-arrears runs.
+function initSaffPeriodDefaults() {
+  const startEl = document.getElementById('saff-period-start');
+  const endEl   = document.getElementById('saff-period-end');
+  if (!startEl || !endEl) return;
+  if (startEl.value && endEl.value) return; // respect any value the user set
+  const now = new Date();
+  const day = now.getDay();                 // 0=Sun,1=Mon,…
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((day + 6) % 7)); // back to this week's Monday
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const iso = d => d.toISOString().split('T')[0];
+  startEl.value = iso(monday);
+  endEl.value   = iso(sunday);
+}
+
+function exportSAFFCSV() {
+  if (!superDeductionsEnabled()) {
+    alert('Super deductions are currently OFF.\n\nTick "Withhold super deductions" in the export panel to generate the SAFF file.');
+    return;
+  }
+  const startEl = document.getElementById('saff-period-start');
+  const endEl   = document.getElementById('saff-period-end');
+  const periodStart = startEl?.value || '';
+  const periodEnd   = endEl?.value   || '';
+  if (!periodStart || !periodEnd) { alert('Please set the Contribution Period start and end dates first.'); return; }
+  if (periodEnd < periodStart) { alert('Contribution Period End cannot be before the Start date.'); return; }
+
+  const todayISO = new Date().toISOString().split('T')[0];
+  const fileRef  = `MEC Super Wk ${fmtSaffDate(periodStart)}`;
+  const fileDate = fmtSaffDate(todayISO);
+
+  // Aggregate super by contractor (one SAFF row per member; sum if multiple invoices this run).
+  const byMember = new Map();
+  processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid
+                     && p.withholdSuper && p.amounts?.super > 0)
+    .forEach(p => {
+      const c = p.contractor || {};
+      const superAmt = (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
+        ? calculateAmounts(p.superBase, p.type, p.superRate).super
+        : p.amounts.super;
+      if (!(superAmt > 0)) return;
+      const key = c.zohoId || (c.name || p.name || 'unknown').toLowerCase();
+      if (!byMember.has(key)) byMember.set(key, { c, p, total: 0, refs: [] });
+      const e = byMember.get(key);
+      e.total += superAmt;
+      if (p.invoiceNumber) e.refs.push(p.invoiceNumber);
+    });
+
+  if (byMember.size === 0) { alert('No super-eligible contractors in this run — nothing to export.'); return; }
+
+  const rows = [SAFF_HEADER.slice()];
+  const warnings = [];
+  byMember.forEach(({ c, p, total, refs }) => {
+    const family = saffFamilyName(c, p);
+    const given  = saffGivenName(c, p);
+    const dob    = fmtSaffDate(c.dob || '');
+    const gender = saffGender(c.gender);
+    const usi    = c.fundUSI || '';
+    const member = c.memberNumber || '';
+    const sg     = total.toFixed(2);
+
+    // Validate mandatory member fields and collect a per-person warning.
+    const missing = [];
+    if (!family) missing.push('family name');
+    if (!given)  missing.push('given name');
+    if (!dob)    missing.push('DOB');
+    if (!c.gender) missing.push('gender');
+    if (!c.address)  missing.push('address');
+    if (!c.suburb)   missing.push('suburb');
+    if (!c.state)    missing.push('state');
+    if (!c.postcode) missing.push('postcode');
+    if (!usi)    missing.push('fund USI');
+    if (!member) missing.push('member number');
+    if (missing.length) warnings.push(`• ${given} ${family}: missing ${missing.join(', ')}`);
+
+    rows.push([
+      fileRef, fileDate, fmtSaffDate(periodStart), fmtSaffDate(periodEnd),
+      '',                          // E Employer ID
+      c.zohoId || '',              // F Payroll ID (stable, unique)
+      '',                          // G Name Title
+      family, given, '', '',       // H/I/J/K
+      dob, gender,                 // L/M
+      c.tfn || '',                 // N TFN
+      '', c.phone || '', c.email || '',   // O/P/Q
+      c.address || '', '', '', '', // R/S/T/U
+      c.suburb || '', c.state || '', c.postcode || '', 'AU',  // V/W/X/Y
+      '', '', '',                  // Z/AA/AB employment
+      usi, c.fundName || '', '', member,  // AC/AD/AE/AF
+      sg, '', '', '', '', '',      // AG SG amount, AH/AI/AJ/AK/AL
+      refs.join('; ')              // AM Your Contribution Reference (invoice #s)
+    ]);
+  });
+
+  downloadCSV(rows, `MEC_SAFF_SuperStream_${today()}.csv`);
+
+  if (warnings.length) {
+    alert('⚠ SAFF generated, but ' + warnings.length + ' member(s) are missing mandatory fields. '
+        + 'AustralianSuper may reject these rows until the data is completed in Zoho:\n\n'
+        + warnings.join('\n')
+        + '\n\nFix the gaps in Zoho, click Refresh from Zoho, and re-export.');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

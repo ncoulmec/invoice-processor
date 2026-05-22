@@ -444,12 +444,20 @@
         <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Download Super Bills CSV</button>
       </div>
       <div class="export-card">
-        <h3>🏦 Clearing House CSV</h3>
-        <p>SuperStream contribution data for the clearing-house portal — performer name, super fund,
-           USI, member number and amount. Upload to your clearing house; it submits to each fund via
-           SuperStream.</p>
-        <div id="super-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-green" onclick="exportSuperCSV()">⬇ Download Clearing House CSV</button>
+        <h3>🏦 AustralianSuper SAFF (SuperStream)</h3>
+        <p>The <strong>SuperStream Alternative File Format</strong> file you upload to AustralianSuper's
+           Employer Portal / QuickSuper (<strong>Contribution Files → Upload File</strong>). Built to the
+           QuickSuper Contribution CSV spec (columns A–AM); one row per super-eligible performer.</p>
+        <div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <label style="font-size:11px;color:#555">Contribution period start
+            <input type="date" id="saff-period-start" style="display:block;font-size:12px;padding:3px 6px;margin-top:2px;border:1px solid #CBD5E0;border-radius:4px">
+          </label>
+          <label style="font-size:11px;color:#555">Contribution period end
+            <input type="date" id="saff-period-end" style="display:block;font-size:12px;padding:3px 6px;margin-top:2px;border:1px solid #CBD5E0;border-radius:4px">
+          </label>
+        </div>
+        <div id="saff-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <button class="btn btn-green" onclick="exportSAFFCSV()">⬇ Download SAFF CSV</button>
       </div>
     </div>
 
