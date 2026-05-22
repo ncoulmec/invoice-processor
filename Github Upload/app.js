@@ -4167,6 +4167,24 @@ function saffGender(g) {
   return 'N';
 }
 
+// SuperStream wants the State/Territory CODE (VIC/NSW/…), not the full name. Normalise whatever
+// is typed in Zoho ("Victoria", "vic", "VIC") to the code; pass through anything already short.
+function saffState(s) {
+  const v = String(s || '').trim().toLowerCase().replace(/\./g, '');
+  if (!v) return '';
+  const map = {
+    'victoria':'VIC','vic':'VIC',
+    'new south wales':'NSW','nsw':'NSW',
+    'queensland':'QLD','qld':'QLD',
+    'south australia':'SA','sa':'SA',
+    'western australia':'WA','wa':'WA',
+    'tasmania':'TAS','tas':'TAS',
+    'northern territory':'NT','nt':'NT',
+    'australian capital territory':'ACT','act':'ACT'
+  };
+  return map[v] || String(s).trim().toUpperCase();
+}
+
 function saffGivenName(c, p) {
   // Prefer the Zoho Given Name; strip bracketed aliases e.g. "Ian (Henry)" → "Ian".
   let g = (c.firstName || '').replace(/\(.*?\)/g, '').trim();
@@ -4267,7 +4285,7 @@ function exportSAFFCSV() {
       c.tfn || '',                 // N TFN
       '', c.phone || '', c.email || '',   // O/P/Q
       c.address || '', '', '', '', // R/S/T/U
-      c.suburb || '', c.state || '', c.postcode || '', 'AU',  // V/W/X/Y
+      c.suburb || '', saffState(c.state), c.postcode || '', 'AU',  // V/W/X/Y
       '', '', '',                  // Z/AA/AB employment
       usi, c.fundName || '', '', member,  // AC/AD/AE/AF
       sg, '', '', '', '', '',      // AG SG amount, AH/AI/AJ/AK/AL

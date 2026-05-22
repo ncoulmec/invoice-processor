@@ -7,7 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260522d">
 </head>
 <body>
 
@@ -813,6 +813,7 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
+<script src="app.js?v=20260522d"></script>
 </body>
 </html>
