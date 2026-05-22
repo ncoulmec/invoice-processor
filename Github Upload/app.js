@@ -33,6 +33,10 @@ let TAX_TYPES = {
 // Update it once a clearing-house provider is chosen (see TODO.md, item 11).
 let CLEARINGHOUSE_NAME = 'Contractor Super Clearinghouse';
 let SUPER_ACCOUNT = '478-C';
+// Zoho Forms "Super & Payment Details" form — appending ?crm_entity_id=<TeamRecordId> pre-fills it
+// for that contractor. Used by the completeness gate's "Copy form link / Email" actions.
+// Override via config.json "superFormUrl".
+let SUPER_FORM_URL = 'https://forms.zohopublic.com/melbourneentertainmentco/form/MECSuperPaymentDetails/formperma/9tfujE0ZwFo01T4gZWmdiplXXc0j7cpqvHhDDrX1nRQ';
 
 const TYPE_LABELS = {
   A: 'No GST · Super ✓',
@@ -111,37 +115,75 @@ function gotoStep(n) {
   if (n === 'talent') renderTalentList();
   // Make sure the SAFF contribution-period inputs are pre-filled when the export step opens
   if (n === 3) initSaffPeriodDefaults();
+  // Track where we are so the Talent List tab can toggle back to the previous main step
+  if (n !== 'talent') lastMainStep = n;
+  currentView = n;
+}
+let currentView = 'refresh';
+let lastMainStep = 'refresh';
+
+// Talent List tab toggles: open it, or if already open go back to the last main step.
+function toggleTalent() {
+  gotoStep(currentView === 'talent' ? lastMainStep : 'talent');
 }
 
 function renderTalentList() {
   const query = (document.getElementById('talent-search')?.value || '').toLowerCase().trim();
-  const data = contractors.filter(c =>
-    !query ||
-    c.name.toLowerCase().includes(query) ||
-    (c.abn && c.abn.includes(query)) ||
-    (c.fundName && c.fundName.toLowerCase().includes(query))
-  ).sort((a,b) => a.name.localeCompare(b.name));
+  const fType  = document.getElementById('talent-filter-type')?.value  || '';
+  const fGst   = document.getElementById('talent-filter-gst')?.value   || '';
+  const fAbn   = document.getElementById('talent-filter-abn')?.value   || '';
+  const fSuper = document.getElementById('talent-filter-super')?.value || '';
+
+  const data = contractors.filter(c => {
+    if (query && !(c.name.toLowerCase().includes(query) || (c.abn && c.abn.includes(query)) || (c.fundName && c.fundName.toLowerCase().includes(query)))) return false;
+    if (fType && c.type !== fType) return false;
+    if (fGst === 'yes' && !c.gst) return false;
+    if (fGst === 'no'  &&  c.gst) return false;
+    if (fAbn === 'has'     && !c.abn) return false;
+    if (fAbn === 'missing' &&  c.abn) return false;
+    if (fSuper) {
+      const incomplete = c.superEligible && missingSuperFields(c).length > 0;
+      if (fSuper === 'incomplete' && !incomplete) return false;
+      if (fSuper === 'complete'   &&  incomplete) return false;
+    }
+    return true;
+  }).sort((a,b) => a.name.localeCompare(b.name));
+
   document.getElementById('talent-count').textContent =
     `${data.length} of ${contractors.length} contractors`;
 
   const tbody = document.getElementById('talent-tbody');
   if (!tbody) return;
-  tbody.innerHTML = data.map(c => {
+  tbody.innerHTML = data.map((c, i) => {
     const typeColor = {A:'badge-a',B:'badge-b',C:'badge-c',D:'badge-d'}[c.type] || 'badge-a';
-    const gstCell = c.gst
-      ? `<span style="color:#27AE60;font-weight:600">✓ Yes</span>`
-      : `<span style="color:#aaa">—</span>`;
-    const superCell = c.superEligible
-      ? `<span style="color:#27AE60;font-weight:600">✓ Yes</span>`
-      : `<span style="color:#aaa">—</span>`;
+    const gstCell = c.gst ? `<span style="color:#27AE60;font-weight:600">✓ Yes</span>` : `<span style="color:#aaa">—</span>`;
+    const superCell = c.superEligible ? `<span style="color:#27AE60;font-weight:600">✓ Yes</span>` : `<span style="color:#aaa">—</span>`;
     const fundWarning = c.superEligible && !c.fundName
       ? `<span style="color:#c0392b;font-size:11px">⚠ not set</span>` : escHtml(c.fundName || '—');
+    // Super-details health (only meaningful for super-eligible contractors)
+    let superStatus;
+    if (!c.superEligible) {
+      superStatus = `<span style="color:#aaa;font-size:11px">n/a</span>`;
+    } else {
+      const miss = missingSuperFields(c);
+      const detail = `<strong>${escHtml(c.name)}</strong>`
+        + `DOB: ${c.dob||'—'} · Gender: ${c.gender||'—'}<br>`
+        + `Fund USI: ${c.fundUSI||'—'} · Member: ${c.memberNumber||'—'}<br>`
+        + `Address: ${escHtml(c.address||'—')}, ${escHtml(c.suburb||'—')} ${escHtml(c.state||'')} ${escHtml(c.postcode||'')}<br>`
+        + (miss.length ? `<span style="color:#FCA5A5">Missing: ${escHtml(miss.join(', '))}</span>` : `<span style="color:#86EFAC">All super details complete ✓</span>`);
+      superStatus = miss.length
+        ? `<span class="s2-tip" style="color:#C53030;font-weight:600;font-size:11px;cursor:help">⚠ ${miss.length} missing<span class="s2-tip-box">${detail}</span></span>`
+        : `<span class="s2-tip" style="color:#27AE60;font-weight:600;font-size:11px;cursor:help">✓ Complete<span class="s2-tip-box">${detail}</span></span>`;
+    }
     return `<tr>
+      <td style="text-align:right;color:#aaa;font-size:11px">${i+1}</td>
       <td><strong>${escHtml(c.name)}</strong></td>
       <td><span class="badge ${typeColor}" style="font-size:10px">${c.type} — ${TYPE_LABELS[c.type]||c.type}</span></td>
+      <td style="font-size:11px;color:#555">${escHtml(c.structure||'—')}</td>
       <td style="font-family:monospace;font-size:11px">${escHtml(c.abn||'—')}</td>
       <td style="text-align:center">${gstCell}</td>
       <td style="text-align:center">${superCell}</td>
+      <td style="text-align:center">${superStatus}</td>
       <td style="font-size:11px">${fundWarning}</td>
       <td style="font-size:11px;color:#666">${escHtml(c.fundUSI||'—')}</td>
       <td style="font-size:11px;color:#666">${escHtml(c.memberNumber||'—')}</td>
@@ -3677,6 +3719,44 @@ function buildResultsView() {
     warnEl.classList.add('hidden');
   }
 
+  // ── Super-details completeness gate (only when super withholding is ON) ──
+  // Lists every super-eligible contractor in the run whose Zoho record is missing mandatory
+  // super/SAFF fields, with one-click "copy form link" / "email" chase actions.
+  const gapEl = document.getElementById('super-gap-warn');
+  if (gapEl) {
+    const incomplete = superDeductionsEnabled()
+      ? eventProcessed.filter(p => p.matched && p.withholdSuper && p.contractor
+                                && (p.amounts?.super || 0) > 0
+                                && missingSuperFields(p.contractor).length)
+      : [];
+    // de-dupe by contractor
+    const seen = new Set(); const uniq = [];
+    incomplete.forEach(p => { const k = p.contractor.zohoId || p.contractor.name; if (!seen.has(k)) { seen.add(k); uniq.push(p); } });
+    if (uniq.length) {
+      gapEl.classList.remove('hidden');
+      gapEl.style.cssText = 'background:#FFF5F5;border:1px solid #FEB2B2;border-left:4px solid #C53030;border-radius:6px;padding:12px 16px;margin-bottom:14px';
+      const rows = uniq.map(p => {
+        const c = p.contractor;
+        const id = c.zohoId || '';
+        const miss = missingSuperFields(c).join(', ');
+        const safeName = escHtml(c.name || p.name || '');
+        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 0;border-top:1px solid #FED7D7">
+          <span style="font-weight:600;color:#742A2A">${safeName}</span>
+          <span style="font-size:11px;color:#9B2C2C">missing: ${escHtml(miss)}</span>
+          <span style="flex:1"></span>
+          <button onclick="copySuperFormLink('${id}','${safeName.replace(/'/g,"\\'")}')" style="font-size:11px;background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:600">📋 Copy form link</button>
+          <button onclick="emailSuperForm('${escHtml(c.email||'')}','${id}','${safeName.replace(/'/g,"\\'")}')" style="font-size:11px;background:#FEFCBF;color:#975A16;border:1px solid #F6E05E;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:600">✉ Email form</button>
+        </div>`;
+      }).join('');
+      gapEl.innerHTML = `<div style="font-weight:700;color:#C53030;margin-bottom:4px">⚠ ${uniq.length} contractor${uniq.length>1?'s':''} can't have super paid yet — details incomplete</div>
+        <div style="font-size:12px;color:#742A2A;margin-bottom:6px">Send each of them their pre-filled super form so the SAFF file won't reject them. They'll still appear in the contractor bills; only their super is held until complete.</div>
+        ${rows}`;
+    } else {
+      gapEl.classList.add('hidden');
+      gapEl.innerHTML = '';
+    }
+  }
+
   // Results table
   const ZOHO_ORG = '657079535';
   const ZOHO_MODULE = 'CustomModule3';
@@ -3815,8 +3895,14 @@ function buildResultsView() {
       const nameCell = p.rowId
         ? `<strong><a onclick="openReviewModal('${p.rowId}')" title="Open the Review screen to cross-check this invoice" style="color:var(--navy);cursor:pointer;text-decoration:underline;text-decoration-style:dotted">${escHtml(displayName)}</a></strong>`
         : `<strong>${escHtml(displayName)}</strong>`;
+      // Super-details incomplete chip (only when super withholding is ON for this run + this row)
+      const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
+        ? missingSuperFields(p.contractor) : [];
+      const superGapWarn = superGap.length
+        ? `<span class="s2-tip" style="margin-left:6px;font-size:10px;background:#FFF5F5;color:#C53030;border:1px solid #FEB2B2;border-radius:4px;padding:1px 6px;font-weight:700;cursor:help">⚠ Super details incomplete<span class="s2-tip-box"><strong>Super can't be paid yet</strong>Missing in Zoho: ${escHtml(superGap.join(', '))}. Use the chase buttons in the banner above to send their pre-filled form.</span></span>`
+        : '';
       return `<tr>
-        <td>${nameCell}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
+        <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
         <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
@@ -3864,11 +3950,18 @@ function buildResultsView() {
   const saffEl = document.getElementById('saff-preview-count');
   if (saffEl) saffEl.textContent =
     `${saffMembers.size} member${saffMembers.size!==1?'s':''} in the SAFF file${paidNote}`;
+  const zipEl = document.getElementById('zip-preview-count');
+  if (zipEl) { const nPdf = processed.filter(p => invoiceFileData['id_' + p.rowId]).length;
+    zipEl.textContent = `${nPdf} invoice PDF${nPdf!==1?'s':''} available to download`; }
   initSaffPeriodDefaults();
   const superBillsCount = superExport.filter(p => (p.amounts?.super || 0) > 0).length;
   const superBillsEl = document.getElementById('super-bills-preview-count');
-  if (superBillsEl) superBillsEl.textContent =
-    `${superBillsCount} super bill${superBillsCount!==1?'s':''} to ${CLEARINGHOUSE_NAME}${paidNote}`;
+  const consolidateSuper = document.getElementById('super-consolidate')?.checked;
+  if (superBillsEl) superBillsEl.textContent = superBillsCount === 0
+    ? `No super bills this run${paidNote}`
+    : consolidateSuper
+      ? `1 consolidated bill (${superBillsCount} line${superBillsCount!==1?'s':''}) to ${CLEARINGHOUSE_NAME}${paidNote}`
+      : `${superBillsCount} super bill${superBillsCount!==1?'s':''} to ${CLEARINGHOUSE_NAME}${paidNote}`;
 
 }
 
@@ -4052,6 +4145,12 @@ function exportSuperBillsCSV() {
   const todayISO = () => new Date().toISOString().split('T')[0];
   const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
 
+  // Consolidate = ONE bill to the clearing house with a line per contractor (all rows share the
+  // same *InvoiceNumber + dates, so Xero groups them). Otherwise one bill per invoice (default).
+  const consolidate = document.getElementById('super-consolidate')?.checked;
+  const dateAll = formatDateXero(todayISO());
+  const conRef  = `MEC Super ${formatDateReadable(todayISO())}`;
+
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid
                      && p.withholdSuper && p.amounts?.super > 0)
     .forEach(p => {
@@ -4072,10 +4171,17 @@ function exportSuperBillsCSV() {
       // It's also naturally unique per contractor+invoice, so two performers sharing an invoice
       // number (Sabrina & Jake both "011") no longer merge into one Xero bill — and there's no
       // initials hack to mangle bracketed aliases like "Jake (Jacob) Fehily" into "J(".
-      const ref  = `${cName} | Event Date(s): ${eventDates} | ${invNum} | Super`;
-      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super 12% | $${superAmt.toFixed(2)}`;
-      rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateXero, dateXero,
-                      desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
+      const rate = p.superRate || 12;
+      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super ${rate}% | $${superAmt.toFixed(2)}`;
+      if (consolidate) {
+        // Shared invoice number + date → all lines roll into a single Xero bill.
+        rows.push(mkRow(CLEARINGHOUSE_NAME, conRef, conRef, dateAll, dateAll,
+                        desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
+      } else {
+        const ref = `${cName} | Event Date(s): ${eventDates} | ${invNum} | Super`;
+        rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateXero, dateXero,
+                        desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
+      }
     });
 
   if (rows.length === 1) {
@@ -4265,14 +4371,8 @@ function exportSAFFCSV() {
     const missing = [];
     if (!family) missing.push('family name');
     if (!given)  missing.push('given name');
-    if (!dob)    missing.push('DOB');
-    if (!c.gender) missing.push('gender');
-    if (!c.address)  missing.push('address');
-    if (!c.suburb)   missing.push('suburb');
-    if (!c.state)    missing.push('state');
-    if (!c.postcode) missing.push('postcode');
-    if (!usi)    missing.push('fund USI');
-    if (!member) missing.push('member number');
+    // Address Line 1 is NOT required (AustralianSuper accepts it blank); the rest are.
+    missingSuperFields(c).forEach(m => missing.push(m));
     if (missing.length) warnings.push(`• ${given} ${family}: missing ${missing.join(', ')}`);
 
     rows.push([
@@ -4452,6 +4552,40 @@ function downloadCSV(rows, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+// ── Bulk re-download of uploaded invoice PDFs as a ZIP ──
+// Renames each PDF "Name - Invoice# - Event date" (Windows-safe) so they sort cleanly and
+// drag straight onto the matching Xero bills. Manually-entered rows (no PDF) are skipped.
+async function downloadInvoicesZip() {
+  if (typeof JSZip === 'undefined') { alert('ZIP library not loaded yet — check your connection and reload the page.'); return; }
+  const rows = (Array.isArray(processed) ? processed : []).filter(p => invoiceFileData['id_' + p.rowId]);
+  if (!rows.length) { alert('No uploaded invoice PDFs to download.\n\n(Manually-entered invoices have no PDF attached.)'); return; }
+  const safe = s => String(s || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+  const zip = new JSZip();
+  const used = {};
+  let added = 0;
+  for (const p of rows) {
+    try {
+      const blob = await (await fetch(invoiceFileData['id_' + p.rowId])).blob();
+      const cName  = p.contractor?.name || p.name || 'Unknown';
+      const invNum = p.invoiceNumber || autoInvNum(p);
+      const ev = buildEventReference(p).replace(/^Event\(s\):\s*/, '').trim();
+      const base = safe(`${cName} - ${invNum}${ev ? ' - Event ' + ev : ''}`);
+      let name = base + '.pdf', n = 2;
+      while (used[name]) name = `${base} (${n++}).pdf`;
+      used[name] = true;
+      zip.file(name, blob);
+      added++;
+    } catch (e) { console.warn('ZIP: could not read PDF for row', p.rowId, e); }
+  }
+  if (!added) { alert('Could not read any of the invoice PDFs to zip.'); return; }
+  const out = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(out);
+  a.download = `MEC Invoices ${today()}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 function formatDateXero(d) {
@@ -5339,6 +5473,49 @@ function applyConfig(cfg){
   if (cfg.taxTypes)          TAX_TYPES          = cfg.taxTypes;
   if (cfg.clearinghouseName) CLEARINGHOUSE_NAME = cfg.clearinghouseName;
   if (cfg.superAccount)      SUPER_ACCOUNT      = cfg.superAccount;
+  if (cfg.superFormUrl)      SUPER_FORM_URL     = cfg.superFormUrl;
+}
+
+// ── Super-details completeness (shared by the Stage-2 gate, exports and the Talent List) ──
+// Returns the list of SAFF-mandatory member fields a contractor is still missing. Address Line 1
+// is intentionally NOT required (AustralianSuper accepts it blank); suburb/state/postcode ARE.
+function missingSuperFields(c) {
+  if (!c) return ['record'];
+  const miss = [];
+  if (!c.dob)          miss.push('date of birth');
+  if (!c.gender)       miss.push('gender');
+  if (!c.fundUSI)      miss.push('fund USI');
+  if (!c.memberNumber) miss.push('member number');
+  if (!c.suburb)       miss.push('suburb');
+  if (!c.state)        miss.push('state');
+  if (!c.postcode)     miss.push('postcode');
+  return miss;
+}
+
+// Per-contractor pre-filled Zoho form link (opens the form populated with their record).
+function superFormLink(c) {
+  const id = c && (c.zohoId || c.id);
+  return id ? `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(id)}` : SUPER_FORM_URL;
+}
+
+// Copy a contractor's pre-filled form link to the clipboard.
+function copySuperFormLink(zohoId, name) {
+  const link = `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(zohoId || '')}`;
+  navigator.clipboard?.writeText(link).then(
+    () => alert('✓ Copied super-details form link for ' + (name || 'contractor') + '.\n\nSend it to them so they can complete their details.'),
+    () => prompt('Copy this super-details form link:', link)
+  );
+}
+
+// Open a pre-addressed chase email to a contractor missing super details.
+function emailSuperForm(email, zohoId, name) {
+  const link = `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(zohoId || '')}`;
+  const subj = 'Action needed: your super details for MEC payments';
+  const body = `Hi ${name || ''},\n\n`
+    + `Before we can pay you, we need your superannuation details on file. Could you take 2 minutes `
+    + `to complete this short, pre-filled form? Without it we can't process your super.\n\n${link}\n\nThanks,\nThe MEC Team`;
+  const to = email || '';
+  window.open(`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`, '_blank');
 }
 
 async function bootstrap(){

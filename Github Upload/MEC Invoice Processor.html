@@ -6,6 +6,7 @@
 <title>MEC Invoice Processor — Super & Xero Export</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="stylesheet" href="styles.css?v=20260522d">
 </head>
@@ -37,7 +38,7 @@
   <div class="step" id="step-tab-3" onclick="gotoStep(3)">
     <span class="step-num">3</span>Review &amp; Export
   </div>
-  <div class="step" id="step-tab-talent" onclick="gotoStep('talent')" style="margin-left:auto;border-left:1px solid #E0E7EE;padding-left:28px">
+  <div class="step" id="step-tab-talent" onclick="toggleTalent()" style="margin-left:auto;border-left:1px solid #E0E7EE;padding-left:28px">
     <span class="step-num" style="background:var(--navy)">⊞</span>Talent List
   </div>
 </div>
@@ -390,6 +391,7 @@
     <div class="stats" id="summary-stats"></div>
 
     <div id="unmatched-warn" class="hidden warn"></div>
+    <div id="super-gap-warn" class="hidden"></div>
 
     <div class="panel" id="event-panel">
       <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
@@ -465,7 +467,11 @@
            <strong>clearing-house supplier</strong>, single description line, coded to
            <strong>478-C</strong> (BAS Excluded). Import alongside the contractor bills but
            <strong>pay as a separate ABA batch</strong>.</p>
-        <div id="super-bills-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <div id="super-bills-preview-count" style="font-size:12px;color:#888;margin-bottom:8px;"></div>
+        <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;color:#555;margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" id="super-consolidate" onchange="buildResultsView()" style="margin-top:2px">
+          <span><strong>Combine into one bill</strong> — a single bill to the clearing house with one line per contractor (instead of one bill per invoice). Cleaner if you pay the clearing house as a single payment.</span>
+        </label>
         <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Download Super Bills CSV</button>
       </div>
       <div class="export-card">
@@ -484,6 +490,14 @@
         <div id="saff-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
         <button class="btn btn-green" onclick="exportSAFFCSV()">⬇ Download SAFF CSV</button>
       </div>
+      <div class="export-card">
+        <h3>📎 Invoice PDFs (for Xero)</h3>
+        <p>Re-download every uploaded invoice PDF in one ZIP, renamed
+           <strong>Name - Invoice# - Event date</strong> so they sort cleanly and drag straight onto
+           the matching Xero bills.</p>
+        <div id="zip-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <button class="btn btn-secondary" onclick="downloadInvoicesZip()">⬇ Download all invoices (ZIP)</button>
+      </div>
     </div>
 
     <div style="margin-top:14px">
@@ -496,22 +510,40 @@
   ════════════════════════════════════════════════════════════════ -->
   <div id="view-talent" class="hidden">
     <div class="panel">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
         <h2 style="margin:0">⊞ Full Talent List</h2>
         <span id="talent-count" style="font-size:12px;color:#888"></span>
-        <input type="text" id="talent-search" placeholder="🔍 Filter by name, ABN, fund…"
-          oninput="renderTalentList()"
-          style="font-size:12px;padding:5px 10px;border:1px solid #D0D8E0;border-radius:5px;background:#fff;width:220px;margin-left:auto">
+        <button onclick="toggleTalent()" style="margin-left:auto;font-size:12px;padding:5px 12px;border:1px solid #CBD5E0;border-radius:5px;background:#fff;cursor:pointer">✕ Close</button>
       </div>
-      <p style="margin-bottom:12px;font-size:12px;color:#666">All contractors loaded from Zoho. This is the source of truth for GST registration, super eligibility, and fund details used in this tool.</p>
+      <p style="margin-bottom:10px;font-size:12px;color:#666">A data-health view of everyone in Zoho — use it to spot who's missing details (super, ABN, fund) so you can chase them <em>before</em> a pay run. Hover the <strong>Super details</strong> cell to see exactly what's missing.</p>
+      <!-- Filters -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <input type="text" id="talent-search" placeholder="🔍 Name, ABN, fund…" oninput="renderTalentList()"
+          style="font-size:12px;padding:5px 10px;border:1px solid #D0D8E0;border-radius:5px;background:#fff;width:200px">
+        <select id="talent-filter-type" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+          <option value="">All types</option><option value="A">Type A</option><option value="B">Type B</option><option value="C">Type C</option><option value="D">Type D</option>
+        </select>
+        <select id="talent-filter-gst" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+          <option value="">GST: all</option><option value="yes">GST registered</option><option value="no">Not GST</option>
+        </select>
+        <select id="talent-filter-abn" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+          <option value="">ABN: all</option><option value="has">ABN on file</option><option value="missing">ABN missing</option>
+        </select>
+        <select id="talent-filter-super" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+          <option value="">Super details: all</option><option value="incomplete">⚠ Incomplete</option><option value="complete">✓ Complete</option>
+        </select>
+      </div>
       <div style="overflow-x:auto">
         <table id="talent-table" style="font-size:12px">
           <thead><tr>
+            <th style="text-align:right;width:38px">#</th>
             <th>Contractor / Team Name</th>
             <th>Type</th>
+            <th>Employment</th>
             <th>ABN</th>
             <th style="text-align:center">GST Reg?</th>
             <th style="text-align:center">Super?</th>
+            <th style="text-align:center">Super details</th>
             <th>Super Fund</th>
             <th>USI</th>
             <th>Member #</th>
@@ -814,6 +846,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260522e"></script>
+<script src="app.js?v=20260522f"></script>
 </body>
 </html>
