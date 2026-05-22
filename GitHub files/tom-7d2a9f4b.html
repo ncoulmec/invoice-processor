@@ -1,0 +1,3200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<title>Compensation Dashboard · Michael Kourkov</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #1a3a5c;
+    --navy-dark: #132a42;
+    --ink: #0e0e0e;
+    --bg: #f5f3ee;
+    --card: #ffffff;
+    --border: #e5e2da;
+    --muted: #6b6b6b;
+    --faint: #8a8a8a;
+    --accent: #2d6a4f;
+    --accent-bg: #e8f1ec;
+    --danger: #b91c1c;
+    --warn: #5a5a58;
+    --warn-bg: #ecebe5;
+    --black-card: #0e0e0e;
+    --radius: 10px;
+    --mono: 'DM Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: var(--mono); }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -2px; }
+  /* Tabular numerals — keeps numeric columns vertically aligned in financial tables. */
+  .kpi-card .value, .kpi-card .sub,
+  .compare-col .val, .compare-col .sub,
+  table td.num, table th.num,
+  .scenario-row .value-input,
+  .value-input,
+  table.monthly td.input-cell input { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  header.top {
+    background: var(--navy);
+    color: #fff;
+    padding: 32px 32px 28px;
+  }
+  .top-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  header.top h1 { margin: 0 0 6px; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+  header.top .sub { margin: 0; font-size: 13px; color: #b8c7d8; font-family: var(--mono); }
+  .role-badge {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* Compact pinned header — sits above the tabs in the sticky stack */
+  .pinned-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--navy);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+  .pinned-compact {
+    background: var(--navy);
+    color: #fff;
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.18s ease, opacity 0.18s ease, padding-top 0.18s ease, padding-bottom 0.18s ease;
+  }
+  .pinned-compact.visible {
+    max-height: 60px;
+    opacity: 1;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .pinned-compact .pc-name {
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pinned-compact .pc-actions {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .pinned-compact .pc-key-terms {
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--navy);
+    font-weight: 600;
+  }
+
+  nav.tabs {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .tabs-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    gap: 4px;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    padding: 16px 22px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--ink); }
+  .tab-btn.active { color: var(--navy); border-bottom-color: var(--navy); font-weight: 600; }
+
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 32px 60px;
+  }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Banners */
+  .banner {
+    padding: 14px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    margin-bottom: 22px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .banner.ok { background: var(--accent-bg); color: var(--accent); border: 1px solid #c3e4d0; }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #d3d1c7; }
+  .banner.info { background: #eef4fa; color: var(--navy); border: 1px solid #cdd9e8; }
+  .banner .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  /* KPI Cards */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+  }
+  .kpi-card .label { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .kpi-card .value {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-card .sub {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--faint);
+    font-family: var(--mono);
+  }
+  /* Inverted Total Package card */
+  .kpi-card.inverted {
+    background: var(--black-card);
+    border-color: var(--black-card);
+    color: #fff;
+  }
+  .kpi-card.inverted .label { color: #aaa; }
+  .kpi-card.inverted .value { color: #fff; }
+  .kpi-card.inverted .sub { color: #888; }
+
+  /* Two-column */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    margin-bottom: 22px;
+  }
+  .card h2 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .card h3 {
+    margin: 22px 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* Scenario row */
+  .scenario-row {
+    display: grid;
+    grid-template-columns: 200px 1fr 140px;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .scenario-row label {
+    line-height: 1.3;
+  }
+  .scenario-row label .lbl-main { display: inline; }
+  @media (max-width: 700px) {
+    .scenario-row { grid-template-columns: 1fr; }
+  }
+  .scenario-row:last-of-type { border-bottom: none; }
+  .scenario-row label { font-size: 13px; color: var(--muted); }
+
+  /* Key Terms floating popup — top-left of dashboard */
+  .key-terms-fab { position: fixed; top: 14px; left: 14px; z-index: 100; }
+  .key-terms-fab button {
+    background: #fff; border: 1px solid var(--border); padding: 8px 14px;
+    border-radius: 999px; cursor: pointer; font-size: 12px; color: var(--navy);
+    font-weight: 600; box-shadow: 0 2px 6px rgba(0,0,0,0.06); transition: all 0.15s;
+  }
+  .key-terms-fab button:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .key-terms-modal {
+    display: none; position: fixed; top: 60px; right: 14px; width: 480px; max-width: 92vw;
+    max-height: 80vh; overflow-y: auto; z-index: 200;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.12); padding: 22px 26px;
+  }
+  .key-terms-modal.open { display: block; }
+  .key-terms-modal h2 { margin: 0 0 4px; font-size: 18px; color: var(--navy); }
+  .key-terms-modal .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .key-terms-modal dt { font-weight: 700; color: var(--navy); margin-top: 12px; font-size: 13px; }
+  .key-terms-modal dd { font-size: 13px; color: var(--ink); line-height: 1.5; margin: 4px 0 0; }
+  .key-terms-modal .close-x { position: absolute; top: 14px; right: 18px; cursor: pointer; font-size: 22px; color: var(--muted); border: none; background: none; }
+
+  /* Help / What is True-Up? */
+  details.tu-help { background: #fafaf7; border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-top: 18px; }
+  details.tu-help summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--navy); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details.tu-help summary::-webkit-details-marker { display: none; }
+  details.tu-help summary::after { content: "+"; font-size: 20px; font-weight: 400; color: var(--muted); }
+  details.tu-help[open] summary::after { content: "−"; }
+  details.tu-help .body { margin-top: 14px; font-size: 13px; color: var(--ink); line-height: 1.6; }
+  details.tu-help .body strong { color: var(--navy); }
+
+  /* Scenario row variant: when the row contains a realistic-slider, give it a vertical layout
+     so the slider gets full-width breathing room (instead of being squeezed into a 1fr column). */
+  .scenario-row.has-realistic-slider {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 14px 0 18px;
+  }
+  .scenario-row.has-realistic-slider .label-row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  .scenario-row.has-realistic-slider .label-row > label { font-size: 14px; color: var(--ink); font-weight: 600; }
+  .scenario-row.has-realistic-slider .value-cell {
+    display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+  }
+
+  /* Non-linear realistic-range slider */
+  .realistic-slider-wrap { position: relative; width: 100%; padding: 28px 0 38px; }
+  .realistic-slider-wrap .zone-bar {
+    position: absolute; top: 30px; left: 0; right: 0; height: 6px;
+    display: flex; border-radius: 3px; overflow: hidden;
+    pointer-events: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .realistic-slider-wrap .zone { height: 100%; }
+  .realistic-slider-wrap .zone.under { background: #fde2e1; }
+  .realistic-slider-wrap .zone.realistic { background: #c8efd9; }
+  .realistic-slider-wrap .zone.stretch { background: #ffeeb8; }
+  .realistic-slider-wrap input[type="range"] {
+    position: relative; width: 100%; z-index: 2; background: transparent;
+    margin: 22px 0 4px;
+  }
+  .realistic-slider-wrap .zone-labels {
+    position: absolute; left: 0; right: 0; top: 0; height: 18px;
+    pointer-events: none;
+  }
+  .realistic-slider-wrap .label-band {
+    position: absolute; top: 0; text-align: center;
+    font-size: 9px; color: #1f5e3c; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 1px 0;
+  }
+  .realistic-slider-wrap .label-band::before,
+  .realistic-slider-wrap .label-band::after {
+    content: ''; display: inline-block; width: 8px; height: 1px;
+    background: #1f5e3c; vertical-align: middle; margin: 0 4px;
+  }
+  .realistic-slider-wrap .ticks {
+    position: absolute; left: 0; right: 0; bottom: 12px;
+    pointer-events: none; height: 14px;
+  }
+  .realistic-slider-wrap .tick {
+    position: absolute; transform: translateX(-50%);
+    font-size: 10px; font-family: var(--mono); color: var(--muted);
+    white-space: nowrap;
+  }
+  .realistic-slider-wrap .tick::before {
+    content: ''; display: block; width: 1px; height: 6px;
+    background: var(--muted); margin: 0 auto -2px;
+  }
+  .realistic-slider-wrap .tick.endpoint { color: var(--faint); font-size: 9px; }
+  .realistic-slider-wrap .zone-legend {
+    position: absolute; left: 0; right: 0; bottom: -18px;
+    display: flex; justify-content: space-between;
+    font-size: 9px; font-family: var(--mono); color: var(--faint);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    pointer-events: none;
+  }
+  .tooltip-trigger {
+    display: inline-block;
+    width: 14px; height: 14px;
+    line-height: 14px; text-align: center;
+    border-radius: 50%; background: var(--border);
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    margin-left: 4px; cursor: help; position: relative;
+    text-transform: none; letter-spacing: normal;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .tooltip-trigger:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: 100%; left: 0;
+    transform: translateY(-4px);
+    background: var(--ink); color: #fff;
+    padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 400; line-height: 1.4;
+    white-space: normal; width: 240px; z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .scenario-row input[type="range"] { width: 100%; accent-color: var(--navy); }
+  .scenario-row .value-input {
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: right;
+    width: 100%;
+  }
+  .scenario-row .value-input:focus { outline: none; border-color: var(--navy); }
+
+  /* Project checkboxes on Overview */
+  .project-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 8px;
+    background: #fafaf7;
+    cursor: pointer;
+    transition: border-color 0.1s;
+  }
+  .project-toggle:hover { border-color: var(--navy); }
+  .project-toggle.checked { background: var(--accent-bg); border-color: #c3e4d0; }
+  .project-toggle .left { display: flex; align-items: center; gap: 10px; }
+  .project-toggle input[type="checkbox"] { cursor: pointer; }
+  .project-toggle .pname { font-size: 14px; font-weight: 500; }
+  .project-toggle .pamount {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* Rate calc */
+  .rate-calc {
+    background: #fafaf7;
+    border-left: 3px solid var(--navy);
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 14px 0 4px;
+    font-size: 13px;
+  }
+  .rate-calc .chip {
+    font-family: var(--mono);
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin: 0 2px;
+    font-size: 12px;
+  }
+  .rate-calc .chip.result {
+    background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 600;
+  }
+  .rate-calc .label { color: var(--muted); margin-top: 8px; font-size: 11px; display: block; }
+
+  /* Bands table */
+  table.bands { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.bands th {
+    text-align: left; padding: 10px 10px;
+    font-weight: 500; color: var(--muted);
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.bands td {
+    padding: 11px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  table.bands td.num { font-family: var(--mono); text-align: right; }
+  table.bands td.band-num { font-family: var(--mono); color: var(--muted); width: 34px; }
+  table.bands tr:last-child td { border-bottom: none; }
+  table.bands tr.active td { background: var(--accent-bg); }
+  table.bands tr.active td.band-num { color: var(--accent); font-weight: 600; }
+
+  /* Breakdown table */
+  table.breakdown { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.breakdown td {
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.breakdown td:first-child { color: var(--ink); }
+  table.breakdown td:last-child {
+    text-align: right;
+    font-family: var(--mono);
+    color: var(--ink);
+  }
+  table.breakdown tr.plus td:last-child { color: var(--accent); }
+  table.breakdown tr.subtotal td {
+    padding-top: 14px;
+    font-weight: 600;
+    border-top: 1px solid var(--border);
+  }
+  table.breakdown tr.total td {
+    font-weight: 700;
+    font-size: 15px;
+    border-bottom: none;
+    padding-top: 12px;
+  }
+  table.breakdown .pill-mini {
+    display: inline-block;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 500;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Context message */
+  .context-msg {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border: 1px solid #c3e4d0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-top: 18px;
+  }
+
+  /* Progress bar */
+  .progress-wrap {
+    margin-top: 8px;
+    background: #eae6dc;
+    border-radius: 999px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    background: var(--navy);
+    height: 100%;
+    transition: width 0.3s;
+  }
+
+  /* Quarterly payout */
+  .quarter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 12px;
+  }
+  @media (max-width: 900px) { .quarter-grid { grid-template-columns: repeat(2, 1fr); } }
+  .quarter-cell {
+    background: #fafaf7;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .quarter-cell .qh {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .quarter-cell input {
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: right;
+    width: 100%;
+    background: #fff;
+  }
+  .quarter-cell input:focus { outline: none; border-color: var(--navy); }
+  .quarter-cell input::placeholder {
+    font-size: 10px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--faint);
+    font-weight: 400;
+  }
+  .quarter-cell .q-calc {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 8px;
+    font-family: var(--mono);
+    line-height: 1.5;
+  }
+  .quarter-cell .q-pay {
+    margin-top: 6px;
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  /* Projected (unentered) quarter cells — highlighted green */
+  .quarter-cell.projected {
+    background: var(--accent-bg);
+    border-color: #c3e4d0;
+  }
+  .quarter-cell.projected .q-pay {
+    color: var(--accent);
+  }
+  .quarter-cell.projected .q-calc {
+    color: var(--accent);
+  }
+
+  /* Project cards (on Projects tab) */
+  .project-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 14px;
+  }
+  .project-card .project-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 16px; margin-bottom: 14px;
+  }
+  .project-card .project-top h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+  .project-card .meta { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .project-card .amt { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--navy); text-align: right; line-height: 1; }
+  .project-card .amt .sub { font-size: 11px; color: var(--faint); margin-top: 4px; font-weight: 400; display: block; }
+  .project-card .project-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+  @media (max-width: 700px) { .project-card .project-details { grid-template-columns: 1fr 1fr; } }
+  .detail-item .detail-label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .detail-item .detail-value { font-size: 14px; font-family: var(--mono); color: var(--ink); }
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    background: #fafaf7;
+    color: var(--muted);
+  }
+  .status-pill.in-progress { background: #eef4fa; color: var(--navy); }
+  .status-pill.complete { background: var(--accent-bg); color: var(--accent); }
+  .status-pill.paused, .status-pill.cancelled { background: var(--warn-bg); color: var(--warn); }
+  .dod-link { color: var(--navy); font-family: var(--mono); font-size: 13px; text-decoration: none; word-break: break-all; }
+  .dod-link:hover { text-decoration: underline; }
+
+  /* KPI tab */
+  .kpi-draft-note {
+    background: var(--warn-bg);
+    border: 1px solid #d3d1c7;
+    color: var(--warn);
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 22px;
+    font-size: 13px;
+  }
+  .kpi-slider-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+  }
+  .kpi-big-value {
+    font-family: var(--mono);
+    font-size: 48px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--navy);
+    margin: 12px 0;
+    letter-spacing: -0.02em;
+  }
+  .kpi-big-value .x { font-size: 28px; color: var(--muted); }
+
+  /* Super card */
+  .super-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 22px 26px;
+    margin-bottom: 22px;
+  }
+  .super-line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 0;
+    font-family: var(--mono); font-size: 14px;
+  }
+  .super-line.muted { color: var(--muted); font-size: 13px; }
+  .super-line.total {
+    border-top: 1px solid var(--border);
+    margin-top: 8px; padding-top: 12px;
+    font-weight: 700; font-size: 17px;
+  }
+  .super-line .plus-line { color: var(--accent); font-weight: 500; }
+
+  .loading { padding: 80px; text-align: center; color: var(--muted); }
+  .error-banner {
+    background: #fdf2f2;
+    border: 1px solid #f2d5d5;
+    color: var(--danger);
+    padding: 16px 20px;
+    border-radius: 10px;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  /* Floating Quick-Adjust card (sticky bottom-right) — simple revenue scenario */
+  .gp-floater {
+    position: fixed; bottom: 18px; right: 18px;
+    background: #fff; border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    padding: 14px 16px 12px; z-index: 90;
+    width: 440px; max-width: 92vw;
+  }
+  .gp-floater-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; position: relative; }
+  .gp-floater-head .title-wrap { display: flex; align-items: center; gap: 6px; }
+  .gp-floater-head .title { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .gp-floater-head .actions { display: flex; gap: 6px; }
+  .gp-floater-iconbtn { width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); background: #fff; border-radius: 6px; font-size: 13px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; transition: all 0.12s; }
+  .gp-floater-iconbtn:hover { background: #fafaf7; color: var(--ink); border-color: var(--muted); }
+  .gp-floater-iconbtn:active { transform: scale(0.96); }
+    .gp-floater-iconbtn.active { background: #eaf3fb; color: var(--accent); border-color: var(--accent); }
+  .gp-floater.minimised { width: auto; padding: 6px 10px; }
+  .gp-floater.minimised .gp-floater-body { display: none; }
+  .gp-floater.minimised .gp-floater-head { margin-bottom: 0; }
+  .gp-floater.minimised #gpf-snap-btn,
+  .gp-floater.minimised #gpf-reset-btn,
+  .gp-floater.minimised #gpf-minimise-btn { display: none; }
+  .gp-floater #gpf-maximise-btn { display: none; }
+  .gp-floater.minimised #gpf-maximise-btn { display: inline-flex; }
+  .gp-floater.minimised .title { margin-right: 8px; }
+  .gp-floater-snap-popover {
+    position: absolute; top: 32px; left: 0; z-index: 5;
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    padding: 6px; min-width: 180px; display: none;
+  }
+  .gp-floater-snap-popover.open { display: block; }
+  .gp-floater-snap-popover .gp-floater-chip { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 6px 10px; }
+  .gp-floater-row { display: grid; grid-template-columns: 130px 1fr 90px; gap: 10px; align-items: center; padding: 4px 0; }
+  .gp-floater .label-mini { font-size: 11px; color: var(--muted); font-weight: 500; line-height: 1.3; white-space: nowrap; }
+  .gp-floater input[type="range"] { width: 100%; accent-color: var(--navy); }
+  .gp-floater .value { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--navy); white-space: nowrap; text-align: right; }
+  .gp-floater-chip { font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; font-family: var(--mono); transition: all 0.12s; line-height: 1.4; }
+  .gp-floater-chip:hover { border-color: var(--muted); background: #fafaf7; color: var(--ink); }
+  .gp-floater-chip.target { color: var(--accent); border-color: var(--accent); background: #eaf3fb; }
+  .gp-floater-footer { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #fafaf7; display: flex; justify-content: space-between; align-items: baseline; }
+  .gp-floater-footer .ftr-label { font-size: 11px; color: var(--muted); }
+  .gp-floater-footer .ftr-value { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--navy); }
+  .gp-floater-footer .delta { font-size: 10px; font-family: var(--mono); margin-left: 4px; }
+  .gp-floater-footer .delta.up { color: #1f5e3c; }
+  .gp-floater-footer .delta.down { color: #a8281b; }
+  .gp-floater-footer.dark { background: var(--ink); }
+  .gp-floater-footer.dark .ftr-label { color: rgba(255,255,255,0.75); }
+  .gp-floater-footer.dark .ftr-value { color: #fff; }
+  .gp-floater .help-icon {
+    color: var(--muted); cursor: help; margin-left: 4px;
+    font-weight: 600; font-size: 9px; line-height: 1;
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--border); background: #fff;
+    transition: all 0.12s;
+  }
+  .gp-floater .help-icon:hover { color: var(--accent); border-color: var(--accent); background: #eaf3fb; }
+  .gp-floater .help-icon::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff;
+    padding: 6px 10px; border-radius: 6px;
+    font-size: 11px; font-weight: 400; line-height: 1.4;
+    white-space: normal; width: max-content; max-width: 220px;
+    text-align: left; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s ease; z-index: 100;
+  }
+  .gp-floater .help-icon::before {
+    content: '';
+    position: absolute; bottom: calc(100% + 1px); left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: var(--ink);
+    opacity: 0; transition: opacity 0.15s ease; z-index: 100;
+    pointer-events: none;
+  }
+  .gp-floater .help-icon:hover::after,
+  .gp-floater .help-icon:hover::before { opacity: 1; }
+  @media (max-width: 600px) { .gp-floater { left: 14px; right: 14px; width: auto; } }
+
+  /* FAQ tab — accordion-style Q&A */
+  .faq-item { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; background: #fff; overflow: hidden; }
+  .faq-item summary { cursor: pointer; padding: 14px 18px; font-size: 14px; font-weight: 600; color: var(--ink); list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; transition: background 0.12s; }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary:hover { background: #fafaf7; }
+  .faq-item[open] summary { background: #f6f8fc; border-bottom: 1px solid var(--border); }
+  .faq-item summary::after { content: '+'; font-family: var(--mono); font-size: 18px; color: var(--muted); font-weight: 400; flex-shrink: 0; transition: transform 0.15s; }
+  .faq-item[open] summary::after { content: '−'; }
+  .faq-item .faq-body { padding: 14px 18px 18px; font-size: 13px; line-height: 1.7; color: var(--ink); }
+  .faq-group-tag { display: inline-block; padding: 3px 10px; background: #eaf3fb; color: var(--accent); font-size: 11px; font-family: var(--mono); border-radius: 999px; font-weight: 500; margin-bottom: 14px; }
+  
+  /* PIN Gate overlay */
+  .pin-gate-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(252, 252, 248, 0.96); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--sans, -apple-system, sans-serif);
+  }
+  .pin-gate-card {
+    background: #fff; border: 1px solid var(--border, #ddd); border-radius: 16px;
+    padding: 32px 36px; max-width: 380px; width: 90%;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+    text-align: center;
+  }
+  .pin-gate-card h2 { margin: 0 0 6px; font-size: 18px; color: var(--ink, #1a1a1a); }
+  .pin-gate-card .sub { font-size: 13px; color: var(--muted, #666); margin: 0 0 24px; }
+  .pin-gate-pins { display: flex; gap: 10px; justify-content: center; margin: 12px 0 16px; }
+  .pin-gate-pins input {
+    width: 48px; height: 56px; text-align: center;
+    font-family: var(--mono, monospace); font-size: 24px; font-weight: 600;
+    border: 1px solid var(--border, #ddd); border-radius: 10px;
+    background: #fff; color: var(--ink, #1a1a1a);
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .pin-gate-pins input:focus { outline: none; border-color: var(--accent, #2d5ab4); box-shadow: 0 0 0 3px rgba(45,90,180,0.15); }
+  .pin-gate-master-link { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--muted, #666); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 4px 8px; }
+  .pin-gate-master-link:hover { color: var(--accent, #2d5ab4); }
+  .pin-gate-master-row { display: none; margin: 12px 0 8px; }
+  .pin-gate-master-row.shown { display: block; }
+  .pin-gate-master-row input {
+    width: 100%; padding: 10px 12px;
+    font-family: var(--mono, monospace); font-size: 14px;
+    border: 1px solid var(--border, #ddd); border-radius: 8px;
+  }
+  .pin-gate-master-row input:focus { outline: none; border-color: var(--accent, #2d5ab4); box-shadow: 0 0 0 3px rgba(45,90,180,0.15); }
+  .pin-gate-submit {
+    margin-top: 12px; padding: 10px 22px; background: var(--ink, #1a1a1a); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .pin-gate-submit:hover { background: var(--accent, #2d5ab4); }
+  .pin-gate-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pin-gate-error { color: #a8281b; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .pin-gate-loading { font-size: 12px; color: var(--muted, #666); margin-top: 8px; min-height: 16px; }
+
+  </style>
+</head>
+<body>
+<div class="pin-gate-overlay" id="pin-gate" style="display: none;">
+  <div class="pin-gate-card">
+    <h2>Enter your PIN</h2>
+    <p class="sub">Four-digit access code for your dashboard.</p>
+    <div class="pin-gate-pins" id="pin-gate-pins">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-idx="0">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-idx="1">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-idx="2">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-idx="3">
+    </div>
+    <div class="pin-gate-master-row" id="pin-gate-master-row">
+      <input type="password" id="pin-gate-master-input" placeholder="Master password">
+    </div>
+    <div>
+      <button class="pin-gate-submit" id="pin-gate-submit">Unlock</button>
+    </div>
+    <button class="pin-gate-master-link" id="pin-gate-master-toggle">Use master password</button>
+    <div class="pin-gate-error" id="pin-gate-error"></div>
+    <div class="pin-gate-loading" id="pin-gate-loading"></div>
+  </div>
+</div>
+
+
+<header class="top">
+  <div class="top-inner">
+    <div>
+      <h1 id="emp-name">Loading…</h1>
+      <p class="sub" id="emp-sub">&nbsp;</p>
+      <p class="sub" id="last-updated" style="margin-top: 4px; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: 0.04em;"></p>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <button id="key-terms-toggle" onclick="document.getElementById('key-terms-modal').classList.toggle('open')" style="background: #fff; border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; color: var(--navy); font-weight: 600;">📖 Key Terms</button>
+      
+      <span class="role-badge" id="role-badge">—</span>
+    </div>
+  </div>
+</header>
+
+<div class="pinned-header">
+  <div class="pinned-compact">
+    <span class="pc-name" id="pc-name">—</span>
+    <div class="pc-actions">
+      <button class="pc-key-terms" onclick="document.getElementById('key-terms-modal').classList.toggle('open')">📖 Key Terms</button>
+    </div>
+  </div>
+  <nav class="tabs">
+  <div class="tabs-inner" id="tab-bar">
+    <button class="tab-btn active" aria-current="page" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="planning">Planning</button>
+    <button class="tab-btn" data-tab="projects">Projects</button>
+    <button class="tab-btn" data-tab="pool">🤝 Team Pool <span style="font-size: 9px; padding: 1px 5px; background: #ecebe5; color: #8a6a00; border: 1px solid #d3d1c7; border-radius: 4px; margin-left: 4px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Beta</span></button>
+    <button class="tab-btn" data-tab="kpi">KPIs <span style="font-size: 9px; padding: 1px 5px; background: #ecebe5; color: #8a6a00; border: 1px solid #d3d1c7; border-radius: 4px; margin-left: 4px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Beta</span></button>
+    <button class="tab-btn" data-tab="payouts">Payouts &amp; Super</button>
+    <button class="tab-btn" data-tab="faq">FAQ</button>
+    <button class="tab-btn" data-tab="howitworks">How This Works</button>
+  </div>
+</nav>
+</div>
+
+<div id="key-terms-modal" class="key-terms-modal">
+  <button class="close-x" onclick="document.getElementById('key-terms-modal').classList.remove('open')" aria-label="Close">×</button>
+  <h2>Key Terms</h2>
+  <div class="subtitle">Quick reference for the language used on your dashboard.</div>
+  <dl>
+    <dt>Revenue (ex GST)</dt>
+    <dd>Money the company earns from your performances <em>after</em> stripping the 10% GST. This is what shows in Xero's P&amp;L and what your commission is calculated on.</dd>
+
+    <dt>TTM (Trailing Twelve Months)</dt>
+    <dd>Your revenue total over the last 365 days. Updated each quarter — drives your quarterly commission. Smooths out seasonal variation so you don't have to wait until year-end to be paid.</dd>
+
+    <dt>Super-Inclusive</dt>
+    <dd>The dollar figures on your dashboard already include the 12% superannuation. So if it says $5,000 commission, that's $4,464 paid into your bank (pre-tax) and $536 paid into your super fund — $5,000 total in your name.</dd>
+
+    <dt>Realistic Range</dt>
+    <dd>The green zone on your Annual Performance Revenue slider — the $170k–$250k window where most of your year is likely to land. The slider moves slowly through this zone so you can dial in the exact figure easily.</dd>
+
+    <dt>Annual True-Up</dt>
+    <dd>Year-end catch-up payment. If your final TTM revenue would have earned you more than the sum of your quarterly payouts, the difference is paid as a top-up. See "What is the True-Up?" in the Overview tab for full details.</dd>
+
+    <dt>Quarterly Payout</dt>
+    <dd>Your commission split into 4 cash flows. Each quarter, we look at your TTM revenue and pay you 1/4 of the annual commission that level would earn — so cash flow stays steady through the year.</dd><dt>Base Salary</dt>
+    <dd>Your guaranteed annual salary, paid fortnightly, regardless of performance. Shown ex-super on your dashboard with super added separately.</dd>
+
+    <dt>Total Package</dt>
+    <dd>Base salary + super on base + commission earned + project bonuses. The full amount paid in your name across the year, before the tax man takes his share.</dd>
+
+    <dt>Milestone Bonus</dt>
+    <dd>An extra bonus that ramps up linearly between two revenue thresholds — for you, $0 at $195k revenue scaling smoothly to the full $9,688 at $220k. Every dollar of revenue between those two points unlocks a proportional slice. Above $220k, the standard 10% incremental band kicks in.</dd>
+
+    <dt>Effective Rate</dt>
+    <dd>The commission % you'd earn on the next dollar of revenue at your current position — base band rate × KPI multiplier.</dd>
+  
+    <dt>KPI Multiplier</dt>
+    <dd>A multiplier applied to your variable comp once KPIs go live. Indicative range is roughly 0.7× to 1.3×, but the exact range will be confirmed before activation. Currently locked at 1.0× — KPIs are still in DRAFT.</dd>
+  </dl>
+</div>
+
+<main>
+
+  <div id="error-slot"></div>
+  <div id="loading" class="loading">Loading compensation data…</div>
+
+  <!-- Overview -->
+  <section class="panel" id="panel-overview">
+    <div id="pay-increase-banner"></div>
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="label">Base Salary</div>
+        <div class="value" id="card-base">—</div>
+        <div class="sub" id="card-base-sub">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Performance Bonus</div>
+        <div class="value" id="card-comm">—</div>
+        <div class="sub" id="card-comm-sub">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Project Bonus</div>
+        <div class="value" id="card-projects">—</div>
+        <div class="sub" id="card-projects-sub">—</div>
+      </div>
+      <div class="kpi-card inverted">
+        <div class="label">Total Package</div>
+        <div class="value" id="card-total">—</div>
+        <div class="sub" id="card-total-sub">—</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card" style="margin-bottom: 0;">
+        <h2>Scenario Inputs</h2>
+        <p style="font-size: 13px; color: var(--muted); margin: 0 0 10px;">Drag the sliders or type in exact figures to model different scenarios.</p>
+
+        <div class="scenario-row has-realistic-slider">
+          <div class="label-row">
+            <label>Annual Performance Revenue <span class="tooltip-trigger" data-tip="Enter your Performance Revenue excl. GST from your Zoho Dashboard Data. Realistic Range zone is highlighted on the slider.">?</span></label>
+            <div class="value-cell">
+              <div style="position: relative;">
+                <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:14px;color:var(--muted);">$</span>
+                <input type="text" inputmode="numeric" id="rev-input" class="value-input" style="padding-left: 22px; width: 150px;" value="195,000">
+              </div>
+            </div>
+          </div>
+          <div class="realistic-slider-wrap" id="rev-slider-wrap">
+            <div class="zone-labels"><span class="label-band" id="rev-label-band">Realistic Range</span></div>
+            <div class="zone-bar">
+              <div class="zone under"></div>
+              <div class="zone realistic"></div>
+              <div class="zone stretch"></div>
+            </div>
+            <input type="range" id="rev-slider" min="0" max="100" step="0.1" value="50">
+            <div class="ticks"></div>
+          </div>
+        </div>
+
+        <div class="scenario-row" style="display: none;">
+          <label>KPI Score <span class="tooltip-trigger" data-tip="Coming soon — KPIs are still being finalised. For now the slider is capped at 1.0×.">?</span></label>
+          <input type="range" id="kpi-slider" min="0" max="1.5" step="0.01" value="1">
+          <input type="text" id="kpi-input" class="value-input" value="1.00">
+        </div>
+
+        <div class="rate-calc" id="rate-calc" style="display: none;">
+          <div>
+            <span class="chip" id="calc-band">—</span>
+            <span style="color: var(--muted);">×</span>
+            <span class="chip" id="calc-kpi">1.00 KPI</span>
+            <span style="color: var(--muted);">=</span>
+            <span class="chip result" id="calc-eff">—</span>
+          </div>
+          <span class="label" id="calc-note">Effective rate at your current position</span>
+        </div>
+
+        <div id="planning-projects-section" style="display: none;">
+          <h3 style="margin-top: 22px;">Project Bonuses</h3>
+          <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">Tick to include each project in your projected total package.</p>
+          <div id="project-toggles"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom: 18px;">
+          <h2>Progress to Next Tier</h2>
+          <div style="margin-top: 14px;">
+            <div style="font-size: 14px;" id="next-tier-line">—</div>
+            <div class="progress-wrap">
+              <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+            </div>
+            <div style="margin-top: 6px; font-size: 12px; color: var(--muted); font-family: var(--mono);" id="next-tier-sub">—</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 0;">
+          <h2>Breakdown</h2>
+          <div class="table-wrap"><table class="breakdown" id="breakdown-table"></table></div>
+          <div class="context-msg" id="context-msg" style="display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Commission Bands — Incremental</h2>
+      <p style="font-size: 12px; color: var(--muted); margin: 2px 0 14px;">Each rate applies only to revenue earned within that band. Highlighted rows reflect your current revenue position.</p>
+      <div class="table-wrap"><table class="bands" id="bands-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">Band</th>
+            <th>Revenue Range</th>
+            <th style="text-align: right;">Rate</th>
+            <th style="text-align: right;">Band Earn</th>
+            <th style="text-align: right;">Cumulative</th>
+          </tr>
+        </thead>
+        <tbody id="bands-body"></tbody>
+      </table></div>
+      <div id="milestone-bonus-callout" style="margin-top: 14px;"></div>
+    </div>
+
+    <div class="card" data-guardrail-card style="padding: 18px 24px;">
+      <h2>Company Guardrail</h2>
+      <div id="guardrail-banner" style="margin-top: 10px;"></div>
+      <p style="font-size: 12px; color: var(--muted); margin: 10px 0 0; line-height: 1.5;">
+        The company maintains a minimum margin floor to ensure variable compensation is funded by real profitability.
+        If the rolling company margin drops below the guardrail threshold, <strong>variable compensation pauses</strong>
+        — base salary and project bonuses are unaffected. This protects both you and the business during low-margin periods.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Quarterly Payout <span class="tooltip-trigger" data-tip="Get your last 365 Days Performance Revenue data from the data tab in your Zoho Team Record.">?</span></h2>
+      <p style="font-size: 13px; color: var(--muted); margin: 8px 0 8px;">Based on last 365 days of revenue (ex. GST) that you generated from your performance. Each quarter-end, enter your trailing 12-month revenue — commission is calculated on that annualised figure, then divided by 4. Empty quarters show projected amounts in green based on your Annual Performance Revenue input above.</p>
+      <div style="margin: 0 0 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <a class="btn small" href="https://crm.zoho.com/crm/org657079535/tab/CustomModule3/2877869000001224372/canvas/2877869000056971016" target="_blank" rel="noopener" style="text-decoration: none; background: #eaf3fb; color: var(--navy); border: 1px solid #c5dbef; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;">📊 Get My Current Zoho Data ↗</a>
+        <span style="font-size: 11px; color: var(--muted); font-family: var(--mono);">Pull your trailing 12-month revenue (ex. GST) from the Data tab, then enter it below.</span>
+      </div>
+      <div class="quarter-grid" id="quarter-grid"></div>
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-family: var(--mono); font-size: 14px;">
+        <span style="color: var(--muted);">Total commission paid across all 4 quarters</span>
+        <span id="q-total-paid">—</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-family: var(--mono); font-size: 13px; color: var(--muted); margin-top: 2px;" id="q-holdback-row">
+        <span>Year-end reconciliation (if payout % &lt; 100)</span>
+        <span id="q-total-heldback">—</span>
+      </div>
+      <div id="annual-trueup-card" style="display: none; margin-top: 18px; padding: 14px 18px; background: linear-gradient(135deg, #e6f7ee 0%, #c8efd9 100%); border: 1px solid #6fc792; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <div>
+            <div style="font-size: 11px; color: #1f5e3c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">🎯 Annual True-Up</div>
+            <div style="font-size: 12px; color: var(--ink); margin-top: 4px;" id="trueup-explainer">If you finish the year above your quarterly run-rate, this true-up tops you up to the full annual commission entitlement.</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 11px; color: #1f5e3c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Catch-up payment</div>
+            <div style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: #1f5e3c;" id="trueup-amount">—</div>
+            <div style="font-size: 10px; color: var(--muted); font-family: var(--mono);" id="trueup-detail">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <details class="tu-help">
+        <summary>What is the True-Up?</summary>
+        <div class="body">
+          <p>Your commission is calculated each quarter on your <strong>trailing 12-month revenue</strong> (TTM) and divided by 4. This means quarterly payouts are smoother and more predictable — you don't have to wait until year-end to get paid.</p>
+          <p>But there's a problem: if you have a slow start to the year and a big finish, the early quarterly payouts are calculated on lower TTM, so they pay less. By the time your TTM catches up at year-end, only the <em>final</em> quarter's payout reflects your strong year — and that's just 25% of the annual commission. You'd be underpaid.</p>
+          <p>The <strong>Annual True-Up</strong> fixes this. At year-end:</p>
+          <ul>
+            <li>We compute what your <strong>full annual commission</strong> should be at your final Q4 TTM revenue.</li>
+            <li>We subtract everything we've already paid you across Q1–Q4.</li>
+            <li>The difference is paid as a year-end <strong>catch-up bonus</strong>.</li>
+          </ul>
+          <p>This way, if you finish the year strong (e.g. you push past the $220k milestone in Q4), you get the <strong>full annual commission you earned</strong> — including the milestone bonus that ramps from $195k to $220k — not just 1/4 of it from the last quarter. Your base salary is never affected, and the true-up is never negative.</p>
+          <p style="color: var(--muted); font-size: 12px;">Example: You start the year with TTM at $150k (no commission below $195k). By Q4 you push TTM to $220k → annual entitlement ≈ $9.7k. If only Q4 paid out ($2.4k), the <strong>$7.3k true-up</strong> at year-end gets you to the full $9.7k.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- Planning — gigs & avg revenue per gig (same shape as Michael's Planning tab) -->
+  <section class="panel" id="panel-planning">
+    <div style="margin-bottom: 18px;">
+      <h2 style="margin: 0 0 4px;">Gig Planning</h2>
+      <p style="color: var(--muted); font-size: 14px; margin: 0;">Break down your annual performance revenue into number of gigs × average revenue per gig. Edit any field — the others recalculate automatically. Use this to plan how many gigs you need at what rate to hit each commission tier.</p>
+    </div>
+
+    <div style="margin: 0 0 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+      <a class="btn small" href="https://crm.zoho.com/crm/org657079535/tab/CustomModule3/2877869000001224372/canvas/2877869000056971016" target="_blank" rel="noopener" style="text-decoration: none; background: #eaf3fb; color: var(--navy); border: 1px solid #c5dbef; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;">📊 Get My Current Zoho Data ↗</a>
+      <span style="font-size: 11px; color: var(--muted); font-family: var(--mono);">Pull last-12 months of gigs + revenue from your Zoho team record.</span>
+    </div>
+
+    <div class="card" style="max-width: 720px;">
+      <h3 style="margin: 0 0 4px;">Planning</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 14px;">Forward-looking — what you're aiming for this year.</p>
+      <div class="scenario-row">
+        <label>Number of Gigs</label>
+        <input type="range" id="plan-gigs-slider" min="50" max="200" step="1" value="97">
+        <input type="text" inputmode="numeric" id="plan-gigs-input" class="value-input" value="97">
+      </div>
+      <div class="scenario-row">
+        <label>Avg Revenue per Gig <span style="color: var(--faint); font-weight: 400; font-size: 12px;">(ex GST)</span></label>
+        <input type="range" id="plan-avg-slider" min="500" max="5000" step="50" value="2013">
+        <div>
+          <div style="position: relative;">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:14px;color:var(--muted);">$</span>
+            <input type="text" inputmode="numeric" id="plan-avg-input" class="value-input" style="padding-left: 22px;" value="2,013">
+          </div>
+          <div id="plan-avg-gst" style="margin-top: 4px; font-size: 11px; color: var(--faint); font-family: var(--mono); text-align: right;">inc GST: —</div>
+        </div>
+      </div>
+      <div class="scenario-row">
+        <label style="font-weight: 600;">Total Revenue <span style="color: var(--faint); font-weight: 400; font-size: 12px;">(= Gigs × Avg)</span></label>
+        <input type="range" id="plan-rev-slider" min="0" max="500000" step="1000" value="195237">
+        <div>
+          <div style="position: relative;">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:14px;color:var(--muted);">$</span>
+            <input type="text" inputmode="numeric" id="plan-rev-input" class="value-input" style="padding-left: 22px;" value="195,237">
+          </div>
+          <div id="plan-rev-gst" style="margin-top: 4px; font-size: 11px; color: var(--faint); font-family: var(--mono); text-align: right;">inc GST: —</div>
+        </div>
+      </div>
+      <div style="margin-top: 14px; padding: 14px; background: #eef4fa; border: 1px solid #cdd9e8; border-radius: 8px;">
+        <div style="font-size: 11px; color: var(--navy); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">At this revenue, you earn</div>
+        <div style="display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-family: var(--mono);">
+          <div><div style="font-size: 10px; color: var(--muted);">COMMISSION (inc super)</div><div id="plan-comm" style="font-size: 18px; font-weight: 700; color: var(--accent);">—</div></div>
+          <div><div style="font-size: 10px; color: var(--muted);">TOTAL PACKAGE</div><div id="plan-total" style="font-size: 18px; font-weight: 700; color: var(--navy);">—</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Projects -->
+  <section class="panel" id="panel-projects">
+    <div style="margin-bottom: 18px;">
+      <p style="color: var(--muted); font-size: 14px; margin: 0;">Project bonuses are paid on sign-off of the Definition of Done (DOD). Tick a project on the Overview tab to include it in your total package projection.</p>
+    </div>
+    <div id="projects-list"></div>
+    <div id="projects-empty" style="display: none; padding: 60px; text-align: center; color: var(--muted); background: #fafaf7; border: 1px dashed var(--border); border-radius: 10px;">
+      No projects currently assigned to you.
+    </div>
+  </section>
+  <!-- Team Pool -->
+  <section class="panel" id="panel-pool">
+    <div id="team-pool-content"></div>
+  </section>
+
+
+
+  <!-- KPI -->
+  <section class="panel" id="panel-kpi">
+    <div style="margin-bottom: 18px; padding: 14px 18px; background: linear-gradient(135deg, #fff8e1 0%, #fff2c5 100%); border: 2px solid #d3d1c7; border-radius: 10px;">
+      <div style="font-size: 11px; color: #8a6a00; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">⚠ Beta — Being rolled out in Year 2</div>
+      <div style="font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.5;">
+        This scorecard is the <strong>draft</strong> of how KPIs will look when we go live. KPIs are not yet active — your variable compensation is <strong>not affected by anything below</strong>. We're sharing the draft now so you can read it, push back, and have input before we switch it on next year.
+      </div>
+    </div>
+    <div class="kpi-draft-note" style="font-size: 13px; color: var(--muted); padding: 10px 14px; background: #fafaf7; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 18px;">
+      <strong>How this will work in Year 2:</strong> The categories below come from your employment agreement / position description. Each category is weighted (totalling 100%). The weighted average of your achievement scores will map to a KPI multiplier (indicative range roughly <strong>0.7×</strong> to <strong>1.3×</strong> — exact range will be confirmed before activation), applied to your variable compensation. <strong>Hidden inputs</strong> (the slider and effect-on-comp calculator) are off until we go live.
+    </div>
+
+    <!-- Hidden multiplier slider + effect card — kept in DOM for forward compat, display:none for now -->
+    <div class="two-col" style="display: none;">
+      <div class="kpi-slider-card">
+        <div class="kpi-big-value"><span id="kpi-big">1.00</span><span class="x">×</span></div>
+        <input type="range" id="kpi-slider-2" min="0" max="1.5" step="0.01" value="1">
+        <div style="margin-top: 12px;">Scorecard weighted average: <strong id="kpi-overall-pct">—</strong></div>
+      </div>
+      <div class="card">
+        <div class="super-line muted"><span>Variable comp before KPI</span><span id="kpi-before">—</span></div>
+        <div class="super-line"><span>KPI multiplier</span><span id="kpi-mult">—</span></div>
+        <div class="super-line total"><span>Variable comp after KPI</span><span id="kpi-after">—</span></div>
+      </div>
+    </div>
+
+    <div id="kpi-scorecard" style="margin-top: 22px;"></div>
+  </section>
+
+  <!-- Payouts -->
+  <section class="panel" id="panel-payouts">
+    <!-- Payroll-locked actuals (populated from admin entries) -->
+    <div id="payroll-locked-card"></div>
+
+    <div class="banner info" id="payout-banner">
+      <span class="dot"></span>
+      <span id="payout-banner-text">—</span>
+    </div>
+
+    <div class="card">
+      <h2 id="payout-heading">Quarterly Payout Schedule</h2>
+      <p style="font-size: 13px; color: var(--muted); margin: 2px 0 14px;">Based on your last 365 days of revenue, calculated each quarter and divided by 4. Enter your TTM revenue on the <strong>Overview</strong> tab — the figures below sync across both tabs.</p>
+      <div class="quarter-grid" id="payouts-quarter-grid"></div>
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-family: var(--mono); font-size: 14px; font-weight: 600;">
+        <span style="color: var(--muted); font-weight: 500;">Total commission paid across all 4 quarters</span>
+        <span id="q-total-paid-p">—</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-family: var(--mono); font-size: 13px; color: var(--muted); margin-top: 2px;" id="q-holdback-row-p">
+        <span>Year-end reconciliation (if payout % &lt; 100)</span>
+        <span id="q-total-heldback-p">—</span>
+      </div>
+      <div id="annual-trueup-card-p" style="display: none; margin-top: 18px; padding: 14px 18px; background: linear-gradient(135deg, #e6f7ee 0%, #c8efd9 100%); border: 1px solid #6fc792; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <div>
+            <div style="font-size: 11px; color: #1f5e3c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">🎯 Annual True-Up</div>
+            <div style="font-size: 12px; color: var(--ink); margin-top: 4px;" id="trueup-explainer-p">If you finish the year above your quarterly run-rate, this true-up tops you up to the full annual commission entitlement.</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 11px; color: #1f5e3c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Catch-up payment</div>
+            <div style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: #1f5e3c;" id="trueup-amount-p">—</div>
+            <div style="font-size: 10px; color: var(--muted); font-family: var(--mono);" id="trueup-detail-p">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="super-card">
+      <h2 style="font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px;">Superannuation &amp; Total Package</h2>
+      <div class="super-line"><span>Base salary</span><span id="spr-base">—</span></div>
+      <div class="super-line"><span>+ Commission</span><span id="spr-comm" class="plus-line">—</span></div>
+      <div class="super-line"><span>+ Project bonuses (ex-super portion)</span><span id="spr-proj" class="plus-line">—</span></div>
+      <div class="super-line muted"><span>Subtotal (ex-super)</span><span id="spr-subtotal">—</span></div>
+      <div class="super-line"><span id="spr-super-label">+ Superannuation (12%)</span><span id="spr-super" class="plus-line">—</span></div>
+      <div class="super-line total"><span>Total package</span><span id="spr-total">—</span></div>
+    </div>
+  </section>
+
+  <!-- How This Works (sourced from Variable Compensation Philosophy.docx — Director's framing) -->
+    <!-- FAQ -->
+  <section class="panel" id="panel-faq">
+    <div style="margin-bottom: 18px;">
+      <h2 style="margin: 0 0 6px;">Frequently Asked Questions</h2>
+      <p style="font-size: 13px; color: var(--muted); margin: 0;">Common questions about how your variable compensation works. Click any question to expand.</p>
+    </div>
+    <div class="faq-group-tag" id="faq-group-tag">—</div>
+    <div id="faq-list"></div>
+    <div style="margin-top: 22px; padding: 14px 18px; background: #fafaf7; border: 1px dashed var(--border); border-radius: 10px; font-size: 13px; color: var(--muted); line-height: 1.6;">
+      <strong style="color: var(--ink);">Question not here?</strong> Speak to Hayley or Nathan directly — every question is welcome and we will add common ones to this tab.
+    </div>
+  </section>
+
+  <section class="panel" id="panel-howitworks">
+    <div class="card" style="background: linear-gradient(135deg, #f6f8fc 0%, #ffffff 100%); border-left: 4px solid var(--navy);">
+      <h2 style="margin: 0 0 6px;">How Your Variable Compensation Works</h2>
+      <p style="font-size: 13px; color: var(--muted); margin: 0 0 14px; font-style: italic;">The thinking behind your plan, in plain English. Different from the sales team — your plan is built around <strong>Performance Revenue</strong>, not GP.</p>
+      <p style="font-size: 14px; color: var(--ink); line-height: 1.7; margin: 0 0 12px;">
+        Your role brings revenue in two complementary ways: by performing at gigs yourself, and by managing the talent roster that performs alongside you. Both count. Your variable comp is calculated on the total Performance Revenue your work brings through the door — whether it lands on you on stage, or on someone you placed there.
+      </p>
+      <p style="font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0;">
+        Below is the spine of the plan and the deal we&rsquo;re making with you. Performers are paid on a different cycle to the sales team because performance revenue is a quarterly figure, not a monthly one — and your plan is structured to reflect that.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin: 0 0 12px;">The four principles (performer edition)</h3>
+      <ol style="font-size: 13px; color: var(--ink); line-height: 1.7; margin: 0; padding-left: 22px;">
+        <li style="margin-bottom: 12px;"><strong>Performance Revenue is the metric.</strong> Your variable comp is calculated on the total revenue from gigs you personally perform at, plus the gigs you book and manage as a Talent lead — across the financial year. Not GP, not bookings, not quotes. <em>Revenue you brought through the door</em> — every dollar of cash that arrives from a gig you delivered counts toward your bands.</li>
+        <li style="margin-bottom: 12px;"><strong>Paid quarterly, not monthly.</strong> Performance Revenue is naturally lumpy — a single big gig or a busy week can shift a quarter&rsquo;s number meaningfully. Calculating quarterly (rather than monthly) smooths the noise and lines up with how the business sees its own performance. Your commission lands in the first fortnightly pay cycle of the new quarter, after the previous quarter is closed and reconciled.</li>
+        <li style="margin-bottom: 12px;"><strong>Bands climb — the harder you push, the more you earn per dollar.</strong> The first dollar of revenue above your previous tier earns at a higher rate than the last dollar of the tier you just cleared. Stretch is rewarded, not punished. <strong>There&rsquo;s no cap.</strong></li>
+        <li><strong>You need to be employed at quarter-end to be eligible for that quarter&rsquo;s commission.</strong> Different to the sales team, because your variable is a quarterly figure. Anything from previous fully-completed quarters is yours and lands in your final paycheck. Cash that lands after your last day stays with the company. Base salary is never touched.</li>
+      </ol>
+    </div>
+
+    <div class="card" style="border-left: 3px solid var(--navy);">
+      <h3 style="margin: 0 0 10px;">How Performance Revenue is calculated</h3>
+      <p style="font-size: 13px; color: var(--muted); margin: 0 0 10px; line-height: 1.6;">
+        We sum every dollar of <strong>revenue</strong> (ex-GST) that came in from gigs you performed at or led during the financial year. Performances, talent-management revenue, retainer fees on engagements you own. The figure flows through your plan&rsquo;s revenue bands to compute commission, super-inclusive.
+      </p>
+      <div style="background: #fafaf7; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.7; color: var(--ink); margin-top: 10px;">
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 8px;">Quick example</div>
+        <div style="font-family: var(--mono); font-size: 12px;">
+          Q1 performance revenue: $52,000<br>
+          Q2 performance revenue: $48,000<br>
+          Q3 performance revenue: $66,000 (busy run of weeks)<br>
+          Q4 performance revenue: $54,000<br>
+          <strong>Annual total: $220,000</strong> — runs through your plan&rsquo;s bands to produce commission.
+        </div>
+      </div>
+      <p style="font-size: 12px; color: var(--muted); margin: 12px 0 0; line-height: 1.6;">
+        <strong>Why this matters:</strong> the bands are annualised. A great Q3 doesn&rsquo;t pay the same as flat Q1, Q2, and Q3 — because the year-end reconciliation uses the <em>annual</em> total to determine which band rates apply. Quarterly payouts are estimates against the annual figure, and the year-end true-up squares them.
+      </p>
+    </div>
+
+    <div class="card" style="border-left: 3px solid var(--warn);">
+      <h3 style="margin: 0 0 10px;">The $9,688 milestone bonus (ramp, not cliff)</h3>
+      <p style="font-size: 13px; color: var(--ink); line-height: 1.6; margin: 0 0 10px;">
+        At $220k in annual performance revenue, you unlock the full $9,688 milestone bonus. To avoid the demoralising "all or nothing at $220k" cliff, the bonus <strong>ramps linearly from $195k → $220k</strong>. Every dollar of revenue between those two figures unlocks a proportional slice of the bonus.
+      </p>
+      <div style="background: #fafaf7; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 12px; font-family: var(--mono); color: var(--muted); margin-top: 8px;">
+        At $195k revenue → $0 unlocked &nbsp;·&nbsp; at $207.5k → $4,844 (50%) &nbsp;·&nbsp; at $220k → full $9,688
+      </div>
+      <p style="font-size: 12px; color: var(--muted); margin: 12px 0 0; line-height: 1.6;">
+        Above $220k, the standard 10% incremental band kicks in on every additional dollar. No cap.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin: 0 0 10px;">What we don&rsquo;t pay variable comp on</h3>
+      <p style="font-size: 13px; color: var(--muted); margin: 0 0 10px;">Variable compensation is a sharp tool. Plenty of behaviour we deeply value sits outside it:</p>
+      <ul style="font-size: 13px; line-height: 1.6; color: var(--ink); padding-left: 18px; margin: 0;">
+        <li><strong>Doing your job exceptionally well in non-numerical ways</strong> &mdash; client experience, hand-offs, mentoring talent, the way you turn up. Reflected in your annual review and discretionary bonuses, not the plan multiplier.</li>
+        <li><strong>Effort in itself</strong> &mdash; we pay for what lands. Effort is necessary but not sufficient.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin: 0 0 10px;">How the plan changes year to year</h3>
+      <p style="font-size: 13px; color: var(--ink); line-height: 1.6; margin: 0;">
+        Expect a band tweak once a year &mdash; a small calibration based on what we&rsquo;ve learned and where the business is heading. Bigger structural changes (new plan shape, additions like team-pool kickers if we go that way) will be communicated in advance and never applied retrospectively. <strong>Cash you&rsquo;ve already earned is locked in.</strong>
+      </p>
+    </div>
+
+    <div style="font-size: 12px; color: var(--faint); text-align: right; margin-top: 16px; padding-right: 10px;">
+      &mdash; Nathan Op de Coul, Director, MEC Group
+    </div>
+
+    <div style="font-size: 12px; color: var(--faint); font-family: var(--mono); text-align: center; margin-top: 20px;">
+      Questions? Open the 📖 Key Terms button (top-right) for definitions, or speak to Nathan directly.
+    </div>
+  </section>
+</main>
+
+<!-- Floating Quick-Adjust card (sticky bottom-right) — single revenue slider for Sales & Talent Manager -->
+<div class="gp-floater" id="gp-floater" style="display: none;">
+  <div class="gp-floater-head">
+    <span class="title">Quick adjust</span>
+    <div class="actions">
+      <button class="gp-floater-iconbtn" id="gpf-snap-btn" title="Snap to preset" aria-label="Snap presets">⋯</button>
+      <button class="gp-floater-iconbtn" id="gpf-reset-btn" title="Reset to defaults" aria-label="Reset">↻</button>
+      <button class="gp-floater-iconbtn" id="gpf-minimise-btn" title="Minimise" aria-label="Minimise">▾</button>
+      <button class="gp-floater-iconbtn" id="gpf-maximise-btn" title="Maximise" aria-label="Maximise">▴</button>
+    </div>
+    <div class="gp-floater-snap-popover" id="gpf-snap-popover"></div>
+  </div>
+
+  <div class="gp-floater-body">
+  <div class="gp-floater-row gp">
+    <span class="label-mini">Perf. Revenue <span class="help-icon" data-tip="Annual performance revenue you bring into the business as a performer">?</span></span>
+    <input type="range" id="gp-floater-slider">
+    <span class="value" id="gp-floater-value">—</span>
+  </div>
+
+  <div class="gp-floater-footer">
+    <span class="ftr-label">Est. Commission @ Scenario</span>
+    <span><span class="ftr-value" id="gpf-comm-v">—</span></span>
+  </div>
+  <div class="gp-floater-footer dark">
+    <span class="ftr-label">Est. Total Package @ Scenario</span>
+    <span class="ftr-value" id="gpf-total-v">—</span>
+  </div>
+  </div><!-- /.gp-floater-body -->
+</div>
+
+<script>
+
+// =========================================================================
+// DEV_MODE — single switch to bypass encryption + cache during iteration.
+// Flick to false (and run prod-deploy) for production.
+// =========================================================================
+const DEV_MODE = false;
+
+// Try to load plaintext data.json from same folder. Returns null if not found.
+async function _devLoadPlaintext() {
+  try {
+    const res = await fetch('./data.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) { return null; }
+}
+
+function _showDevBanner(label) {
+  if (document.getElementById('_dev-mode-banner')) return;
+  const b = document.createElement('div');
+  b.id = '_dev-mode-banner';
+  b.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; z-index: 9999; padding: 6px 16px; background: #ecebe5; border-bottom: 2px solid #d3d1c7; color: #8a6a00; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600; text-align: center; line-height: 1.3;';
+  b.innerHTML = '🔓 DEV MODE — encryption + PIN gate disabled · data.json loaded plaintext · ' + (label || '') + ' · NEVER roll out in this mode';
+  document.body.insertBefore(b, document.body.firstChild);
+  // Push the rest of the page down so the banner doesn't overlap content
+  document.body.style.paddingTop = (parseInt(getComputedStyle(document.body).paddingTop) || 0) + 26 + 'px';
+}
+
+// Hide the password gate overlay if it exists (for both PIN and master gates).
+function _hideGate() {
+  ['pin-gate', 'pw-gate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// DEV_MODE replacement for unlockDashboard — loads plaintext data.json + slices.
+async function _devLoadDashboard() {
+  const full = await _devLoadPlaintext();
+  if (!full) throw new Error('DEV_MODE on but data.json not found at ./data.json — copy it from 🔒 DON\'T DELETE/ to GitHub files/, or set DEV_MODE = false.');
+  const emp = (full.employees || []).find(e => e.id === EMPLOYEE_ID);
+  if (!emp) throw new Error('Employee not found in data.json: ' + EMPLOYEE_ID);
+  const projects = (full.projects || []).filter(p => Array.isArray(p.assignedTo) && p.assignedTo.includes(EMPLOYEE_ID));
+  _hideGate();
+  _showDevBanner(EMPLOYEE_ID);
+  return {
+    meta: full.meta,
+    globals: full.globals,
+    planTypes: full.planTypes,
+    faqs: full.faqs,
+    projects,
+    employees: [emp]
+  };
+}
+
+/* ============================================================
+   Employee Compensation Dashboard — Michael Kourkov v2
+   Schema v2.0: bands = [{ threshold, rate }, ...]
+   ============================================================ */
+
+const EMPLOYEE_ID = 'tom';
+
+// =========================================================================
+// PIN GATE + DECRYPTION (v40)
+// Each dashboard fetches an encrypted file and decrypts it with PIN or master password.
+// =========================================================================
+const PIN_CACHE_KEY = `dashboard-${EMPLOYEE_ID}-decrypted-v25`;
+const PIN_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const ENCRYPTED_URL = `./encrypted/${EMPLOYEE_ID}.enc.json`;
+
+function _b64decode(s) {
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
+
+async function _deriveKEK(password, salt, iterations) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: new Uint8Array(salt), iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+}
+
+async function _unwrapDEK(wrap, password) {
+  const kek = await _deriveKEK(password, _b64decode(wrap.salt), wrap.iter);
+  const iv = new Uint8Array(_b64decode(wrap.iv));
+  const ct = new Uint8Array(_b64decode(wrap.ct));
+  // The unwrapped DEK is raw key material — import it as an AES-GCM key
+  const dekBytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, kek, ct);
+  return crypto.subtle.importKey('raw', dekBytes, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+}
+
+async function _decryptPayload(payload, dek) {
+  const iv = new Uint8Array(_b64decode(payload.iv));
+  const ct = new Uint8Array(_b64decode(payload.ct));
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, dek, ct);
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function decryptWithPassword(encryptedFile, password, useMasterWrap) {
+  const wrap = useMasterWrap ? encryptedFile.wrap_master : encryptedFile.wrap_pin;
+  const dek = await _unwrapDEK(wrap, password);
+  return _decryptPayload(encryptedFile.data, dek);
+}
+
+function _readCachedData() {
+  try {
+    const raw = localStorage.getItem(PIN_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj.expires || obj.expires < Date.now()) return null;
+    return obj.data;
+  } catch (e) { return null; }
+}
+
+function _writeCachedData(data) {
+  try {
+    localStorage.setItem(PIN_CACHE_KEY, JSON.stringify({
+      data, expires: Date.now() + PIN_CACHE_TTL_MS
+    }));
+  } catch (e) {}
+}
+
+function _clearCache() {
+  try { localStorage.removeItem(PIN_CACHE_KEY); } catch (e) {}
+}
+
+async function _fetchEncrypted() {
+  const res = await fetch(ENCRYPTED_URL + '?' + Date.now());
+  if (!res.ok) throw new Error('Could not fetch encrypted data (' + res.status + ')');
+  return res.json();
+}
+
+// Returns the decrypted data object, prompting for PIN if no valid cache exists.
+async function unlockDashboard() {
+  // Try cache first
+  const cached = _readCachedData();
+  if (cached) return cached;
+  // Otherwise prompt
+  const encrypted = await _fetchEncrypted();
+  return new Promise((resolve, reject) => {
+    const overlay = document.getElementById('pin-gate');
+    overlay.style.display = 'flex';
+    const pins = overlay.querySelectorAll('.pin-gate-pins input');
+    const masterRow = document.getElementById('pin-gate-master-row');
+    const masterInput = document.getElementById('pin-gate-master-input');
+    const submit = document.getElementById('pin-gate-submit');
+    const errorEl = document.getElementById('pin-gate-error');
+    const loadEl = document.getElementById('pin-gate-loading');
+    const toggle = document.getElementById('pin-gate-master-toggle');
+    let usingMaster = false;
+
+    // Auto-advance pin boxes
+    pins.forEach((inp, i) => {
+      inp.addEventListener('input', () => {
+        const v = inp.value.replace(/[^0-9]/g, '');
+        inp.value = v;
+        if (v && i < pins.length - 1) pins[i + 1].focus();
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !inp.value && i > 0) pins[i - 1].focus();
+        if (e.key === 'Enter') submit.click();
+      });
+      inp.addEventListener('paste', (e) => {
+        const text = (e.clipboardData || window.clipboardData).getData('text').trim().slice(0, 4);
+        if (/^\d{4}$/.test(text)) {
+          e.preventDefault();
+          for (let j = 0; j < 4; j++) pins[j].value = text[j];
+          submit.focus();
+        }
+      });
+    });
+    pins[0].focus();
+
+    toggle.addEventListener('click', () => {
+      usingMaster = !usingMaster;
+      masterRow.classList.toggle('shown', usingMaster);
+      overlay.querySelector('.pin-gate-pins').style.display = usingMaster ? 'none' : 'flex';
+      toggle.textContent = usingMaster ? 'Use PIN instead' : 'Use master password';
+      if (usingMaster) masterInput.focus(); else pins[0].focus();
+      errorEl.textContent = '';
+    });
+
+    masterInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit.click(); });
+
+    submit.addEventListener('click', async () => {
+      errorEl.textContent = '';
+      let password;
+      if (usingMaster) {
+        password = masterInput.value;
+        if (!password) { errorEl.textContent = 'Enter the master password.'; return; }
+      } else {
+        password = Array.from(pins).map(p => p.value).join('');
+        if (password.length !== 4) { errorEl.textContent = 'Enter your 4-digit PIN.'; return; }
+      }
+      submit.disabled = true;
+      loadEl.textContent = 'Decrypting…';
+      try {
+        const data = await decryptWithPassword(encrypted, password, usingMaster);
+        _writeCachedData(data);
+        loadEl.textContent = '';
+        overlay.style.display = 'none';
+        resolve(data);
+      } catch (err) {
+        loadEl.textContent = '';
+        errorEl.textContent = usingMaster ? 'Wrong master password.' : 'Wrong PIN. Try again or use master.';
+        if (!usingMaster) { pins.forEach(p => p.value = ''); pins[0].focus(); }
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  });
+}
+
+
+let data = null;
+let emp = null;
+let plan = null;
+let myProjects = [];
+
+const scenario = {
+  revenue: 195000,
+  kpiScore: 1.0,
+  projectsEnabled: {}, // { projectId: bool } — default false (unchecked)
+  quarters: [null, null, null, null]
+};
+
+const fmtMoney = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const v = Number(n);
+  const sign = v < 0 ? '-' : '';
+  return sign + '$' + Math.abs(v).toLocaleString('en-AU', { maximumFractionDigits: 0 });
+};
+const fmtPct = (n, d = 1) => (n * 100).toFixed(d) + '%';
+const fmtNum = (n) => Number(n).toLocaleString('en-AU', { maximumFractionDigits: 0 });
+const parseNum = (s) => {
+  const c = String(s).replace(/[^0-9.-]/g, '');
+  return c === '' ? 0 : +c;
+};
+const fmtDate = (iso) => {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+};
+const statusClass = (status) => {
+  if (!status) return '';
+  return status.toLowerCase().replace(/\s+/g, '-');
+};
+
+
+// --- Sign out: clear decrypted dashboard cache + reload ---
+function signOut() {
+  try { sessionStorage.clear(); } catch(e) {}
+  try {
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('dashboard-') || k === 'mec-admin-master-v3') {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch(e) {}
+  try { data = null; } catch(e) {}
+  location.reload();
+}
+
+// --- Tabs ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.removeAttribute('aria-current'); });
+    btn.classList.add('active');
+    btn.setAttribute('aria-current', 'page');
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+document.getElementById('panel-overview').classList.add('active');
+
+// --- Key Terms modal: Esc to close, click outside to close ---
+(function(){
+  const modal = document.getElementById('key-terms-modal');
+  const toggle = document.getElementById('key-terms-toggle');
+  if (!modal) return;
+  function close() { modal.classList.remove('open'); }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) { close(); }
+  });
+  document.addEventListener('click', e => {
+    if (!modal.classList.contains('open')) return;
+    if (modal.contains(e.target)) return;
+    if (toggle && toggle.contains(e.target)) return;
+    // Also check the compact pinned bar's Key Terms button — without this, clicking it
+    // would open the modal then immediately close it via this outside-click handler.
+    const compactToggle = document.querySelector('.pc-key-terms');
+    if (compactToggle && compactToggle.contains(e.target)) return;
+    close();
+  });
+})();
+
+async function load() {
+  try {
+    // v40: data is now encrypted per employee + decrypted via PIN gate
+    data = await (DEV_MODE ? _devLoadDashboard() : unlockDashboard());
+    emp = data.employees.find(e => e.id === EMPLOYEE_ID);
+    if (!emp) throw new Error(`Employee "${EMPLOYEE_ID}" not found`);
+    plan = data.planTypes[emp.planType];
+    if (!plan) throw new Error(`Plan "${emp.planType}" not found`);
+    // Apply 2025 actuals as defaults: 97 gigs / $195,237
+    if (emp.scenarioDefaults && typeof emp.scenarioDefaults.revenue === 'number') {
+      scenario.revenue = emp.scenarioDefaults.revenue;
+    }
+    myProjects = plan.includeProjects
+      ? (data.projects || []).filter(p => (p.assignedTo || []).includes(EMPLOYEE_ID))
+      : [];
+    myProjects.forEach(p => { scenario.projectsEnabled[p.id] = false; });
+
+    if (!plan.includeProjects || myProjects.length === 0) {
+      const projTab = document.querySelector('[data-tab="projects"]');
+      if (projTab) projTab.style.display = 'none';
+      const planningProjSection = document.getElementById('planning-projects-section');
+      if (planningProjSection) planningProjSection.style.display = 'none';
+    } else {
+      const planningProjSection = document.getElementById('planning-projects-section');
+      if (planningProjSection) planningProjSection.style.display = '';
+    }
+    if (data.globals.guardrailEnabled === false) {
+      document.querySelectorAll('[data-guardrail-card]').forEach(el => el.style.display = 'none');
+    }
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('emp-name').textContent = emp.name;
+    var _pcN = document.getElementById('pc-name'); if (_pcN) _pcN.textContent = emp.name;
+    // Last updated stamp from data.meta.effectiveDate (AU format)
+    try {
+      const lu = document.getElementById('last-updated');
+      if (lu && data.meta && data.meta.effectiveDate) {
+        const d = new Date(data.meta.effectiveDate);
+        const fmt = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+        lu.textContent = 'Last updated ' + fmt;
+      }
+    } catch(e) { /* non-fatal */ }
+    document.getElementById('emp-sub').textContent = `${emp.role} · Effective ${data.meta.effectiveDate}`;
+    document.getElementById('role-badge').textContent = emp.roleShort || emp.role;
+    document.title = `Compensation · ${emp.name}`;
+
+    wireInputs();
+    renderProjectToggles();
+    renderQuarterInputs();
+    update();
+    wireSimpleFloater();
+    renderOTECard();
+    renderFaqTab();
+  } catch (err) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error-slot').innerHTML =
+      `<div class="error-banner"><strong>Could not load dashboard.</strong> ${err.message}.</div>`;
+  }
+}
+
+// === Non-linear realistic-range slider ===
+// Maps a 0-100 slider position to actual money via piecewise mapping that gives the
+// realistic zone 60% of slider width, with under (20%) and stretch (20%) on either side.
+// This means dragging through the realistic range moves slowly — Tom can dial in $200k vs $215k easily.
+const NLS_UNDER = 20, NLS_REAL = 60, NLS_STRETCH = 20;
+function nlsPosToMoney(pos, range) {
+  const { min, max, absoluteMax, absoluteMin = 0 } = range;
+  if (pos <= NLS_UNDER) return absoluteMin + (pos / NLS_UNDER) * (min - absoluteMin);
+  if (pos <= NLS_UNDER + NLS_REAL) {
+    const t = (pos - NLS_UNDER) / NLS_REAL;
+    return min + t * (max - min);
+  }
+  const t = (pos - NLS_UNDER - NLS_REAL) / NLS_STRETCH;
+  return max + t * (absoluteMax - max);
+}
+function nlsMoneyToPos(money, range) {
+  const { min, max, absoluteMax, absoluteMin = 0 } = range;
+  if (money <= absoluteMin) return 0;
+  if (money <= min) return min === absoluteMin ? 0 : ((money - absoluteMin) / (min - absoluteMin)) * NLS_UNDER;
+  if (money <= max) return NLS_UNDER + ((money - min) / (max - min)) * NLS_REAL;
+  if (money >= absoluteMax) return 100;
+  return NLS_UNDER + NLS_REAL + ((money - max) / (absoluteMax - max)) * NLS_STRETCH;
+}
+// Render the tick markers + label-band positioning inside a .realistic-slider-wrap
+function nlsRenderChrome(wrapEl, range) {
+  const { min, max, absoluteMax, absoluteMin = 0 } = range;
+  const zones = wrapEl.querySelectorAll('.zone');
+  if (zones.length === 3) { zones[0].style.width = NLS_UNDER + '%'; zones[1].style.width = NLS_REAL + '%'; zones[2].style.width = NLS_STRETCH + '%'; }
+  const band = wrapEl.querySelector('.label-band');
+  if (band) {
+    band.style.left = NLS_UNDER + '%';
+    band.style.width = NLS_REAL + '%';
+    band.textContent = `Realistic Range $${(min/1000).toFixed(0)}k–$${(max/1000).toFixed(0)}k`;
+  }
+  const ticks = wrapEl.querySelector('.ticks');
+  if (ticks) {
+    ticks.innerHTML = `
+      <span class="tick" style="left:${NLS_UNDER}%;">$${(min/1000).toFixed(0)}k</span>
+      <span class="tick" style="left:${NLS_UNDER + NLS_REAL}%;">$${(max/1000).toFixed(0)}k</span>`;
+  }
+}
+function wireNonLinearSlider(slider, input, range, onChange) {
+  const wrap = slider.closest('.realistic-slider-wrap');
+  if (wrap) nlsRenderChrome(wrap, range);
+  const updateFromSlider = () => {
+    const money = Math.round(nlsPosToMoney(+slider.value, range) / 100) * 100;
+    input.value = fmtNum(money);
+    onChange(money);
+  };
+  const updateFromInput = () => {
+    const money = parseNum(input.value);
+    const caret = input.selectionStart;
+    const digitsBefore = (input.value.slice(0, caret).match(/\d/g) || []).length;
+    input.value = fmtNum(money);
+    let cursor = 0, seen = 0;
+    while (cursor < input.value.length && seen < digitsBefore) {
+      if (/\d/.test(input.value[cursor])) seen++;
+      cursor++;
+    }
+    input.setSelectionRange(cursor, cursor);
+    slider.value = nlsMoneyToPos(money, range);
+    onChange(money);
+  };
+  slider.addEventListener('input', updateFromSlider);
+  input.addEventListener('input', updateFromInput);
+  // Initial sync from current value
+  return (initialMoney) => {
+    slider.value = nlsMoneyToPos(initialMoney, range);
+    input.value = fmtNum(initialMoney);
+  };
+}
+
+function wireInputs() {
+  const revSlider = document.getElementById('rev-slider');
+  const revInput = document.getElementById('rev-input');
+  const kpiSlider = document.getElementById('kpi-slider');
+  const kpiInput = document.getElementById('kpi-input');
+  const kpiSlider2 = document.getElementById('kpi-slider-2');
+
+  // Pull realistic range from emp record (with a sensible default).
+  const range = emp.realisticRange || { min: 170000, max: 250000, absoluteMax: 400000, absoluteMin: 0 };
+  range.absoluteMin = range.absoluteMin || 0;
+  const setRev = wireNonLinearSlider(revSlider, revInput, range, (money) => { scenario.revenue = money; update(); if (typeof paintSimpleFloater === 'function') paintSimpleFloater(); });
+  setRev(scenario.revenue);
+  kpiSlider.value = scenario.kpiScore;
+  kpiSlider2.value = scenario.kpiScore;
+  kpiInput.value = scenario.kpiScore.toFixed(2);
+  const syncKpi = (val) => {
+    const floor = data.globals.kpiScoreFloor || 0;
+    const cap = data.globals.kpiScoreCap || 1;
+    scenario.kpiScore = Math.max(floor, Math.min(+val || 0, cap));
+    kpiSlider.value = scenario.kpiScore;
+    kpiSlider2.value = scenario.kpiScore;
+    kpiInput.value = scenario.kpiScore.toFixed(2);
+    update();
+  };
+  kpiSlider.addEventListener('input', () => syncKpi(kpiSlider.value));
+  kpiSlider2.addEventListener('input', () => syncKpi(kpiSlider2.value));
+  kpiInput.addEventListener('input', () => syncKpi(kpiInput.value));
+
+  // === GIG PLANNING TAB === (mirrors Michael's Planning tab)
+  const sd = emp.scenarioDefaults || {};
+  const planDefaults = { gigs: sd.gigs || 97, avg: sd.avgPerGig || 2013, rev: sd.revenue || 195237 };
+  wireGigPlanning('plan-', planDefaults, (totalRev) => {
+    const { total: bandComm } = calcBandCommission(totalRev, plan.bands);
+    const sr = data.globals.superRate || 0.12;
+    const baseInc = (emp.baseSalary || 0) * (1 + sr);
+    document.getElementById('plan-comm').textContent = fmtMoney(bandComm);
+    document.getElementById('plan-total').textContent = fmtMoney(baseInc + bandComm);
+  });
+}
+
+// Bidirectional Gigs ↔ Avg ↔ Revenue trio (same as Michael's). prefix = 'plan-' or 'actual-'.
+function wireGigPlanning(prefix, defaults, onChange) {
+  const gSlider = document.getElementById(prefix + 'gigs-slider');
+  const gInput = document.getElementById(prefix + 'gigs-input');
+  const aSlider = document.getElementById(prefix + 'avg-slider');
+  const aInput = document.getElementById(prefix + 'avg-input');
+  const rSlider = document.getElementById(prefix + 'rev-slider');
+  const rInput = document.getElementById(prefix + 'rev-input');
+  if (!gSlider) return;
+
+  let state = { gigs: defaults.gigs, avg: defaults.avg, rev: defaults.rev };
+  // GST hint targets (optional — not all sections have these)
+  const aGst = document.getElementById(prefix + 'avg-gst');
+  const rGst = document.getElementById(prefix + 'rev-gst');
+  const GST = 1.10;
+
+  const renderAll = () => {
+    gSlider.value = state.gigs; gInput.value = fmtNum(state.gigs);
+    aSlider.value = state.avg; aInput.value = fmtNum(state.avg);
+    rSlider.value = Math.min(state.rev, +rSlider.max); rInput.value = fmtNum(state.rev);
+    if (aGst) aGst.textContent = 'inc GST: $' + fmtNum(Math.round(state.avg * GST));
+    if (rGst) rGst.textContent = 'inc GST: $' + fmtNum(Math.round(state.rev * GST));
+    onChange(state.rev);
+  };
+  const onGigsEdit = (val) => { state.gigs = Math.max(0, parseNum(val) || 0); state.rev = state.gigs * state.avg; renderAll(); };
+  const onAvgEdit = (val) => { state.avg = Math.max(0, parseNum(val) || 0); state.rev = state.gigs * state.avg; renderAll(); };
+  const onRevEdit = (val) => {
+    state.rev = Math.max(0, parseNum(val) || 0);
+    state.avg = state.gigs > 0 ? Math.round(state.rev / state.gigs) : 0;
+    renderAll();
+  };
+
+  gSlider.addEventListener('input', () => onGigsEdit(gSlider.value));
+  gInput.addEventListener('input', () => onGigsEdit(gInput.value));
+  aSlider.addEventListener('input', () => onAvgEdit(aSlider.value));
+  aInput.addEventListener('input', () => onAvgEdit(aInput.value));
+  rSlider.addEventListener('input', () => onRevEdit(rSlider.value));
+  rInput.addEventListener('input', () => onRevEdit(rInput.value));
+
+  renderAll();
+}
+
+function renderProjectToggles() {
+  const container = document.getElementById('project-toggles');
+  if (myProjects.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; color: var(--muted); font-size: 13px; background: #fafaf7; border: 1px dashed var(--border); border-radius: 8px;">No projects assigned.</div>';
+    return;
+  }
+  container.innerHTML = myProjects.map(p => {
+    const checked = scenario.projectsEnabled[p.id] !== false;
+    const amountLabel = p.bonusIncludesSuper
+      ? `${fmtMoney(p.bonusAmount)} incl. super`
+      : `${fmtMoney(p.bonusAmount)} + super`;
+    return `
+      <label class="project-toggle ${checked ? 'checked' : ''}" for="proj-${p.id}">
+        <div class="left">
+          <input type="checkbox" id="proj-${p.id}" ${checked ? 'checked' : ''} onchange="toggleProject('${p.id}', this.checked)">
+          <span class="pname">${p.name}</span>
+        </div>
+        <span class="pamount">${amountLabel}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function toggleProject(id, checked) {
+  scenario.projectsEnabled[id] = checked;
+  // Update visual state of label
+  const lbl = document.querySelector(`.project-toggle input[id="proj-${id}"]`)?.closest('.project-toggle');
+  if (lbl) lbl.classList.toggle('checked', checked);
+  update();
+}
+window.toggleProject = toggleProject;
+
+function renderQuarterInputs() {
+  // Quarters start End of June 2026 — FY26 Q1 ends Jun, Q2 Sep, Q3 Dec, Q4 Mar 2027.
+  const quarters = ['End of June 2026', 'End of September 2026', 'End of December 2026', 'End of March 2027'];
+  const container = document.getElementById('quarter-grid');
+  const pc = document.getElementById('payouts-quarter-grid');
+  const grid = (scopeLabel) => quarters.map((q, i) => {
+    const entered = scenario.quarters[i] != null;
+    return `
+    <div class="quarter-cell ${entered ? '' : 'projected'}" data-qcell="${i}-${scopeLabel}">
+      <div class="qh">${q}</div>
+      <div style="position: relative;">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:14px;color:var(--muted);">$</span>
+        <input type="text" inputmode="numeric" style="padding-left: 20px;"
+               value="${entered ? fmtNum(scenario.quarters[i]) : ''}"
+               placeholder="Last 365 days rev."
+               data-quarter="${i}" data-scope="${scopeLabel}">
+      </div>
+      <div class="q-calc" data-qcalc="${i}-${scopeLabel}">Enter TTM revenue</div>
+      <div class="q-pay" data-qpay="${i}-${scopeLabel}">—</div>
+    </div>
+  `;}).join('');
+  container.innerHTML = grid('overview');
+  if (pc) pc.innerHTML = grid('payouts');
+
+  // Wire quarter inputs
+  document.querySelectorAll('[data-quarter]').forEach(input => {
+    input.addEventListener('input', () => {
+      const i = +input.dataset.quarter;
+      scenario.quarters[i] = input.value.trim() === '' ? null : parseNum(input.value);
+      const caret = input.selectionStart;
+      const digitsBefore = (input.value.slice(0, caret).match(/\d/g) || []).length;
+      input.value = scenario.quarters[i] == null ? '' : fmtNum(scenario.quarters[i]);
+      let cursor = 0, seen = 0;
+      while (cursor < input.value.length && seen < digitsBefore) {
+        if (/\d/.test(input.value[cursor])) seen++;
+        cursor++;
+      }
+      input.setSelectionRange(cursor, cursor);
+      syncQuarterInputs(i);
+      // Toggle projected class on both cells for this quarter
+      document.querySelectorAll(`[data-qcell="${i}-overview"], [data-qcell="${i}-payouts"]`).forEach(cell => {
+        cell.classList.toggle('projected', scenario.quarters[i] == null);
+      });
+      update();
+    });
+  });
+}
+
+function syncQuarterInputs(i) {
+  const v = scenario.quarters[i] == null ? '' : fmtNum(scenario.quarters[i]);
+  document.querySelectorAll(`[data-quarter="${i}"]`).forEach(el => {
+    if (document.activeElement !== el) el.value = v;
+  });
+}
+
+// --- Calculations ---
+function calcBandCommission(revenue, bands) {
+  // bands: [{ threshold, rate }, ...]
+  let totalComm = 0;
+  const breakdown = [];
+  const sorted = [...bands].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    const nextThreshold = i + 1 < sorted.length ? sorted[i + 1].threshold : Infinity;
+    const inBand = Math.max(0, Math.min(revenue, nextThreshold) - b.threshold);
+    const earn = inBand * b.rate;
+    totalComm += earn;
+    breakdown.push({
+      min: b.threshold,
+      max: nextThreshold === Infinity ? null : nextThreshold,
+      rate: b.rate,
+      earn,
+      cumulative: totalComm,
+      active: revenue > b.threshold,
+      partial: revenue > b.threshold && revenue < nextThreshold
+    });
+  }
+  // Flat / milestone bonuses (cliff or ramp) — pay alongside band commission so the
+  // Total Package matches across the dashboard. Mirrors Michael's calc.
+  if (plan && Array.isArray(plan.flatBonuses)) {
+    plan.flatBonuses.forEach(k => {
+      totalComm += milestoneAccrued(revenue, k);
+    });
+  }
+  return { total: totalComm, breakdown };
+}
+
+// Returns the dollar amount of a milestone bonus accrued at a given revenue level.
+// Cliff (default): full amount once threshold crossed.
+// Ramp (k.rampFromRevenue set): linear from $0 at rampFrom → k.amount at threshold.
+function milestoneAccrued(revenue, kicker) {
+  if (!kicker || typeof kicker.amount !== 'number') return 0;
+  const threshold = +kicker.threshold || 0;
+  const rampFrom = +kicker.rampFromRevenue || null;
+  if (rampFrom && rampFrom < threshold) {
+    if (revenue <= rampFrom) return 0;
+    if (revenue >= threshold) return kicker.amount;
+    return kicker.amount * (revenue - rampFrom) / (threshold - rampFrom);
+  }
+  return revenue >= threshold ? kicker.amount : 0;
+}
+
+function calcAll() {
+  const g = data.globals;
+  const { total: bandComm, breakdown } = calcBandCommission(scenario.revenue, plan.bands);
+  const production = (plan.includeProduction ? (plan.productionPct || 0) : 0) * scenario.revenue;
+  const preKpi = bandComm + production;
+  const effectiveKpi = Math.min(Math.max(scenario.kpiScore, g.kpiScoreFloor || 0), g.kpiScoreCap || 1);
+  const kpiFloor = g.kpiMinForComm || 0;
+  const variable = scenario.kpiScore >= kpiFloor ? preKpi * effectiveKpi : 0;
+
+  // Projects — respect toggles
+  let projectsIncSuper = 0, projectsExSuper = 0;
+  const activeProjects = myProjects.filter(p => scenario.projectsEnabled[p.id] !== false);
+  activeProjects.forEach(p => {
+    if (p.bonusIncludesSuper) {
+      projectsIncSuper += p.bonusAmount;
+      projectsExSuper += p.bonusAmount / (1 + g.superRate);
+    } else {
+      projectsExSuper += p.bonusAmount;
+      projectsIncSuper += p.bonusAmount * (1 + g.superRate);
+    }
+  });
+
+  // v16 super model: band output is super-INCLUSIVE (bandsIncludeSuper=true).
+  const base = emp.baseSalary;
+  const baseInc = base * (1 + g.superRate);
+  const baseSuper = base * g.superRate;
+  const commInc = variable;                         // already inc-super
+  const variableEx = variable / (1 + g.superRate);  // ex-super portion
+  const commSuperAmt = variable - variableEx;       // super portion embedded
+  const subtotalExSuper = base + variableEx + projectsExSuper;
+  const superOnProjects = projectsIncSuper - projectsExSuper;
+  const totalSuper = baseSuper + commSuperAmt + superOnProjects;
+  const superOnPay = baseSuper + commSuperAmt;
+  const totalPackage = subtotalExSuper + totalSuper;
+
+  // Progress to next tier
+  let nextTier = null, progressPct = 100, toGo = 0;
+  const sortedBands = [...plan.bands].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 0; i < sortedBands.length; i++) {
+    const b = sortedBands[i];
+    if (scenario.revenue < b.threshold) {
+      nextTier = b;
+      const prevThreshold = i > 0 ? sortedBands[i - 1].threshold : 0;
+      const span = b.threshold - prevThreshold;
+      progressPct = span > 0 ? Math.max(0, Math.min(100, ((scenario.revenue - prevThreshold) / span) * 100)) : 100;
+      toGo = b.threshold - scenario.revenue;
+      break;
+    }
+  }
+
+  // Context message for OTE guidance
+  let contextMsg = '';
+  if (nextTier) {
+    contextMsg = `At ${fmtMoney(scenario.revenue)}, your total package is ${fmtMoney(totalPackage)} incl. super. Grow to ${fmtMoney(nextTier.threshold)} to unlock the ${fmtPct(nextTier.rate, 1)} tier.`;
+  }
+
+  return {
+    bandComm, production, preKpi, effectiveKpi, variable, variableEx, commSuperAmt, breakdown,
+    projectsIncSuper, projectsExSuper, activeProjects,
+    base, baseInc, baseSuper, commInc,
+    subtotalExSuper, superOnPay, superOnProjects, totalSuper, totalPackage,
+    nextTier, progressPct, toGo, contextMsg,
+  };
+}
+
+function calcGuardrail() {
+  const pl = data.companyPL;
+  if (!pl || !pl.quarters || pl.quarters.length === 0) return { status: 'unknown', margin: null, basis: null };
+  const totals = pl.quarters.reduce((a, q) => ({
+    rev: a.rev + (+q.revenue || 0),
+    cogs: a.cogs + (+q.cogs || 0),
+    ce: a.ce + (+q.contribExp || 0),
+    ox: a.ox + (+q.opex || 0)
+  }), { rev: 0, cogs: 0, ce: 0, ox: 0 });
+  if (totals.rev === 0) return { status: 'unknown', margin: null, basis: null };
+  const basis = data.globals.guardrailBasis || 'cm';
+  let margin;
+  let basisLabel;
+  if (basis === 'gm') { margin = (totals.rev - totals.cogs) / totals.rev; basisLabel = 'Gross Margin'; }
+  else if (basis === 'np') { margin = (totals.rev - totals.cogs - totals.ce - totals.ox) / totals.rev; basisLabel = 'Net Margin'; }
+  else { margin = (totals.rev - totals.cogs - totals.ce) / totals.rev; basisLabel = 'Contribution Margin'; }
+  const floor = data.globals.guardrailMargin || 0.35;
+  return { status: margin >= floor ? 'clear' : 'breach', margin, floor, basis, basisLabel };
+}
+
+function update() {
+  const r = calcAll();
+  const g = data.globals;
+
+  // Guardrail banner (moved lower on the Overview, into the Company Guardrail card)
+  const guard = calcGuardrail();
+  const gb = document.getElementById('guardrail-banner');
+  if (gb) {
+    const label = guard.basisLabel || 'Margin';
+    if (guard.status === 'clear') {
+      gb.innerHTML = `<div class="banner ok"><span class="dot"></span>Clear — company ${label} ${fmtPct(guard.margin)} is above the ${fmtPct(guard.floor)} floor. Variable comp is active.</div>`;
+    } else if (guard.status === 'breach') {
+      gb.innerHTML = `<div class="banner warn"><span class="dot"></span>Breach — company ${label} ${fmtPct(guard.margin)} is below the ${fmtPct(guard.floor)} floor. Variable comp is paused.</div>`;
+    } else {
+      gb.innerHTML = `<div class="banner info"><span class="dot"></span>Awaiting P&amp;L data from the MEC overview — projections below are indicative only.</div>`;
+    }
+  }
+
+  // Pay-increase celebration
+  const payBanner = document.getElementById('pay-increase-banner');
+  if (payBanner) {
+    const prev = +emp.previousBaseSalary || 0;
+    const curr = +emp.baseSalary || 0;
+    if (prev > 0 && curr > prev) {
+      const superRate = (data.globals && data.globals.superRate) || 0.12;
+      const dBase = curr - prev;
+      const dSuper = dBase * superRate;
+      const totalLift = dBase + dSuper;
+      const pctLift = (dBase / prev) * 100;
+      payBanner.innerHTML = `
+        <div style="margin: 0 0 14px; padding: 10px 14px; background: linear-gradient(135deg, #e6f7ee 0%, #c8efd9 100%); border: 1px solid #6fc792; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px;">
+          <div style="font-family: var(--mono); color: var(--ink);">
+            <span style="font-size: 11px; color: #1f5e3c; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin-right: 8px;">🎉 Pay increase</span>
+            <span style="color: var(--muted); text-decoration: line-through;">${fmtMoney(prev)}</span> →
+            <strong style="color: #1f5e3c;">${fmtMoney(curr)}</strong>
+            <span style="color: var(--muted);">base ex-super</span>
+            <span style="color: var(--muted); margin: 0 6px;">·</span>
+            <span style="color: var(--muted);">+${fmtMoney(dBase)} base + ${fmtMoney(dSuper)} super (+${pctLift.toFixed(1)}%)</span>
+          </div>
+          <div style="font-family: var(--mono); font-weight: 700; color: #1f5e3c; font-size: 14px;">+${fmtMoney(totalLift)} total annual lift</div>
+        </div>`;
+    } else {
+      payBanner.innerHTML = '';
+    }
+  }
+
+  // Metric cards — all show INC-SUPER as the headline, with ex-super + super $ breakdown underneath
+  const baseSuperAmt = r.baseInc - r.base;
+  document.getElementById('card-base').textContent = fmtMoney(r.baseInc);
+  document.getElementById('card-base-sub').textContent = `${fmtMoney(r.base)} + ${fmtMoney(baseSuperAmt)} super`;
+  document.getElementById('card-comm').textContent = fmtMoney(r.commInc);
+  document.getElementById('card-comm-sub').textContent = r.variable > 0
+    ? `${fmtMoney(r.variableEx)} + ${fmtMoney(r.commSuperAmt)} super`
+    : 'No commission at this revenue';
+  document.getElementById('card-projects').textContent = fmtMoney(r.projectsIncSuper);
+  const nActive = r.activeProjects.length;
+  document.getElementById('card-projects-sub').textContent = nActive > 0
+    ? `${nActive} project${nActive === 1 ? '' : 's'} included`
+    : 'Nothing ticked';
+
+  // Total package — inverted card, sub shows ex-super + super
+  document.getElementById('card-total').textContent = fmtMoney(r.totalPackage);
+  const exSuperTotal = r.subtotalExSuper;
+  const superTotal = r.totalSuper;
+  document.getElementById('card-total-sub').textContent = `${fmtMoney(exSuperTotal)} + ${fmtMoney(superTotal)} super`;
+
+  // Rate calc
+  const activeBand = r.breakdown.find(b => scenario.revenue > b.min && scenario.revenue <= (b.max ?? Infinity));
+  const bandLabel = activeBand ? `${fmtPct(activeBand.rate, 2)} base` : '0.0% base';
+  document.getElementById('calc-band').textContent = bandLabel;
+  document.getElementById('calc-kpi').textContent = `${scenario.kpiScore.toFixed(2)} KPI`;
+  const effRate = (activeBand ? activeBand.rate : 0) * r.effectiveKpi;
+  document.getElementById('calc-eff').textContent = `${fmtPct(effRate, 2)} effective`;
+  document.getElementById('calc-note').textContent = activeBand
+    ? `At ${fmtMoney(scenario.revenue)} — you're in band ${r.breakdown.indexOf(activeBand) + 1}`
+    : `Below the first commission band`;
+
+  // Progress to next tier
+  const ntLine = document.getElementById('next-tier-line');
+  const ntSub = document.getElementById('next-tier-sub');
+  const pb = document.getElementById('progress-bar');
+  if (r.nextTier) {
+    const sortedBands = [...plan.bands].sort((a, b) => a.threshold - b.threshold);
+    const nextIdx = sortedBands.indexOf(r.nextTier) + 1;
+    ntLine.innerHTML = `<strong>Band ${nextIdx}</strong> — unlocks at ${fmtMoney(r.nextTier.threshold)} (${fmtPct(r.nextTier.rate, 1)})`;
+    ntSub.textContent = `${fmtMoney(r.toGo)} more revenue to unlock`;
+  } else {
+    ntLine.innerHTML = `<strong>Top band reached.</strong> You're earning at the maximum rate.`;
+    ntSub.textContent = 'No further tiers to unlock';
+  }
+  pb.style.width = r.progressPct + '%';
+
+  // Breakdown table
+  renderBreakdown(r);
+
+  // Context message
+  if (r.contextMsg) {
+    document.getElementById('context-msg').style.display = 'block';
+    document.getElementById('context-msg').textContent = r.contextMsg;
+  } else {
+    document.getElementById('context-msg').style.display = 'none';
+  }
+
+  // Bands table
+  const body = document.getElementById('bands-body');
+  body.innerHTML = r.breakdown.map((b, i) => {
+    const rangeTxt = b.max === null
+      ? `${fmtMoney(b.min)}+`
+      : `${fmtMoney(b.min)} – ${fmtMoney(b.max)}`;
+    // Special tooltip on the kicker band ($195k–$220k @ 38.75%) — explains it's a Nathan-approved boost.
+    const isKickerBand = b.min === 195000 && b.max === 220000;
+    const rateCell = isKickerBand
+      ? `<td class="num">${fmtPct(b.rate, 2)} <span class="tooltip-trigger" data-tip="Special rate Nathan approved to accelerate Tom past the $220k milestone. Higher than surrounding bands by design — beyond $220k, the rate returns to the standard 10% incremental.">?</span></td>`
+      : `<td class="num">${fmtPct(b.rate, 2)}</td>`;
+    return `<tr class="${b.active ? 'active' : ''}">
+      <td class="band-num">${i + 1}</td>
+      <td>${rangeTxt}</td>
+      ${rateCell}
+      <td class="num">${b.active ? fmtMoney(b.earn) : '—'}</td>
+      <td class="num">${b.active ? fmtMoney(b.cumulative) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // Milestone Bonus callout — surfaces plan.flatBonuses with ramp-aware progress.
+  const milestone = document.getElementById('milestone-bonus-callout');
+  if (milestone && Array.isArray(plan.flatBonuses) && plan.flatBonuses.length > 0) {
+    milestone.innerHTML = plan.flatBonuses.map(k => {
+      const accrued = milestoneAccrued(scenario.revenue, k);
+      const fullyEarned = accrued >= k.amount - 0.01;
+      const isRamp = !!(k.rampFromRevenue && k.rampFromRevenue < k.threshold);
+      const rampStart = +k.rampFromRevenue || 0;
+      const rampEnd = +k.threshold || 0;
+      const fillFrac = k.amount > 0 ? Math.max(0, Math.min(1, accrued / k.amount)) : 0;
+      const bg = fullyEarned ? 'linear-gradient(135deg, #e6f7ee 0%, #c8efd9 100%)' : '#fafaf7';
+      const border = fullyEarned ? '1px solid #6fc792' : '1px solid var(--border)';
+      const colour = fullyEarned ? '#1f5e3c' : (accrued > 0 ? 'var(--ink)' : 'var(--muted)');
+      const icon = fullyEarned ? '✓' : (accrued > 0 ? '⚡' : '🎯');
+      let status;
+      if (isRamp) {
+        if (fullyEarned) status = `Fully unlocked — you crossed ${fmtMoney(rampEnd)} revenue.`;
+        else if (scenario.revenue <= rampStart) status = `Bonus accrues linearly from ${fmtMoney(rampStart)} → ${fmtMoney(rampEnd)} revenue. Currently $0.`;
+        else {
+          const remaining = k.amount - accrued;
+          const toGo = rampEnd - scenario.revenue;
+          status = `${fmtMoney(accrued)} of ${fmtMoney(k.amount)} accrued. ${fmtMoney(remaining)} left — earn ${fmtMoney(toGo)} more revenue to fully unlock.`;
+        }
+      } else {
+        status = fullyEarned ? 'Unlocked at your current scenario' : `Unlocks when revenue reaches ${fmtMoney(rampEnd)}`;
+      }
+      const rampHelp = isRamp
+        ? `<span class="help-icon" data-tip="Linear ramp from ${fmtMoney(rampStart)} (you get $0) to ${fmtMoney(rampEnd)} (you get the full ${fmtMoney(k.amount)}). Every dollar of revenue between counts — no all-or-nothing cliff." style="cursor: help; margin-left: 6px; font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 50%; padding: 1px 5px; font-weight: 600; background: #fff;">?</span>`
+        : '';
+      const fillColour = fullyEarned ? '#6fc792' : 'var(--accent)';
+      const progressBar = `
+        <div style="margin-top: 8px;">
+          <div style="height: 6px; background: rgba(0,0,0,0.06); border-radius: 999px; overflow: hidden;">
+            <div style="height: 100%; width: ${(fillFrac * 100).toFixed(1)}%; background: ${fillColour}; border-radius: 999px; transition: width 0.18s ease;"></div>
+          </div>
+          ${isRamp ? `<div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--faint); font-family: var(--mono); margin-top: 3px;"><span>${fmtMoney(rampStart)}</span><span>${fmtMoney(rampEnd)}</span></div>` : ''}
+        </div>`;
+      return `<div style="padding: 12px 16px; background: ${bg}; border: ${border}; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 11px; color: ${colour}; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">${icon} Milestone Bonus${rampHelp}</div>
+            <div style="font-size: 13px; color: var(--ink); margin-top: 2px;">${k.label || ''}</div>
+            <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">${status}</div>
+          </div>
+          <div style="text-align: right; min-width: 100px;">
+            <div style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: ${colour};">${fmtMoney(accrued)}</div>
+            <div style="font-size: 10px; color: var(--muted); font-family: var(--mono);">of ${fmtMoney(k.amount)} max</div>
+          </div>
+        </div>
+        ${progressBar}
+      </div>`;
+    }).join('');
+  } else if (milestone) {
+    milestone.innerHTML = '';
+  }
+
+  // Quarterly payouts
+  updateQuarterlyDisplay(r);
+
+  // Other tabs
+  renderProjects(r);
+  renderKpiTab(r);
+  renderSuperCard(r);
+
+  // Live-refresh the OTE card on the Payouts & Super tab (was only rendered
+  // once on init and never updated).
+  if (typeof refreshOTECard === 'function') refreshOTECard(r);
+
+  // Render the payroll-locked quarterly actuals card (read-only display of
+  // anything Hayley/payroll has entered into admin for this employee).
+  if (typeof renderPayrollLockedCard === 'function') renderPayrollLockedCard();
+}
+
+// ----- Payroll-locked card: display admin-entered quarterly actuals (read-only) -----
+function renderPayrollLockedCard() {
+  const wrap = document.getElementById('payroll-locked-card');
+  if (!wrap) return;
+  const ap = (emp.actualPayouts && Array.isArray(emp.actualPayouts)) ? emp.actualPayouts : [];
+  const QUARTER_ENDS = ['Mar', 'Jun', 'Sep', 'Dec'];
+  const isQEnd = (label) => label && QUARTER_ENDS.includes(label.trim().slice(0, 3));
+
+  const rows = ap
+    .map((p, i) => ({ i, p, qEnd: isQEnd(p.month) }))
+    .filter(x => x.qEnd && x.p.performanceRev != null && x.p.performanceRev !== '');
+
+  if (!rows.length) {
+    wrap.innerHTML = `
+      <div class="card" style="background: #fafaf7; border: 1px dashed var(--border); margin-bottom: 18px; padding: 14px 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+          <div>
+            <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">🔒 Payroll-Locked Quarters</div>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">Awaiting payroll entry — your actual quarterly performance revenue will appear here once Hayley enters it. Until then, the slider above is your scenario tool.</div>
+          </div>
+          <div style="font-family: var(--mono); font-size: 11px; color: var(--faint);">0 of 4 quarters</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const sr = (data.globals && data.globals.superRate) || 0.12;
+  const planRef = data.planTypes[emp.planType];
+  let totalPay = 0;
+
+  const rowsHtml = rows.map(({ p }) => {
+    const pr = +p.performanceRev || 0;
+    let inc = 0;
+    if (planRef && Array.isArray(planRef.bands)) {
+      const sorted = [...planRef.bands].sort((a, b) => a.threshold - b.threshold);
+      for (let bi = 0; bi < sorted.length; bi++) {
+        const b = sorted[bi];
+        const next = bi + 1 < sorted.length ? sorted[bi + 1].threshold : Infinity;
+        inc += Math.max(0, Math.min(pr, next) - b.threshold) * b.rate;
+      }
+      // Inline cliff/ramp logic (in case milestoneAccrued helper not defined here)
+      if (Array.isArray(planRef.flatBonuses)) {
+        planRef.flatBonuses.forEach(k => {
+          const t = +k.threshold || 0;
+          const rf = +k.rampFromRevenue || null;
+          if (rf && rf < t) {
+            if (pr <= rf) {} else if (pr >= t) inc += k.amount;
+            else inc += k.amount * (pr - rf) / (t - rf);
+          } else if (pr >= t) inc += k.amount;
+        });
+      }
+    }
+    const ex = inc / (1 + sr);
+    totalPay += ex;
+    return `<tr>
+      <td style="padding: 8px 10px; font-family: var(--mono); font-weight: 600; color: var(--accent);">🔒 ${p.month}</td>
+      <td style="padding: 8px 10px; text-align: right; font-family: var(--mono);">${fmtMoney(pr)}</td>
+      <td style="padding: 8px 10px; text-align: right; font-family: var(--mono); color: var(--accent); font-weight: 600;">${fmtMoney(ex)}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="card" style="background: linear-gradient(135deg, #f5faf7 0%, #ffffff 100%); border-left: 3px solid var(--accent); margin-bottom: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-bottom: 8px;">
+        <div>
+          <div style="font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">🔒 Payroll-Locked Quarters</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Quarterly actuals entered by payroll. These figures are locked — your slider above is for modelling future quarters only.</div>
+        </div>
+        <div style="font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600;">${rows.length} of 4 quarters</div>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border);">
+            <th style="text-align: left; padding: 6px 10px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;">Quarter ending</th>
+            <th style="text-align: right; padding: 6px 10px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;">Performance Revenue</th>
+            <th style="text-align: right; padding: 6px 10px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;">Pay (ex super)</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr style="border-top: 2px solid var(--ink);">
+            <td style="padding: 8px 10px; font-weight: 700;">YTD Total Paid</td>
+            <td></td>
+            <td style="padding: 8px 10px; text-align: right; font-family: var(--mono); font-weight: 700; color: var(--accent);">${fmtMoney(totalPay)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+}
+
+function renderBreakdown(r) {
+  const g = data.globals;
+  const table = document.getElementById('breakdown-table');
+  let rows = `
+    <tr><td>Base salary (ex-super)</td><td>${fmtMoney(r.base)}</td></tr>
+    <tr class="plus"><td>Performance revenue bonus (ex-super portion) ${r.effectiveKpi < 1 ? `<span class="pill-mini">KPI ${(r.effectiveKpi*100).toFixed(0)}%</span>` : ''}</td><td>+ ${fmtMoney(r.variableEx)}</td></tr>
+  `;
+  r.activeProjects.forEach(p => {
+    const ex = p.bonusIncludesSuper ? p.bonusAmount / (1 + g.superRate) : p.bonusAmount;
+    rows += `<tr class="plus"><td>${p.name} milestone (ex-super)</td><td>+ ${fmtMoney(ex)}</td></tr>`;
+  });
+  rows += `<tr class="subtotal"><td>Subtotal ex-super</td><td>${fmtMoney(r.subtotalExSuper)}</td></tr>`;
+  rows += `<tr class="plus"><td>Superannuation (total)</td><td>+ ${fmtMoney(r.totalSuper)}</td></tr>`;
+  rows += `<tr class="total"><td>Total package (inc. super)</td><td>${fmtMoney(r.totalPackage)}</td></tr>`;
+  table.innerHTML = rows;
+}
+
+function updateQuarterlyDisplay(r) {
+  const g = data.globals;
+  const payoutPct = plan.payoutPercentage != null ? plan.payoutPercentage : 1.0;
+  const holdbackPct = 1 - payoutPct;
+
+  // Rolling TTM model: each quarter's input = trailing 365-day revenue at that quarter-end
+  // Commission for that quarter = (annual commission on TTM) × KPI × payoutPct / 4
+  let totalPaidAllQuarters = 0;
+
+  scenario.quarters.forEach((ttmRev, i) => {
+    const revForCalc = ttmRev == null ? scenario.revenue : ttmRev;
+    const { total: bandComm } = calcBandCommission(revForCalc, plan.bands);
+    const production = (plan.includeProduction ? (plan.productionPct || 0) : 0) * revForCalc;
+    const annualVariable = (bandComm + production) * r.effectiveKpi;
+    const quarterlyPayout = annualVariable / 4 * payoutPct;
+
+    const calcText = ttmRev == null
+      ? `At projected $${fmtNum(scenario.revenue)} TTM`
+      : `Annual variable: ${fmtMoney(annualVariable)}`;
+    const payText = ttmRev == null
+      ? `${fmtMoney(quarterlyPayout)} (projected)`
+      : `${fmtMoney(quarterlyPayout)} paid`;
+
+    document.querySelectorAll(`[data-qcalc="${i}-overview"], [data-qcalc="${i}-payouts"]`).forEach(el => {
+      el.textContent = ttmRev == null
+        ? calcText
+        : `${fmtMoney(annualVariable)} ÷ 4 = quarterly payout`;
+    });
+    document.querySelectorAll(`[data-qpay="${i}-overview"], [data-qpay="${i}-payouts"]`).forEach(el => {
+      el.textContent = ttmRev == null ? `${fmtMoney(quarterlyPayout)} (projected)` : fmtMoney(quarterlyPayout);
+    });
+
+    if (ttmRev != null) totalPaidAllQuarters += quarterlyPayout;
+  });
+
+  // If nothing entered, project from annual scenario
+  const anyEntered = scenario.quarters.some(q => q != null);
+  if (!anyEntered) {
+    totalPaidAllQuarters = r.variable * payoutPct;
+  }
+  const totalHeld = anyEntered
+    ? (totalPaidAllQuarters / payoutPct) * holdbackPct
+    : r.variable * holdbackPct;
+
+  ['q-total-paid', 'q-total-paid-p'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = fmtMoney(totalPaidAllQuarters);
+  });
+  ['q-holdback-row', 'q-holdback-row-p'].forEach(id => {
+    const row = document.getElementById(id);
+    if (row) row.style.display = holdbackPct > 0 ? 'flex' : 'none';
+  });
+  ['q-total-heldback', 'q-total-heldback-p'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = fmtMoney(totalHeld);
+  });
+
+  // === ANNUAL TRUE-UP ===
+  // If Tom finishes the year at higher TTM than his quarterly run-rate suggests, pay the difference.
+  // Final annual entitlement = annualVariable at final-quarter TTM (the most recent figure).
+  // Already paid = sum of quarterly payouts.
+  // True-up = max(0, annualEntitlement × payoutPct − totalPaid).
+  // Mirrored on Overview (no suffix) and Payouts/Super (-p suffix) tabs.
+  const trueupCardIds = ['annual-trueup-card', 'annual-trueup-card-p'];
+  const allEntered = scenario.quarters.every(q => q != null && q > 0);
+  let trueupVals = { amount: '—', detail: 'Available once all 4 quarters are entered', explainer: `Catches you up if you finish the year ahead of your quarterly run-rate. Pays the gap between full annual commission (at Q4 TTM) and the sum of Q1–Q4 payouts.` };
+  if (allEntered) {
+    const finalTTM = scenario.quarters[scenario.quarters.length - 1];
+    const { total: finalBand } = calcBandCommission(finalTTM, plan.bands);
+    const finalProd = (plan.includeProduction ? (plan.productionPct || 0) : 0) * finalTTM;
+    const annualEntitlement = (finalBand + finalProd) * r.effectiveKpi;
+    const annualEntitlementAtPayoutPct = annualEntitlement * payoutPct;
+    const trueup = Math.max(0, annualEntitlementAtPayoutPct - totalPaidAllQuarters);
+    if (trueup > 0) {
+      trueupVals = {
+        amount: fmtMoney(trueup),
+        detail: `Annual entitlement <strong>${fmtMoney(annualEntitlementAtPayoutPct)}</strong> − paid <strong>${fmtMoney(totalPaidAllQuarters)}</strong>`,
+        explainer: `You finished above your quarterly run-rate — this catches you up to the full annual commission earned at your final TTM of ${fmtMoney(finalTTM)}.`
+      };
+    } else {
+      trueupVals = {
+        amount: fmtMoney(0),
+        detail: `Annual entitlement <strong>${fmtMoney(annualEntitlementAtPayoutPct)}</strong> already covered by quarterly payouts.`,
+        explainer: `No top-up needed — your quarterly payouts already meet or exceed the annual entitlement at your final TTM.`
+      };
+    }
+  }
+  trueupCardIds.forEach(cardId => {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.style.display = 'block';
+    const suffix = cardId.endsWith('-p') ? '-p' : '';
+    const amtEl = document.getElementById('trueup-amount' + suffix);
+    const detEl = document.getElementById('trueup-detail' + suffix);
+    const expEl = document.getElementById('trueup-explainer' + suffix);
+    if (amtEl) amtEl.textContent = trueupVals.amount;
+    if (detEl) detEl.innerHTML = trueupVals.detail;
+    if (expEl) expEl.textContent = trueupVals.explainer;
+  });
+}
+
+function renderProjects(r) {
+  const list = document.getElementById('projects-list');
+  const empty = document.getElementById('projects-empty');
+  if (myProjects.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  const g = data.globals;
+  list.innerHTML = myProjects.map(p => {
+    const ex = p.bonusIncludesSuper ? p.bonusAmount / (1 + g.superRate) : p.bonusAmount;
+    const su = p.bonusIncludesSuper ? p.bonusAmount - ex : p.bonusAmount * g.superRate;
+    const inc = ex + su;
+    const dodButton = p.dodLink
+      ? `<a href="${p.dodLink}" target="_blank" rel="noopener" class="dod-link">Open DOD ↗</a>`
+      : `<span style="color: var(--faint); font-family: var(--mono); font-size: 12px;">Not linked yet</span>`;
+    return `
+      <div class="project-card">
+        <div class="project-top">
+          <div>
+            <h3>${p.name}</h3>
+            <span class="status-pill ${statusClass(p.status)}">${p.status || 'In Progress'}</span>
+          </div>
+          <div class="amt">
+            ${fmtMoney(inc)}
+            <span class="sub">${fmtMoney(ex)} + ${fmtMoney(su)} super</span>
+          </div>
+        </div>
+        <div class="project-details">
+          <div class="detail-item">
+            <span class="detail-label">Due</span>
+            <span class="detail-value">${fmtDate(p.dueDate)}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Payout trigger</span>
+            <span class="detail-value">On DOD sign-off</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Definition of Done</span>
+            ${dodButton}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderSuperCard(r) {
+  const g = data.globals;
+  document.getElementById('spr-base').textContent = fmtMoney(r.base);
+  document.getElementById('spr-comm').textContent = `+ ${fmtMoney(r.variable)}`;
+  document.getElementById('spr-proj').textContent = `+ ${fmtMoney(r.projectsExSuper)}`;
+  document.getElementById('spr-subtotal').textContent = fmtMoney(r.subtotalExSuper);
+  document.getElementById('spr-super-label').textContent = `+ Superannuation (${fmtPct(g.superRate, 0)})`;
+  document.getElementById('spr-super').textContent = `+ ${fmtMoney(r.totalSuper)}`;
+  document.getElementById('spr-total').textContent = fmtMoney(r.totalPackage);
+
+  // Payout banner — dynamic based on plan's payoutPercentage
+  const banner = document.getElementById('payout-banner-text');
+  const freq = plan.payoutFrequency || 'not set';
+  const payoutPct = plan.payoutPercentage != null ? plan.payoutPercentage : 1.0;
+  const payoutPctTxt = (payoutPct * 100).toFixed(0);
+  const holdbackTxt = ((1 - payoutPct) * 100).toFixed(0);
+  if (payoutPct >= 0.999) {
+    banner.textContent = `Your commission is paid ${freq} — 100% paid out each period.`;
+  } else {
+    banner.textContent = `Your commission is paid ${freq} — ${payoutPctTxt}% paid out each period, ${holdbackTxt}% reconciled at year-end.`;
+  }
+}
+
+load();
+
+function renderKpiTab(r) {
+  // KPI is locked at 1.0× (DRAFT) for now — overwrite scenario.kpiScore so commission isn't actually affected.
+  scenario.kpiScore = 1.0;
+  const k1 = document.getElementById('kpi-slider'); if (k1) k1.value = 1;
+  const k2 = document.getElementById('kpi-slider-2'); if (k2) k2.value = 1;
+  const ki = document.getElementById('kpi-input'); if (ki) ki.value = '1.00';
+  const kbig = document.getElementById('kpi-big'); if (kbig) kbig.textContent = '1.00';
+  const kbef = document.getElementById('kpi-before'); if (kbef) kbef.textContent = fmtMoney(r.preKpi);
+  const kmul = document.getElementById('kpi-mult'); if (kmul) kmul.textContent = '× 1.00';
+  const kaft = document.getElementById('kpi-after'); if (kaft) kaft.textContent = fmtMoney(r.variable);
+
+  const wrap = document.getElementById('kpi-scorecard');
+  if (!wrap) return;
+  const sc = emp.kpiScorecard;
+  if (!sc || !Array.isArray(sc.categories) || sc.categories.length === 0) {
+    wrap.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--muted); font-size: 14px; background: #fafaf7; border-radius: 8px;">No KPI scorecard configured yet.</div>`;
+    const ov = document.getElementById('kpi-overall-pct'); if (ov) ov.textContent = '—';
+    return;
+  }
+  if (!wrap.dataset.rendered) {
+    wrap.innerHTML = sc.categories.map((c, i) => {
+      if (typeof c.included !== 'boolean') c.included = true;
+      const score = +c.score || 0;
+      const weight = +c.weight || 0;
+      const isSystems = c.id === 'systems';
+      const myProjs = (data.projects || []).filter(p => Array.isArray(p.assignedTo) && p.assignedTo.includes(EMPLOYEE_ID));
+      const fillerSlot = 4 - myProjs.length;
+      const systemsBody = isSystems ? `
+        <div style="font-size: 12px; color: var(--muted); margin: 4px 0 12px; line-height: 1.5;">
+          Tick each project as you complete it. Your achievement % auto-updates from these checkboxes.
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
+          ${myProjs.map((p) => `
+            <label style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fafaf7; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" data-kpi-cat="${i}" data-kpi-project="${p.id}" style="margin: 0; width: 16px; height: 16px;">
+              <span style="font-size: 13px; color: var(--ink);">${p.name}</span>
+            </label>
+          `).join('')}
+          ${[...Array(Math.max(0, fillerSlot))].map((_, n) => `
+            <label style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fafaf7; border: 1px dashed var(--border); border-radius: 8px; cursor: pointer; color: var(--faint);">
+              <input type="checkbox" data-kpi-cat="${i}" data-kpi-project-filler="${n}" style="margin: 0; width: 16px; height: 16px;">
+              <span style="font-size: 13px;">Future project slot ${n + 1}</span>
+            </label>
+          `).join('')}
+        </div>
+      ` : `
+        <div style="display: grid; grid-template-columns: 110px 1fr 110px; gap: 14px; align-items: center; padding: 10px 14px; background: #fafaf7; border-radius: 8px;">
+          <span style="font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Achievement</span>
+          <input type="range" data-kpi-cat="${i}" data-kpi-field="score" min="0" max="200" step="5" value="${score}">
+          <div style="font-family: var(--mono); font-size: 18px; font-weight: 700; text-align: right;" data-kpi-score-display="${i}">${score}%</div>
+        </div>`;
+      return `
+      <div class="card" data-kpi-card="${i}" style="margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--navy); cursor: pointer; flex: 1; min-width: 0;">
+            <input type="checkbox" data-kpi-cat="${i}" data-kpi-field="included" ${c.included ? 'checked' : ''} style="margin: 0; width: 16px; height: 16px; flex-shrink: 0;">
+            <span style="font-size: 16px;">${c.title}</span>
+          </label>
+          <div style="display: flex; gap: 8px; align-items: center; padding: 4px 14px; background: #fafaf7; border: 1px solid var(--border); border-radius: 999px;">
+            <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Weight</span>
+            <input type="number" data-kpi-cat="${i}" data-kpi-field="weight" value="${weight}" min="0" max="100" step="5" style="width: 50px; text-align: right; padding: 4px 6px; border: none; background: transparent; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--navy);">
+            <span style="font-size: 12px; color: var(--muted);">%</span>
+          </div>
+        </div>
+        <ul style="font-size: 12px; color: var(--muted); margin: 10px 0 14px; padding-left: 18px; line-height: 1.6;">
+          ${(c.criteria || []).map(k => `<li>${k}</li>`).join('')}
+        </ul>
+        ${systemsBody}
+      </div>`;
+    }).join('');
+
+    wrap.addEventListener('input', (ev) => {
+      const t = ev.target;
+      if (!t || !t.dataset) return;
+      const i = +t.dataset.kpiCat;
+      if (isNaN(i)) return;
+      const f = t.dataset.kpiField;
+      const cat = emp.kpiScorecard.categories[i];
+      if (f === 'score') {
+        let v = parseFloat(t.value);
+        if (isNaN(v)) v = 0;
+        v = Math.max(0, Math.min(200, v));
+        cat.score = v;
+        const display = wrap.querySelector(`[data-kpi-score-display="${i}"]`);
+        if (display) {
+          display.textContent = v + '%';
+          display.style.color = v >= 80 ? '#1f5e3c' : v >= 50 ? '#8a6a00' : '#a8281b';
+        }
+        recalcKpiOverall();
+      } else if (f === 'weight') {
+        let v = parseFloat(t.value);
+        if (isNaN(v)) v = 0;
+        cat.weight = Math.max(0, Math.min(100, v));
+        recalcKpiOverall();
+      }
+    });
+    wrap.addEventListener('change', (ev) => {
+      const t = ev.target;
+      if (!t || !t.dataset) return;
+      const i = +t.dataset.kpiCat;
+      if (isNaN(i)) return;
+      const cat = emp.kpiScorecard.categories[i];
+      if (t.dataset.kpiField === 'included') {
+        cat.included = t.checked;
+        const card = wrap.querySelector(`[data-kpi-card="${i}"]`);
+        if (card) card.style.opacity = t.checked ? '1' : '0.45';
+        recalcKpiOverall();
+      } else if (t.dataset.kpiProject) {
+        const projId = t.dataset.kpiProject;
+        if (typeof scenario !== 'undefined' && scenario.projectsEnabled) {
+          scenario.projectsEnabled[projId] = t.checked;
+        }
+        const overviewToggle = document.querySelector(`input[type="checkbox"][data-project-id="${projId}"]`);
+        if (overviewToggle && overviewToggle !== t) overviewToggle.checked = t.checked;
+        const cards = wrap.querySelectorAll(`[data-kpi-cat="${i}"][type="checkbox"]:not([data-kpi-field])`);
+        const ticked = Array.from(cards).filter(x => x.checked).length;
+        const total = cards.length || 1;
+        cat.score = Math.round((ticked / total) * 100);
+        recalcKpiOverall();
+        if (typeof update === 'function') update();
+      }
+    });
+    sc.categories.forEach((c, i) => {
+      if (!c.included) {
+        const card = wrap.querySelector(`[data-kpi-card="${i}"]`);
+        if (card) card.style.opacity = '0.45';
+      }
+    });
+    wrap.dataset.rendered = '1';
+  }
+  recalcKpiOverall();
+}
+
+function recalcKpiOverall() {
+  const sc = emp.kpiScorecard;
+  if (!sc || !Array.isArray(sc.categories)) return;
+  const cats = sc.categories.filter(c => c.included !== false);
+  const totalWeight = cats.reduce((s, c) => s + (+c.weight || 0), 0);
+  const weightedAvg = totalWeight > 0
+    ? cats.reduce((s, c) => s + (+c.score || 0) * (+c.weight || 0), 0) / totalWeight
+    : 0;
+  const previewMult = Math.max(0.7, Math.min(1.3, 0.7 + (weightedAvg / 100) * 0.6));
+  const overallEl = document.getElementById('kpi-overall-pct');
+  if (overallEl) {
+    overallEl.innerHTML = `${weightedAvg.toFixed(0)}% (indicative preview only — locked at 1.00× while in DRAFT, exact multiplier range to be confirmed)`;
+  }
+}
+
+
+// === FLOATER (sticky bottom-right) — simple revenue scenario ===
+const SIMPLE_SNAP_CHIPS = {"tom": [{"label": "\u21ba Last 365", "gp": 195237}, {"label": "\u2192 Target", "gp": 250000, "target": true}, {"label": "\u2191 Stretch", "gp": 350000}]};
+
+function commissionFromBandsRev(rev) {
+  if (!plan || !plan.bands) return 0;
+  let total = 0;
+  const sorted = [...plan.bands].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    const next = i + 1 < sorted.length ? sorted[i + 1].threshold : Infinity;
+    total += Math.max(0, Math.min(rev, next) - b.threshold) * b.rate;
+  }
+  // Include milestone bonuses (cliff or ramp) so floater Total Package matches the main view.
+  if (Array.isArray(plan.flatBonuses)) {
+    plan.flatBonuses.forEach(k => { total += milestoneAccrued(rev, k); });
+  }
+  return total;
+}
+
+let _floaterBaseline = null;
+
+function paintSimpleFloater() {
+  const slider = document.getElementById('gp-floater-slider');
+  const valueEl = document.getElementById('gp-floater-value');
+  if (!slider) return;
+  slider.value = scenario.revenue;
+  if (valueEl) valueEl.textContent = fmtMoney(scenario.revenue);
+  const comm = commissionFromBandsRev(scenario.revenue);
+  if (_floaterBaseline === null) _floaterBaseline = comm;
+  const cv = document.getElementById('gpf-comm-v'); if (cv) cv.textContent = fmtMoney(comm);
+  const cd = document.getElementById('gpf-comm-d');
+  if (cd) {
+    const d = comm - _floaterBaseline;
+    if (Math.abs(d) < 50) { cd.textContent = ''; cd.className = 'delta'; }
+    else { cd.textContent = (d > 0 ? '+' : '−') + fmtMoney(Math.abs(d)); cd.className = 'delta ' + (d > 0 ? 'up' : 'down'); }
+  }
+  const sr = data.globals.superRate || 0.12;
+  const baseInc = (emp.baseSalary || 0) * (1 + sr);
+  let projBonus = 0;
+  if (scenario.projectsEnabled && Array.isArray(data.projects)) {
+    data.projects.forEach(p => {
+      if (Array.isArray(p.assignedTo) && p.assignedTo.includes(EMPLOYEE_ID) && scenario.projectsEnabled[p.id] !== false) {
+        const amt = +p.bonusAmount || 0;
+        projBonus += p.bonusIncludesSuper ? amt : amt * (1 + sr);
+      }
+    });
+  }
+  const tv = document.getElementById('gpf-total-v'); if (tv) tv.textContent = fmtMoney(baseInc + comm + projBonus);
+}
+
+function wireSimpleFloater() {
+  const fl = document.getElementById('gp-floater');
+  if (!fl) return;
+  fl.style.display = 'block';
+  const slider = document.getElementById('gp-floater-slider');
+  const range = emp.realisticRange || {};
+  if (slider) {
+    slider.min = range.absoluteMin || 0;
+    slider.max = range.absoluteMax || (plan.maxMetricValue || 400000);
+    slider.step = 1000;
+    slider.addEventListener('input', () => {
+      scenario.revenue = +slider.value;
+      paintSimpleFloater();
+      // Sync the main rev slider + input
+      const main = document.getElementById('rev-slider');
+      const mainI = document.getElementById('rev-input');
+      if (main && range && range.min) main.value = nlsMoneyToPos(scenario.revenue, { ...range, absoluteMin: range.absoluteMin || 0 });
+      if (mainI) mainI.value = fmtNum(scenario.revenue);
+      if (typeof update === 'function') update();
+    });
+  }
+  // Snap chips
+  const popover = document.getElementById('gpf-snap-popover');
+  const snapBtn = document.getElementById('gpf-snap-btn');
+  const chips = SIMPLE_SNAP_CHIPS[EMPLOYEE_ID] || [];
+  if (popover) {
+    popover.innerHTML = chips.map(c => `<button class="gp-floater-chip${c.target ? ' target' : ''}" data-snap="${c.gp}">${c.label} $${Math.round(c.gp/1000)}k</button>`).join('');
+    popover.querySelectorAll('.gp-floater-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        scenario.revenue = parseInt(btn.dataset.snap, 10);
+        paintSimpleFloater();
+        const main = document.getElementById('rev-slider');
+        const mainI = document.getElementById('rev-input');
+        if (main && range && range.min) main.value = nlsMoneyToPos(scenario.revenue, { ...range, absoluteMin: range.absoluteMin || 0 });
+        if (mainI) mainI.value = fmtNum(scenario.revenue);
+        popover.classList.remove('open');
+        snapBtn.classList.remove('active');
+        if (typeof update === 'function') update();
+      });
+    });
+  }
+  if (snapBtn && popover) {
+    snapBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      popover.classList.toggle('open');
+      snapBtn.classList.toggle('active');
+    });
+    document.addEventListener('click', (ev) => {
+      if (!popover.contains(ev.target) && ev.target !== snapBtn) {
+        popover.classList.remove('open');
+        snapBtn.classList.remove('active');
+      }
+    });
+  }
+  // Reset
+  const resetBtn = document.getElementById('gpf-reset-btn');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    const def = (emp.scenarioDefaults && emp.scenarioDefaults.revenue) || 0;
+    scenario.revenue = def;
+    _floaterBaseline = null;
+    paintSimpleFloater();
+    const main = document.getElementById('rev-slider');
+    const mainI = document.getElementById('rev-input');
+    if (main && range && range.min) main.value = nlsMoneyToPos(scenario.revenue, { ...range, absoluteMin: range.absoluteMin || 0 });
+    if (mainI) mainI.value = fmtNum(scenario.revenue);
+    if (typeof update === 'function') update();
+  });
+  // Sync floater when main rev slider changes
+  const mainSlider = document.getElementById('rev-slider');
+  const mainInput = document.getElementById('rev-input');
+  if (mainSlider) mainSlider.addEventListener('input', () => paintSimpleFloater());
+  if (mainInput) mainInput.addEventListener('input', () => paintSimpleFloater());
+
+  // Minimise / Maximise wiring
+  const _flM = document.getElementById('gp-floater');
+  const _minBtnM = document.getElementById('gpf-minimise-btn');
+  const _maxBtnM = document.getElementById('gpf-maximise-btn');
+  if (_minBtnM && _flM) _minBtnM.addEventListener('click', () => { _flM.classList.add('minimised'); });
+  if (_maxBtnM && _flM) _maxBtnM.addEventListener('click', () => { _flM.classList.remove('minimised'); });
+
+  paintSimpleFloater();
+}
+
+
+function renderFaqTab() {
+  const wrap = document.getElementById('faq-list');
+  if (!wrap) return;
+  const group = (data.faqs || {})[emp.faqGroup];
+  if (!group || !Array.isArray(group.items)) {
+    wrap.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--muted); background: #fafaf7; border-radius: 8px;">No FAQ configured for this role yet.</div>';
+    return;
+  }
+  const tag = document.getElementById('faq-group-tag');
+  if (tag) tag.textContent = group.label;
+  wrap.innerHTML = group.items.map((item) => `
+    <details class="faq-item">
+      <summary>${item.q}</summary>
+      <div class="faq-body">${item.a}</div>
+    </details>
+  `).join('');
+}
+
+
+// OTE Card — render on Payouts & Super tab. Adapted for revenue-based plans (Michael/Tom).
+function renderOTECard() {
+  const wrap = document.getElementById('panel-payouts');
+  if (!wrap || document.getElementById('ote-card')) return;
+  const ote = emp.ote;
+  const philosophy = data.globals?.payMixPhilosophy;
+  if (!ote) return;
+  const snapTo = ote.snapToGP || null;
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'ote-card';
+  card.style.cssText = 'background: linear-gradient(135deg, #eef4fa 0%, #ffffff 100%); border-left: 4px solid var(--accent); margin-bottom: 18px;';
+  card.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-bottom: 6px;">
+      <h2 style="margin: 0;">Your On-Target Earnings (OTE)</h2>
+      ${snapTo ? `<button id="ote-snap-btn" style="background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--mono);">↑ Set to Target ($${(snapTo/1000).toFixed(0)}k)</button>` : ''}
+    </div>
+    <p style="font-size: 13px; color: var(--muted); margin: 0 0 16px;">A normal year, when you hit target, looks like this. <strong>All figures are super-inclusive</strong>. The Variable cell updates live as you adjust the floating Performance Revenue slider.</p>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px;">
+      <div style="padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">Base Salary <span style="color: var(--faint); font-weight: 500;">(inc super)</span></div>
+        <div style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--ink); margin-top: 4px;">${fmtMoney(ote.baseInclSuper)}</div>
+        <div style="font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono);">${fmtMoney(ote.baseSalary)} + ${fmtMoney(ote.baseSuperOnBase)} super</div>
+      </div>
+      <div style="padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 8px;">
+        <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">Variable @ Current <span style="color: var(--faint); font-weight: 500;">(inc super)</span></div>
+        <div id="ote-variable-live" style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--accent); margin-top: 4px;">—</div>
+        <div id="ote-variable-sub" style="font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono);">at —</div>
+      </div>
+      <div style="padding: 12px 14px; background: var(--ink); color: #fff; border-radius: 8px;">
+        <div style="font-size: 10px; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">OTE Total <span style="color: rgba(255,255,255,0.5); font-weight: 500;">(inc super)</span></div>
+        <div id="ote-total-live" style="font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 4px;">—</div>
+        <div style="font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 2px;">What you'll be paid before tax this year</div>
+      </div>
+    </div>
+    <div style="font-size: 12px; color: var(--muted); padding: 10px 14px; background: #fafaf7; border-radius: 6px; line-height: 1.6;">
+      <strong style="color: var(--navy);">Pay mix philosophy:</strong> Historically most MEC roles sat at roughly <strong>${philosophy?.legacyMix || '85:15'}</strong> or even <strong>${philosophy?.legacyMixOlder || '90:10'}</strong> base-to-variable — comfortable, predictable, but with limited upside. The plan you're looking at nudges us toward <strong>${philosophy?.futureGoal || '75:25'}</strong> over the next few years — gradually putting more of your earnings inside your control. Not a flip-of-the-switch change, more a steady walk in that direction. Bigger ceiling, more reward for stretching. You&rsquo;ll notice this compensation plan starts moving the dial that way.</div>
+  `;
+  wrap.insertBefore(card, wrap.firstChild);
+
+  if (snapTo) {
+    const btn = document.getElementById('ote-snap-btn');
+    if (btn) btn.addEventListener('click', () => {
+      scenario.revenue = snapTo;
+      // Sync main rev slider via nlsMoneyToPos
+      const range = emp.realisticRange || {};
+      const main = document.getElementById('rev-slider');
+      const mainI = document.getElementById('rev-input');
+      if (main && range.min) main.value = nlsMoneyToPos(snapTo, { ...range, absoluteMin: range.absoluteMin || 0 });
+      if (mainI) mainI.value = fmtNum(snapTo);
+      const fl = document.getElementById('gp-floater-slider'); if (fl) fl.value = snapTo;
+      const flV = document.getElementById('gp-floater-value'); if (flV) flV.textContent = fmtMoney(snapTo);
+      if (typeof update === 'function') update();
+      if (typeof paintSimpleFloater === 'function') paintSimpleFloater();
+    });
+  }
+}
+
+// Live OTE refresh — called from update() with the calc result `r`
+function refreshOTECard(r) {
+  const ote = emp && emp.ote;
+  if (!ote) return;
+  const variableLive = document.getElementById('ote-variable-live');
+  const variableSub = document.getElementById('ote-variable-sub');
+  const totalLive = document.getElementById('ote-total-live');
+  if (!variableLive) return;
+  // r.variable already includes commission + production (super-inclusive). Add active project bonuses.
+  const sr = data.globals.superRate || 0.12;
+  let projInc = 0;
+  if (scenario.projectsEnabled && Array.isArray(data.projects)) {
+    data.projects.forEach(p => {
+      if (Array.isArray(p.assignedTo) && p.assignedTo.includes(EMPLOYEE_ID) && scenario.projectsEnabled[p.id] !== false) {
+        const amt = +p.bonusAmount || 0;
+        projInc += p.bonusIncludesSuper ? amt : amt * (1 + sr);
+      }
+    });
+  }
+  const liveVar = (r && typeof r.variable === 'number' ? r.variable : 0) + projInc;
+  variableLive.textContent = fmtMoney(liveVar);
+  variableSub.textContent = `at ${fmtMoney(scenario.revenue)} revenue`;
+  totalLive.textContent = fmtMoney((ote.baseInclSuper || 0) + liveVar);
+}
+
+
+// Compact pinned bar — only visible when the big <header class="top"> has scrolled out of view.
+(function wireCompactBar() {
+  if (window._compactBarWired) return;
+  window._compactBarWired = true;
+  function init() {
+    const topBanner = document.querySelector('header.top');
+    const compact = document.querySelector('.pinned-compact');
+    if (!topBanner || !compact || !window.IntersectionObserver) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        // Show compact when big banner is mostly off-screen
+        if (entry.intersectionRatio > 0.15) {
+          compact.classList.remove('visible');
+        } else {
+          compact.classList.add('visible');
+        }
+      });
+    }, { threshold: [0, 0.05, 0.15, 0.5, 1] });
+    observer.observe(topBanner);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+
+
+
+/* ============================================================
+   TEAM POOL COMMISSION (v3) — Beta preview, company-funded with rep slice top-up
+   ============================================================ */
+function teamPoolWalkBands(emp, gpSold, useQuarterly) {
+  if (!emp || !gpSold) return 0;
+  const plan = data.planTypes[emp.planType];
+  if (!plan || !plan.bands) return 0;
+  const divisor = useQuarterly ? 4 : 1;
+  let total = 0;
+  for (let i = 0; i < plan.bands.length; i++) {
+    const band = plan.bands[i];
+    const next = plan.bands[i+1];
+    const lower = band.threshold / divisor;
+    const upper = next ? next.threshold / divisor : Infinity;
+    if (gpSold <= lower) break;
+    const inBand = Math.min(gpSold, upper) - lower;
+    total += inBand * (band.poolRate || 0);
+  }
+  return total;
+}
+function teamPoolComputeRepSliceFromActuals(quarter) {
+  if (!data || !data.employees || !quarter) return 0;
+  const perRep = quarter.perRepGPSold || {};
+  let total = 0;
+  data.employees.forEach(emp => {
+    if (emp.placeholder) return;
+    const plan = data.planTypes[emp.planType];
+    if (!plan || plan.metricBasis !== 'gp') return;
+    total += teamPoolWalkBands(emp, +perRep[emp.id] || 0, true);
+  });
+  return total;
+}
+function teamPoolComputeRepSliceAtTarget() {
+  if (!data || !data.employees) return 0;
+  let total = 0;
+  data.employees.forEach(emp => {
+    if (emp.placeholder) return;
+    const plan = data.planTypes[emp.planType];
+    if (!plan || plan.metricBasis !== 'gp') return;
+    const quarterly = (+emp.annualGPTarget || 0) / 4;
+    total += teamPoolWalkBands(emp, quarterly, true);
+  });
+  return total;
+}
+function teamPoolCompanyContribution(progress, tiers) {
+  if (!tiers || !tiers.length) return 0;
+  if (progress < tiers[0].progress) return 0;
+  if (progress >= tiers[tiers.length - 1].progress) return tiers[tiers.length - 1].amount;
+  for (let i = 0; i < tiers.length - 1; i++) {
+    const a = tiers[i], b = tiers[i + 1];
+    if (progress >= a.progress && progress <= b.progress) {
+      const span = b.progress - a.progress;
+      if (span === 0) return a.amount;
+      const f = (progress - a.progress) / span;
+      return a.amount + f * (b.amount - a.amount);
+    }
+  }
+  return 0;
+}
+function teamPoolPayoutFactor(actual, target, softFloor, rampMax) {
+  if (!target || target <= 0) return 0;
+  const progress = actual / target;
+  const floor = softFloor != null ? softFloor : 0.80;
+  const cap = rampMax != null ? rampMax : 1.0;
+  if (progress < floor) return 0;
+  if (progress >= cap) return progress;
+  return (progress - floor) / (cap - floor);
+}
+function fmtMoneyTP(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return '$' + Math.round(+n).toLocaleString('en-AU');
+}
+function renderTeamPool() {
+  // Hide any old Overview banner / scenario placeholder
+  const banner = document.getElementById('team-pool-banner');
+  if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+  const scenarioPh = document.getElementById('team-pool-scenario');
+  if (scenarioPh) { scenarioPh.style.display = 'none'; scenarioPh.innerHTML = ''; }
+  const panel = document.getElementById('team-pool-content');
+  if (!panel) return;
+  if (!data || !data.globals || !data.globals.teamPool) {
+    panel.innerHTML = '<p style="color: var(--muted);">Team Pool config not found.</p>';
+    return;
+  }
+  const tp = data.globals.teamPool;
+  const isBeta = tp.beta === true;
+  const splitCount = tp.splitCount || 8;
+  const softFloor = tp.softFloor || 0.80;
+  const tiers = tp.companyContributionTiers || [];
+  const cur = tp.fiscalQuarters.find(q => q.id === tp.currentQuarterId) || tp.fiscalQuarters[0];
+  const curActual = +cur.actualGPSold || 0;
+  const curTarget = +cur.target || 0;
+  const curProgress = curTarget > 0 ? curActual / curTarget : 0;
+
+  // Pool is purely company-funded (no rep slice). Same number for every employee.
+  const targetCompanyContrib = teamPoolCompanyContribution(1.0, tiers);
+  const targetPool = targetCompanyContrib;
+  const targetPerPersonShare = targetPool / splitCount;
+
+  const stretchCompanyContrib = teamPoolCompanyContribution(1.15, tiers);
+  const stretchPool = stretchCompanyContrib;
+  const stretchPerPersonShare = stretchPool / splitCount;
+
+  // Annual sums for the history footer
+  const annualTargetSum = (tp.fiscalQuarters || [])
+    .filter(q => q.id && q.id.startsWith('FY27'))
+    .reduce((s, q) => s + (+q.target || 0), 0);
+
+  // Quarterly history rows — split FY27 (the standard year) from FY26 launch quarter
+  function _qRowHtml(q) {
+    const status = q.status === 'current' ? '<span style="background:#ecebe5;color:#8a6a00;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Beta · Launch quarter</span>'
+                 : q.status === 'closed' ? '<span style="background:#eaf3ee;color:#0a7a3a;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Closed</span>'
+                 : '<span style="background:#f5f3ee;color:var(--muted);padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;">Upcoming</span>';
+    return '<tr>'
+         + '<td style="padding: 8px;">' + q.label + '</td>'
+         + '<td style="text-align: right; padding: 8px; font-family: var(--mono);">' + fmtMoneyTP(q.target) + '</td>'
+         + '<td style="text-align: right; padding: 8px; font-family: var(--mono); color: var(--muted);">' + q.factor.toFixed(3) + '×</td>'
+         + '<td style="padding: 8px;">' + status + '</td>'
+         + '</tr>';
+  }
+  const fy27Quarters = (tp.fiscalQuarters || []).filter(q => q.id && q.id.startsWith('FY27'));
+  const fy26Quarters = (tp.fiscalQuarters || []).filter(q => q.id && q.id.startsWith('FY26'));
+  const fy27Rows = fy27Quarters.map(_qRowHtml).join('');
+  const fy26Rows = fy26Quarters.map(_qRowHtml).join('');
+
+  // BETA preview banner
+  const betaBanner = isBeta ? ''
+    + '<div style="margin-bottom: 18px; padding: 16px 20px; background: linear-gradient(135deg, #fff8e1 0%, #fff2c5 100%); border: 2px solid #d3d1c7; border-radius: 10px;">'
+    +   '<div style="font-size: 11px; color: #8a6a00; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">⚠ Beta — Coming soon, not yet active</div>'
+    +   '<div style="font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.55;">'
+    +     'The Team Pool is shown here as a <strong>preview</strong> so you can see how it\'ll work when we activate it. '
+    +     'The figures below are <strong>indicative only</strong> — quarterly targets, the company contribution scale, and the soft-floor mechanic '
+    +     'will all be confirmed before launch. Earliest activation: <strong>Q1 FY27 (Jul 2026)</strong>, but more likely a quarter or two after — '
+    +     'we want everyone to settle into the new commission plan first before adding the team layer on top.'
+    +   '</div>'
+    +   '<div style="font-size: 12px; color: var(--muted); margin-top: 8px; font-style: italic;">'
+    +     'Same approach as the KPI tab — we\'re sharing the design now so you can read it, push back, and have input before we switch it on.'
+    +   '</div>'
+    + '</div>'
+    : '';
+
+  // Hero card — uses "would" / "indicative" framing in beta mode
+  const wouldOrWill = isBeta ? 'would' : 'will';
+  const yourShareLabel = isBeta ? 'Indicative your share if hit at target' : 'Your share if we hit target';
+  const shareValueOpacity = isBeta ? 'opacity: 0.85;' : '';
+
+  panel.innerHTML = ''
+    + betaBanner
+    + '<div class="card" style="border-left: 4px solid #b8860b; background: linear-gradient(135deg, #fffaf2 0%, #fff 100%); ' + shareValueOpacity + '">'
+    +   '<h2 style="margin: 0 0 6px;">🤝 Team Pool — ' + cur.label + (isBeta ? ' <span style="font-size: 11px; padding: 2px 8px; background: #ecebe5; color: #8a6a00; border: 1px solid #d3d1c7; border-radius: 999px; margin-left: 6px; vertical-align: middle; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Beta</span>' : '') + '</h2>'
+    +   '<p style="font-size: 13px; color: var(--muted); margin: 0 0 18px;">Quarterly bonus split equally across all 8 staff if the team hits its seasonal GP-sold target. <strong>Funded by the company.</strong> ' + (isBeta ? 'Numbers below are <strong>indicative</strong>.' : '') + '</p>'
+    +   '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 8px;">'
+    +     '<div style="background: #fff; padding: 16px 18px; border-radius: 8px; border: 1px solid var(--border);">'
+    +       '<div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;">' + (isBeta ? 'Indicative quarterly target' : 'Quarterly Target') + '</div>'
+    +       '<div style="font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--navy); margin-top: 4px;">' + fmtMoneyTP(curTarget) + '</div>'
+    +       '<div style="font-size: 11px; color: var(--faint); font-family: var(--mono); margin-top: 2px;">team GP-sold ' + wouldOrWill + ' unlock pool</div>'
+    +     '</div>'
+    +     '<div style="background: #fff8e1; padding: 16px 18px; border-radius: 8px; border: 1px solid #f0e2c4;">'
+    +       '<div style="font-size: 11px; color: #b8860b; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">' + yourShareLabel + '</div>'
+    +       '<div style="font-family: var(--mono); font-size: 26px; font-weight: 700; color: #b8860b; margin-top: 4px;">' + fmtMoneyTP(targetPerPersonShare) + '</div>'
+    +       '<div style="font-size: 11px; color: var(--faint); font-family: var(--mono); margin-top: 2px;">stretch case at 115%: ' + fmtMoneyTP(stretchPerPersonShare) + '</div>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="card">'
+    +   '<h3 style="margin: 0 0 6px;">Quarterly schedule</h3>'
+    +   '<p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">' + (isBeta ? 'Indicative ' : '') + 'targets seasonally adjusted from the trailing 8 quarters of Zoho data — Q1 (Jul–Sep) carries the year, Q4 (Apr–Jun) is the structural lull.</p>'
+    +   '<table style="width: 100%; font-size: 13px; border-collapse: collapse;">'
+    +     '<thead><tr style="background: var(--navy); color: #fff;">'
+    +       '<th style="text-align: left; padding: 8px;">Quarter</th>'
+    +       '<th style="text-align: right; padding: 8px;">' + (isBeta ? 'Indicative target' : 'Target') + '</th>'
+    +       '<th style="text-align: right; padding: 8px;">Seasonal factor</th>'
+    +       '<th style="padding: 8px;">Status</th>'
+    +     '</tr></thead>'
+    +     '<tbody>' + fy27Rows + '</tbody>'
+    +     '<tfoot>'
+    +       '<tr style="background: var(--navy); color: #fff; font-weight: 700;">'
+    +         '<td style="padding: 10px;">FY27 annual total <span style="font-weight: 400; color: rgba(255,255,255,0.7); font-size: 11px;">(Q1–Q4)</span></td>'
+    +         '<td style="text-align: right; padding: 10px; font-family: var(--mono);">' + fmtMoneyTP(annualTargetSum) + '</td>'
+    +         '<td style="text-align: right; padding: 10px; font-family: var(--mono); color: rgba(255,255,255,0.7);">100.0%</td>'
+    +         '<td style="padding: 10px;"></td>'
+    +       '</tr>'
+    +     '</tfoot>'
+    +   '</table>'
+    +   (fy26Rows ? ('<div style="margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--border);">'
+    +     '<div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 8px;">Launch quarter (preview, before FY27 cycle starts)</div>'
+    +     '<table style="width: 100%; font-size: 13px; border-collapse: collapse;">'
+    +       '<tbody>' + fy26Rows + '</tbody>'
+    +     '</table>'
+    +   '</div>') : '')
+    + '</div>';
+}
+// Hook: re-render team pool whenever data finishes loading
+(function(){
+  if (typeof window === 'undefined') return;
+  function tryRender() {
+    if (typeof data !== 'undefined' && data && data.globals) {
+      try { renderTeamPool(); } catch(e) { console.warn('teamPool render error:', e); }
+      return true;
+    }
+    return false;
+  }
+  setTimeout(function repeat(){
+    if (!tryRender()) setTimeout(repeat, 200);
+  }, 0);
+})();
+
+</script>
+</body>
+</html>
