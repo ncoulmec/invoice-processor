@@ -4150,11 +4150,11 @@ const SAFF_HEADER = [
 
 function fmtSaffDate(iso) {
   if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return '';
-  const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const [y, m, d] = iso.slice(0,10).split('-');
-  // DD-MMM-YYYY with a 4-digit year. (2-digit "26" was being read as 1926 by AustralianSuper,
-  // which broke the contribution-period validation and "Derive dates from file".)
-  return `${d}-${MON[parseInt(m,10)-1]}-${y}`;
+  // DD/MM/YYYY — QuickSuper/AustralianSuper's validator expects a NUMERIC date in this format.
+  // (The worded "DD-MMM-YYYY" failed to parse → fields read as "not provided"; 2-digit years
+  // were misread as 19xx. Numeric 4-digit DD/MM/YYYY avoids both.)
+  return `${d}/${m}/${y}`;
 }
 
 // Map a Zoho gender label/value to the SAFF code (M/F/I/N). N = not stated (safe default).
