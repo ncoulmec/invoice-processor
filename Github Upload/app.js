@@ -4152,7 +4152,9 @@ function fmtSaffDate(iso) {
   if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return '';
   const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const [y, m, d] = iso.slice(0,10).split('-');
-  return `${parseInt(d,10)}-${MON[parseInt(m,10)-1]}-${y.slice(2)}`;
+  // DD-MMM-YYYY with a 4-digit year. (2-digit "26" was being read as 1926 by AustralianSuper,
+  // which broke the contribution-period validation and "Derive dates from file".)
+  return `${d}-${MON[parseInt(m,10)-1]}-${y}`;
 }
 
 // Map a Zoho gender label/value to the SAFF code (M/F/I/N). N = not stated (safe default).
@@ -4273,7 +4275,10 @@ function exportSAFFCSV() {
     ]);
   });
 
-  downloadCSV(rows, `MEC_SAFF_SuperStream_${today()}.csv`);
+  // Filename = AustralianSuper auto-fills its "Description" from this, so make it clear + readable
+  // and use DD-MM-YYYY (not the reversed YYYYMMDD).
+  const ddmmyyyy = iso => { const [y,m,d] = iso.slice(0,10).split('-'); return `${d}-${m}-${y}`; };
+  downloadCSV(rows, `MEC Super Contribution ${ddmmyyyy(periodStart)} to ${ddmmyyyy(periodEnd)}.csv`);
 
   if (warnings.length) {
     alert('⚠ SAFF generated, but ' + warnings.length + ' member(s) are missing mandatory fields. '
