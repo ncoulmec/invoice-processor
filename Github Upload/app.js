@@ -93,8 +93,9 @@ let bookings = [];      // loaded from MEC Bookings Cache.json
 // Navigation
 // ══════════════════════════════════════════════════════════════════════════════
 function gotoStep(n) {
-  // Views: 2, 3, talent
-  const views = [2, 3, 'talent'];
+  // Views: refresh (Step 1), 2 (Enter Invoice Data), 3 (Review & Export), talent
+  const views = ['refresh', 2, 3, 'talent'];
+  const order = { refresh: 1, 2: 2, 3: 3 };   // for the "done" tick on earlier steps
   views.forEach(i => {
     const el = document.getElementById(`view-${i}`);
     if (el) el.classList.toggle('hidden', i !== n);
@@ -102,12 +103,14 @@ function gotoStep(n) {
     if (!tab) return;
     tab.classList.remove('active','done');
     if (i === n) tab.classList.add('active');
-    else if (typeof i === 'number' && typeof n === 'number' && i < n) tab.classList.add('done');
+    else if (order[i] != null && order[n] != null && order[i] < order[n]) tab.classList.add('done');
   });
   // Close data panel when navigating to a step
   document.getElementById('data-panel').classList.add('hidden');
   // Render talent list when switching to that view
   if (n === 'talent') renderTalentList();
+  // Make sure the SAFF contribution-period inputs are pre-filled when the export step opens
+  if (n === 3) initSaffPeriodDefaults();
 }
 
 function renderTalentList() {
@@ -223,6 +226,9 @@ function initEmbeddedData() {
   const d = (EMBEDDED_CONTRACTORS_META.generated || '').slice(0,16) || '—';
   document.getElementById('hdr-status').textContent =
     `${contractors.length} contractors · ${bookings.length} bookings — ${d}`;
+  const refreshStatus = document.getElementById('refresh-screen-status');
+  if (refreshStatus) refreshStatus.textContent =
+    `Loaded: ${contractors.length} contractors · ${bookings.length} bookings — as of ${d}`;
 
   // Restore the saved Zoho proxy URL into the Settings field (no default — must be pasted once)
   const zp = document.getElementById('zoho-proxy-url');
@@ -3864,18 +3870,6 @@ function buildResultsView() {
   if (superBillsEl) superBillsEl.textContent =
     `${superBillsCount} super bill${superBillsCount!==1?'s':''} to ${CLEARINGHOUSE_NAME}${paidNote}`;
 
-  // Two-bill model: no manual journal needed — super is expensed via the clearing-house
-  // bill (478-C) and the payable sits in Accounts Payable (800) automatically.
-  if (totalSuper > 0) {
-    document.getElementById('journal-entry').innerHTML =
-      `<span style="color:#888">// Two-bill model — no manual journal required.</span>\n` +
-      `<span style="color:#888">// Bill 1 (contractor): paid NET; super shown as a note on the first line.</span>\n` +
-      `Bill 2 → ${CLEARINGHOUSE_NAME}   <strong>$${fmt(totalSuper)}</strong>  to <strong>${SUPER_ACCOUNT}</strong> (BAS Excluded)\n` +
-      `<span style="color:#888">// Pay the super bills as a SEPARATE ABA batch; on reconciliation they clear against Accounts Payable (800).</span>`;
-  } else {
-    document.getElementById('journal-entry').textContent =
-      'No super contributions in this pay run — no super bill required.';
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5341,7 +5335,7 @@ async function bootstrap(){
     alert('Could not load the data files (contractors.json / bookings.json).\n\nThis tool must be opened via its web address (Netlify), not as a local file. ('+e.message+')');
   }
   try { initEmbeddedData(); } catch(e){ console.error('initEmbeddedData failed', e); }
-  gotoStep(2);
+  gotoStep('refresh');   // land on Step 1 — Refresh from Zoho
   addManualRow();
 }
 

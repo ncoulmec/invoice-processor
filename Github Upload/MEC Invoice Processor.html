@@ -28,11 +28,14 @@
   <div class="step" id="step-tab-1" style="display:none" onclick="gotoStep(1)">
     <span class="step-num">·</span>Load Contractors
   </div>
-  <div class="step active" id="step-tab-2" onclick="gotoStep(2)">
-    <span class="step-num">1</span>Enter Invoice Data
+  <div class="step active" id="step-tab-refresh" onclick="gotoStep('refresh')">
+    <span class="step-num">1</span>Refresh from Zoho
+  </div>
+  <div class="step" id="step-tab-2" onclick="gotoStep(2)">
+    <span class="step-num">2</span>Enter Invoice Data
   </div>
   <div class="step" id="step-tab-3" onclick="gotoStep(3)">
-    <span class="step-num">2</span>Review &amp; Export
+    <span class="step-num">3</span>Review &amp; Export
   </div>
   <div class="step" id="step-tab-talent" onclick="gotoStep('talent')" style="margin-left:auto;border-left:1px solid #E0E7EE;padding-left:28px">
     <span class="step-num" style="background:var(--navy)">⊞</span>Talent List
@@ -151,9 +154,31 @@
   <!-- ══════════════════════════════════════════════════════════════
        STEP 2: Invoice Input
   ════════════════════════════════════════════════════════════════ -->
-  <div id="view-2">
+  <!-- ══════════════════════════════════════════════════════════════
+       STEP 1: Refresh from Zoho (start here every pay run)
+  ════════════════════════════════════════════════════════════════ -->
+  <div id="view-refresh">
+    <div class="panel" style="text-align:center;padding:34px 24px;border:2px solid var(--teal-light);background:linear-gradient(180deg,#EFFBFC,#ffffff)">
+      <div style="font-size:36px;line-height:1">🔄</div>
+      <h2 style="margin-top:8px">Step 1 — Refresh from Zoho</h2>
+      <p style="max-width:640px;margin:6px auto 20px;color:#555;font-size:14px">
+        <strong>Start every pay run here.</strong> This pulls the latest contractors and confirmed
+        bookings — including super fund details — live from Zoho, so everything matches current data.
+      </p>
+      <button class="btn btn-green" onclick="refreshFromZoho()" style="font-size:16px;padding:14px 34px">🔄 Refresh from Zoho</button>
+      <div id="refresh-screen-status" style="font-size:12px;color:#888;margin-top:14px"></div>
+      <div style="font-size:11px;color:#aaa;margin-top:6px">
+        First time on this device? Set the Zoho Refresh URL once in <strong>⚙ Settings</strong> (top right).
+      </div>
+      <div style="margin-top:24px;border-top:1px solid #E0E7EE;padding-top:18px">
+        <button class="btn btn-primary" onclick="gotoStep(2)">Continue to invoice data →</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-2" class="hidden">
     <div class="panel">
-      <h2>Step 1 — Enter Invoice Data</h2>
+      <h2>Step 2 — Enter Invoice Data</h2>
       <p>Upload PDF invoices for automatic reading, or enter data manually in the table below.</p>
 
       <div class="tabs">
@@ -461,17 +486,8 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-top:0">
-      <div class="flex" style="justify-content:space-between">
-        <div>
-          <div class="section-label">Xero Journal Entry (for this pay run)</div>
-          <div id="journal-entry" style="font-family:monospace;font-size:13px;background:#F8FAFC;
-               padding:12px;border-radius:6px;border:1px solid #E0E7EE;line-height:1.7"></div>
-        </div>
-        <div style="flex-shrink:0">
-          <button class="btn btn-secondary btn-sm" onclick="gotoStep(2)">← Edit Invoices</button>
-        </div>
-      </div>
+    <div style="margin-top:14px">
+      <button class="btn btn-secondary btn-sm" onclick="gotoStep(2)">← Edit Invoices</button>
     </div>
   </div>
 
