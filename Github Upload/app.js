@@ -142,9 +142,13 @@ function renderTalentList() {
     if (fAbn === 'has'     && !c.abn) return false;
     if (fAbn === 'missing' &&  c.abn) return false;
     if (fSuper) {
-      const incomplete = c.superEligible && missingSuperFields(c).length > 0;
+      // Super-eligibility is by TYPE (A/B withhold super; C/D don't) — matches how the tool
+      // actually withholds, and is reliable even when the cached superEligible flag is stale.
+      const elig = ['A','B'].includes(c.type);
+      const complete   = elig && missingSuperFields(c).length === 0;
+      const incomplete = elig && missingSuperFields(c).length > 0;
+      if (fSuper === 'complete'   && !complete)   return false;   // excludes C/D (n/a) too
       if (fSuper === 'incomplete' && !incomplete) return false;
-      if (fSuper === 'complete'   &&  incomplete) return false;
     }
     return true;
   }).sort((a,b) => a.name.localeCompare(b.name));
@@ -160,9 +164,9 @@ function renderTalentList() {
     const superCell = c.superEligible ? `<span style="color:#27AE60;font-weight:600">✓ Yes</span>` : `<span style="color:#aaa">—</span>`;
     const fundWarning = c.superEligible && !c.fundName
       ? `<span style="color:#c0392b;font-size:11px">⚠ not set</span>` : escHtml(c.fundName || '—');
-    // Super-details health (only meaningful for super-eligible contractors)
+    // Super-details health — applies to type A/B (who have super withheld); C/D = n/a
     let superStatus;
-    if (!c.superEligible) {
+    if (!['A','B'].includes(c.type)) {
       superStatus = `<span style="color:#aaa;font-size:11px">n/a</span>`;
     } else {
       const miss = missingSuperFields(c);
@@ -4570,8 +4574,12 @@ async function downloadInvoicesZip() {
       const blob = await (await fetch(invoiceFileData['id_' + p.rowId])).blob();
       const cName  = p.contractor?.name || p.name || 'Unknown';
       const invNum = p.invoiceNumber || autoInvNum(p);
-      const ev = buildEventReference(p).replace(/^Event\(s\):\s*/, '').trim();
-      const base = safe(`${cName} - ${invNum}${ev ? ' - Event ' + ev : ''}`);
+      // Structure: "Name - Event(s) <dates> - Inv <number>". Plural "Events" + comma-separated
+      // when there's more than one event date.
+      const evRaw = buildEventReference(p).replace(/^Event\(s\):\s*/, '').trim();
+      const dates = evRaw ? evRaw.split(/\s+/).filter(Boolean) : [];
+      const evLabel = dates.length ? `${dates.length > 1 ? 'Events' : 'Event'} ${dates.join(', ')}` : '';
+      const base = safe(`${cName}${evLabel ? ' - ' + evLabel : ''} - Inv ${invNum}`);
       let name = base + '.pdf', n = 2;
       while (used[name]) name = `${base} (${n++}).pdf`;
       used[name] = true;

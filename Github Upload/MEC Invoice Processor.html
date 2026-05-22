@@ -517,19 +517,18 @@
       </div>
       <p style="margin-bottom:10px;font-size:12px;color:#666">A data-health view of everyone in Zoho — use it to spot who's missing details (super, ABN, fund) so you can chase them <em>before</em> a pay run. Hover the <strong>Super details</strong> cell to see exactly what's missing.</p>
       <!-- Filters -->
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        <input type="text" id="talent-search" placeholder="🔍 Name, ABN, fund…" oninput="renderTalentList()"
-          style="font-size:12px;padding:5px 10px;border:1px solid #D0D8E0;border-radius:5px;background:#fff;width:200px">
-        <select id="talent-filter-type" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+      <div class="talent-filters">
+        <input type="text" id="talent-search" placeholder="🔍 Name, ABN, fund…" oninput="renderTalentList()">
+        <select id="talent-filter-type" onchange="renderTalentList()">
           <option value="">All types</option><option value="A">Type A</option><option value="B">Type B</option><option value="C">Type C</option><option value="D">Type D</option>
         </select>
-        <select id="talent-filter-gst" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+        <select id="talent-filter-gst" onchange="renderTalentList()">
           <option value="">GST: all</option><option value="yes">GST registered</option><option value="no">Not GST</option>
         </select>
-        <select id="talent-filter-abn" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+        <select id="talent-filter-abn" onchange="renderTalentList()">
           <option value="">ABN: all</option><option value="has">ABN on file</option><option value="missing">ABN missing</option>
         </select>
-        <select id="talent-filter-super" onchange="renderTalentList()" style="font-size:12px;padding:5px 8px;border:1px solid #D0D8E0;border-radius:5px;background:#fff">
+        <select id="talent-filter-super" onchange="renderTalentList()">
           <option value="">Super details: all</option><option value="incomplete">⚠ Incomplete</option><option value="complete">✓ Complete</option>
         </select>
       </div>
@@ -846,6 +845,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260522f"></script>
+<script src="app.js?v=20260522g"></script>
 </body>
 </html>

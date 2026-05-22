@@ -73,6 +73,15 @@
     padding: 6px 9px; border: 1px solid #D0D8E0; border-radius: 5px;
     font-size: 13px; width: 100%; outline: none; background: #fff; }
   input:focus, select:focus { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(29,122,140,.15); }
+  /* Talent List filter bar — horizontal, auto-width (overrides the global width:100%) */
+  .talent-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
+                    background:#F4F7FA; border:1px solid #E0E7EE; border-radius:8px; padding:10px 12px; }
+  .talent-filters input, .talent-filters select {
+    width:auto; font-size:12px; padding:7px 11px; border:1px solid #CBD5E0; border-radius:6px;
+    background:#fff; color:var(--navy); }
+  .talent-filters input { min-width:210px; }
+  .talent-filters select { cursor:pointer; font-weight:600; padding-right:24px; }
+  .talent-filters select:hover { border-color:var(--teal); }
   /* ── Badges ── */
   .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px;
            font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
