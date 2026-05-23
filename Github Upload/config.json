@@ -12,5 +12,38 @@
     "D": "GST on Expenses"
   },
   "clearinghouseName": "Contractor Super Clearinghouse",
-  "superAccount": "478-C"
+  "superAccount": "478-C",
+
+  "_comment_multiPerformer": "Duo/group super detection. A flagged invoice defaults to NO super withheld and shows a confirm prompt in the Review modal (Solo / this performer's share / no-super). variableLineupPerformers = performers who flip between solo and duo/group under ONE ABN (matched by name, case-insensitive) — this is the most reliable trigger and also catches the harp->two-harpists case the booking field misses. multiPerformerOfferings / ambiguousOfferings = exact 'What Did They End Up Booking?' values; the code ALSO keyword-matches (duo/trio/quartet/band/pair/group/ensemble/mariachi -> multi; soloist -> solo) so renamed values like 'Strings - Group (2 or more)' are caught automatically without editing this file.",
+  "variableLineupPerformers": [
+    "Harry Longworth",
+    "Carla Troiano",
+    "Pete Mitchell"
+  ],
+  "multiPerformerOfferings": [
+    "Acoustic Duo",
+    "Acoustic Duo+DJ Pair (Complete Duo)",
+    "DJ Band",
+    "Trio",
+    "Band",
+    "Marching Band",
+    "Band / Singer / Duo",
+    "Singer / Duo / Band"
+  ],
+  "ambiguousOfferings": [
+    "Strings",
+    "Roving",
+    "Roving Entertainment",
+    "Fire Entertainment",
+    "Mariachi",
+    "Other"
+  ],
+
+  "_comment_knownSuppliers": "Retail/AP suppliers (alcohol, etc.) that email tax invoices which are NOT contractor performance invoices. The Gmail reader reads each PDF's text and, if it matches a supplier's keywords or ABN, flags the row 'Supplier' and unticks it by default (you can still tick it in via the import-review modal). 'abn' is digits-only; keywords are matched case-insensitively against the PDF text + subject + sender. These often arrive forwarded internally, so sender-based exclusion alone misses them.",
+  "knownSuppliers": [
+    { "label": "Dan Murphy's", "keywords": ["dan murphy", "dan murphy's", "danmurphys"], "abn": "77159767843" },
+    { "label": "BWS", "keywords": ["bws", "beer wine spirits"], "abn": "" },
+    { "label": "Liquorland", "keywords": ["liquorland"], "abn": "" },
+    { "label": "First Choice Liquor", "keywords": ["first choice liquor"], "abn": "" }
+  ]
 }

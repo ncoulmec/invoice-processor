@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260522d">
+<link rel="stylesheet" href="styles.css?v=20260523d">
 </head>
 <body>
 
@@ -20,6 +20,8 @@
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
     <span id="hdr-status" style="font-size:11px;opacity:.55;"></span>
     <button id="zoho-refresh-btn" onclick="refreshFromZoho()" title="Pull the latest bookings + contractors live from Zoho (Confirmed · −6/+2 months · still-unpaid only). Do this at the start of each pay run." style="font-size:11px;background:#27AE60;border:1px solid #27AE60;color:#fff;padding:4px 11px;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 Refresh from Zoho</button>
+    <button onclick="showHowItWorks()" title="A plain-English guide to the payment and export workflow" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">❔ How this works</button>
+    <button onclick="toggleTalent()" title="Browse the full contractor database (super-details health, filters)" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">⊞ Contractor database</button>
     <button onclick="toggleDataPanel()" title="Manually load a contractor or bookings JSON file" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Manual data</button>
     <button onclick="toggleSettingsPanel()" title="Settings" style="font-size:11px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;">⚙ Settings</button>
   </div>
@@ -38,8 +40,45 @@
   <div class="step" id="step-tab-3" onclick="gotoStep(3)">
     <span class="step-num">3</span>Review &amp; Export
   </div>
-  <div class="step" id="step-tab-talent" onclick="toggleTalent()" style="margin-left:auto;border-left:1px solid #E0E7EE;padding-left:28px">
-    <span class="step-num" style="background:var(--navy)">⊞</span>Talent List
+</div>
+
+<!-- How this works — plain-English guide -->
+<div id="how-modal" onclick="if(event.target===this)closeHowItWorks()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10002;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 16px">
+  <div style="background:#fff;border-radius:12px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.35);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:var(--navy);color:#fff">
+      <h2 style="margin:0;font-size:17px">❔ How this works</h2>
+      <button onclick="closeHowItWorks()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:5px;padding:6px 13px;cursor:pointer;font-size:13px">✕ Close</button>
+    </div>
+    <div style="padding:22px 26px;font-size:14px;line-height:1.6;color:#2D3748">
+      <p style="margin-top:0;color:#555">This tool turns the invoices your performers email in into the files you need to pay them correctly and stay compliant with the new contractor-super rules. There are two halves: <strong>running the pay run</strong>, then <strong>exporting the files</strong>.</p>
+
+      <h3 style="color:var(--navy);margin:18px 0 8px;font-size:14px;border-bottom:1px solid #EAEFF4;padding-bottom:5px">① Running a pay run — 3 steps</h3>
+      <ol style="margin:0;padding-left:20px">
+        <li><strong>Refresh from Zoho.</strong> Pulls the current contractors and confirmed bookings (plus super-fund details) so everything matches live data. Start every pay run here.</li>
+        <li><strong>Enter invoice data.</strong> Drag in the performers' PDF invoices (or pull them from Gmail). The tool reads each one, matches it to a Zoho contractor, and works out the GST and super treatment.</li>
+        <li><strong>Review &amp; export.</strong> Check each invoice in the review screen — confirm the amount, the matched booking, and whether to deduct super — then download the export files.</li>
+      </ol>
+
+      <h3 style="color:var(--navy);margin:18px 0 8px;font-size:14px;border-bottom:1px solid #EAEFF4;padding-bottom:5px">② Exporting the files — 3 uploads, in order</h3>
+      <ol style="margin:0;padding-left:20px">
+        <li><strong>Xero contractor bills</strong> → import to Xero. Pays each performer their net amount.</li>
+        <li><strong>Xero super bills</strong> → import to Xero. Bills the super to your clearing house (paid as a separate batch).</li>
+        <li><strong>AustralianSuper SAFF</strong> → upload to AustralianSuper's Employer Portal. Sends the super contributions into each performer's fund.</li>
+      </ol>
+      <p style="margin:6px 0 0;color:#777;font-size:12.5px">(The invoice-PDF ZIP is an optional extra — renamed PDFs you can drag onto the matching Xero bills.)</p>
+
+      <h3 style="color:var(--navy);margin:18px 0 8px;font-size:14px;border-bottom:1px solid #EAEFF4;padding-bottom:5px">Contractor types</h3>
+      <p style="margin:0">Each contractor is one of four types, which decides GST and super:</p>
+      <ul style="margin:6px 0 0;padding-left:20px">
+        <li><strong>A</strong> — individual / sole trader, no GST → super applies.</li>
+        <li><strong>B</strong> — individual / sole trader, registered for GST → super applies.</li>
+        <li><strong>C</strong> — company or partnership, no GST → no super.</li>
+        <li><strong>D</strong> — company or partnership, registered for GST → no super.</li>
+      </ul>
+
+      <h3 style="color:var(--navy);margin:18px 0 8px;font-size:14px;border-bottom:1px solid #EAEFF4;padding-bottom:5px">What "deduct super" means</h3>
+      <p style="margin:0">For individual performers (types A &amp; B), MEC must pay super on their fee from 1 July 2026. "Deduct super" sets aside 12% (or the contractor's Zoho rate): the performer is paid their fee <strong>net</strong> on the contractor bill, and the super amount is billed separately to your clearing house and sent to their fund via the SAFF file. Your total cost is the same — it's just split between cash to the performer and super to their fund. Companies/partnerships (C &amp; D) have no super deducted.</p>
+    </div>
   </div>
 </div>
 
@@ -81,8 +120,8 @@
   <div id="data-panel" class="hidden">
   <div id="view-1">
     <div class="panel">
-      <h2>Step 1 — Load Contractor Data</h2>
-      <p>Load your contractor list from Zoho. Use the <strong>Contractors Cache</strong> (ask Claude to refresh it) or upload a manual CSV export.</p>
+      <h2>Manual data load <span style="font-size:12px;color:#888;font-weight:400">(Zoho fallback)</span></h2>
+      <p>Only needed if the live <strong>🔄 Refresh from Zoho</strong> isn't available. Load your contractor list from a <strong>Contractors Cache</strong> (ask Claude to refresh it) or a manual CSV export.</p>
 
       <!-- Option A: Contractors JSON Cache (preferred) -->
       <div class="drop-zone" id="contractors-json-drop" onclick="document.getElementById('contractors-json-file').click()">
@@ -171,8 +210,17 @@
       <div style="font-size:11px;color:#aaa;margin-top:6px">
         First time on this device? Set the Zoho Refresh URL once in <strong>⚙ Settings</strong> (top right).
       </div>
+      <details style="max-width:560px;margin:18px auto 0;text-align:left;background:#fff;border:1px solid #E0E7EE;border-radius:8px;padding:0 14px">
+        <summary style="cursor:pointer;padding:11px 0;font-size:12.5px;font-weight:600;color:#5A7A86;list-style:none">⚠ Can't connect to Zoho? Use a manual export instead</summary>
+        <div style="padding:2px 0 14px;font-size:12px;color:#666;line-height:1.5">
+          If the live refresh isn't available, you can load a contractor list (Zoho JSON cache or CSV export) and a bookings cache manually. This is a fallback — the live refresh is the normal way to start a pay run.
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary btn-sm" onclick="toggleDataPanel(); setTimeout(()=>document.getElementById('view-1')?.scrollIntoView({behavior:'smooth'}),50)">Open manual data loader →</button>
+          </div>
+        </div>
+      </details>
       <div style="margin-top:24px;border-top:1px solid #E0E7EE;padding-top:18px">
-        <button class="btn btn-primary" onclick="gotoStep(2)">Continue to invoice data →</button>
+        <button class="btn btn-primary" onclick="gotoStep(2)">Step 2: Enter invoices →</button>
       </div>
     </div>
   </div>
@@ -220,7 +268,7 @@
             <thead><tr>
               <th>Contractor Name</th><th>Invoice #</th><th>Perf. Date</th>
               <th>Total (inc GST if applicable)</th><th style="width:140px">ABN</th><th>Matched / ABR</th>
-              <th>Withhold Super? <span class="rv-tip" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Withhold 12% super?</strong>Ticked = super is withheld and remitted to the clearing house for this invoice. Defaults ON for sole traders (Type A/B) and OFF for companies/partnerships (Type C/D).<br><br>To exclude an invoice from the run entirely, remove it with the red ✕ button instead.</span></span></th>
+              <th>Deduct super? <span class="rv-tip" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Deduct super?</strong>Ticked = super (12% default, or the contractor's Zoho rate) is set aside and paid into their fund via the clearing house for this invoice. Defaults ON for sole traders (Type A/B) and OFF for companies/partnerships (Type C/D).<br><br>To exclude an invoice from the run entirely, remove it with the red ✕ button instead.</span></span></th>
               <th></th>
             </tr></thead>
             <tbody id="pdf-tbody"></tbody>
@@ -235,7 +283,7 @@
               <thead><tr>
                 <th>Supplier</th><th>Invoice #</th><th>Date</th>
                 <th>Total (inc GST)</th><th style="width:140px">ABN</th><th>Matched / ABR</th>
-                <th title="Super doesn't apply to AP supplier bills. Remove a bill with ✕ to exclude it.">Withhold Super?</th>
+                <th title="Super doesn't apply to AP supplier bills. Remove a bill with ✕ to exclude it.">Deduct super?</th>
                 <th></th>
               </tr></thead>
               <tbody id="ap-review-tbody"></tbody>
@@ -258,7 +306,7 @@
             <th style="width:120px">Total Amount ($)</th>
             <th style="width:140px">ABN</th>
             <th style="width:80px">Matched / ABR</th>
-            <th title="Ticked = withhold 12% super (sole traders / Type A-B). Remove the row with ✕ to exclude it.">Withhold Super?</th>
+            <th title="Ticked = deduct super (12% default, or the contractor's Zoho rate) for sole traders / Type A-B. Remove the row with ✕ to exclude it.">Deduct super?</th>
             <th style="width:40px"></th>
           </tr></thead>
           <tbody id="manual-tbody"></tbody>
@@ -366,8 +414,46 @@
         </div>
       </div>
 
+      <!-- Import-review modal: original email (left) + PDF (right), decide Import / Don't import -->
+      <div id="gmail-review-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10001;align-items:center;justify-content:center">
+        <div style="position:relative;width:94vw;height:90vh;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);display:flex;flex-direction:column">
+          <!-- header -->
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:#1B2A4A;color:#fff">
+            <div style="flex:1;min-width:0">
+              <div id="gmail-rev-subject" style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Subject</div>
+              <div id="gmail-rev-meta" style="font-size:11px;color:#A9B7CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">From · date</div>
+            </div>
+            <span id="gmail-rev-status" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:11px;white-space:nowrap"></span>
+            <button onclick="gmailCloseReview()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:4px;padding:5px 11px;cursor:pointer;font-size:12px">✕ Close</button>
+          </div>
+          <!-- body: email | PDF -->
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:46%;display:flex;flex-direction:column;min-width:0;border-right:1px solid #e3e8ef">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;padding:6px 10px;background:#f1f5f9;border-bottom:1px solid #e3e8ef">📧 Original email</div>
+              <iframe id="gmail-rev-email" sandbox="allow-same-origin" style="flex:1;width:100%;border:none;background:#fff"></iframe>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:#525659">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#cbd5e1;padding:6px 10px;background:#3a3d40">📄 Attached invoice <span id="gmail-rev-pdfname" style="color:#94a3b8;text-transform:none;font-weight:400"></span></div>
+              <div style="flex:1;position:relative">
+                <iframe id="gmail-rev-pdf" style="width:100%;height:100%;border:none"></iframe>
+                <div id="gmail-rev-pdf-none" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#cbd5e1;font-size:13px;text-align:center;padding:20px"></div>
+              </div>
+            </div>
+          </div>
+          <!-- footer: navigation + decision -->
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0F1B33;border-top:1px solid #2A3A5C">
+            <button onclick="gmailReviewNav(-1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:7px 13px;font-size:12px;cursor:pointer">← Prev</button>
+            <button onclick="gmailReviewNav(1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:7px 13px;font-size:12px;cursor:pointer">Next →</button>
+            <span id="gmail-rev-counter" style="color:#7E8FB0;font-size:11px"></span>
+            <div style="flex:1"></div>
+            <button id="gmail-rev-exclude" onclick="gmailReviewSetInclude(false)" style="background:#7F1D1D;color:#fff;border:1px solid #B91C1C;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✗ Don't import</button>
+            <button id="gmail-rev-include" onclick="gmailReviewSetInclude(true)" style="background:#166534;color:#fff;border:1px solid #16A34A;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Import this</button>
+          </div>
+        </div>
+      </div>
+
       <div class="mt flex" style="margin-top:20px;padding-top:14px;border-top:1px solid #EEF1F5;">
-        <button class="btn btn-primary" onclick="processInvoices()">Process Invoices →</button>
+        <button class="btn btn-primary" id="process-btn" onclick="processInvoices()">Process &amp; Review Invoices →</button>
         <button class="btn btn-secondary" onclick="toggleDataPanel()">↻ Data</button>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
           <span style="font-size:11px;color:#888">Sort:</span>
@@ -442,17 +528,24 @@
         <input type="checkbox" id="super-deduction-enabled"
           onchange="updateSuperToggleUI()"
           style="width:18px;height:18px;cursor:pointer;accent-color:#27AE60">
-        <span style="font-size:13px;font-weight:700;color:#7B341E">Withhold super deductions</span>
+        <span style="font-size:13px;font-weight:700;color:#7B341E">Include super contributions in this pay run</span>
       </label>
       <div style="font-size:12px;color:#7B341E;line-height:1.5">
-        When <strong>ticked</strong>: super deduction lines are included in the Xero Bills CSV and the Super CSV is generated.
-        When <strong>unticked</strong>: super is calculated and shown in Stage 2 for reference, but deduction lines are omitted from all exports — use this until your super clearing house is set up.
-        <span id="super-toggle-status" style="display:inline-block;margin-left:8px;font-weight:700;color:#27AE60">✓ Super deductions ON (default from 1 July)</span>
+        When <strong>ticked</strong>: super contribution lines are included in the Xero Bills CSV and the Super CSV is generated.
+        When <strong>unticked</strong>: super is calculated and shown for reference, but contribution lines are omitted from all exports — use this until your super clearing house is set up.
+        <span id="super-toggle-status" style="display:inline-block;margin-left:8px;font-weight:700;color:#27AE60">✓ Super contributions ON (default from 1 July)</span>
       </div>
+    </div>
+
+    <div style="margin-bottom:14px;padding:11px 16px;background:#EAF6F8;border:1px solid var(--teal-light);border-radius:8px;font-size:13px;color:var(--navy)">
+      <strong>Complete these in order:</strong>
+      &nbsp;①&nbsp;Xero contractor bills &nbsp;→&nbsp; ②&nbsp;Xero super bills &nbsp;→&nbsp; ③&nbsp;AustralianSuper SAFF.
+      <span style="color:#5A7A86">&nbsp;(The invoice-PDF ZIP below is an optional helper, not a required step.)</span>
     </div>
 
     <div class="export-grid">
       <div class="export-card">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--teal);text-transform:uppercase">Export 1 of 3 · uploads to Xero</div>
         <h3>📊 Xero Bills — Contractor</h3>
         <p><strong>Bill 1.</strong> One bill per contractor engagement, paid <strong>net</strong> (invoice
            total minus super). The super amount is noted on the first line; there is no separate super
@@ -462,6 +555,7 @@
         <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Download Contractor Bills CSV</button>
       </div>
       <div class="export-card">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--teal);text-transform:uppercase">Export 2 of 3 · uploads to Xero</div>
         <h3>🧾 Xero Bills — Super</h3>
         <p><strong>Bill 2.</strong> One bill per super-eligible invoice, billed to the
            <strong>clearing-house supplier</strong>, single description line, coded to
@@ -475,6 +569,7 @@
         <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Download Super Bills CSV</button>
       </div>
       <div class="export-card">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#1E8449;text-transform:uppercase">Export 3 of 3 · uploads to AustralianSuper</div>
         <h3>🏦 AustralianSuper SAFF (SuperStream)</h3>
         <p>The <strong>SuperStream Alternative File Format</strong> file you upload to AustralianSuper's
            Employer Portal / QuickSuper (<strong>Contribution Files → Upload File</strong>). Built to the
@@ -491,6 +586,7 @@
         <button class="btn btn-green" onclick="exportSAFFCSV()">⬇ Download SAFF CSV</button>
       </div>
       <div class="export-card">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase">Optional helper</div>
         <h3>📎 Invoice PDFs (for Xero)</h3>
         <p>Re-download every uploaded invoice PDF in one ZIP, renamed
            <strong>Name - Invoice# - Event date</strong> so they sort cleanly and drag straight onto
@@ -616,8 +712,8 @@
               style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
             <div id="rv-perfdate-dow" style="font-size:12px;color:#9DB5CC;font-weight:600;margin-top:3px;min-height:15px"></div>
             <div id="rv-perfdate-warn" style="display:none;font-size:11px;color:#F6AD55;font-weight:600;margin-top:2px">⚠ Best-guess date — please confirm against the invoice</div>
-            <!-- extra perf-date inputs appear here when more than one Zoho booking is ticked -->
-            <div id="rv-perfdate-extra" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+            <!-- extra perf-date inputs (one per extra ticked booking) — wrap horizontally, left→right -->
+            <div id="rv-perfdate-extra" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
           </div>
 
           <!-- 3 · Invoice number -->
@@ -668,7 +764,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
           <div>
             <label style="color:#9DB5CC;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">✈ Travel $
-              <span class="rv-tip">?<span class="rv-tip-box"><strong>Travel</strong>Stays inside the super base — super IS calculated on travel (treated as part of the service). Split it out only for accounting visibility.</span></span></label>
+              <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--left"><strong>Travel</strong>Stays inside the super base — super IS calculated on travel (treated as part of the service). Split it out only for accounting visibility.</span></span></label>
             <input type="number" id="rv-exp-travel" tabindex="6" step="0.01" min="0" placeholder="0"
               oninput="rvUpdateServiceFee()"
               style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
@@ -705,11 +801,40 @@
           title="Pull live ABR data for this ABN without opening a new tab"
           style="background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">↻ Pull ABR</button>
         <div style="flex:1"></div>
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding-bottom:1px">
+        <label id="rv-super-plain" style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#ddd;font-size:12px;white-space:nowrap;padding-bottom:1px">
           <input type="checkbox" id="rv-super" tabindex="11" style="width:14px;height:14px;cursor:pointer;accent-color:#27AE60">
-          Withhold super?
-          <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Withhold super on this invoice?</strong>Tick to deduct the employer super contribution (SGC) from this payment. Defaults to on for Type A/B contractors (individuals). Untick to override — e.g. if the contractor has confirmed they hold a private super arrangement.</span></span>
+          Deduct super (12% default)
+          <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Deduct super on this invoice?</strong>Tick to set aside the employer super contribution (12% by default, or the contractor's Zoho rate) so it's paid into their fund — the performer is paid net and the super goes to the clearing house. Defaults to on for Type A/B contractors (individuals). Untick to override — e.g. if the contractor has confirmed they hold a private super arrangement.</span></span>
         </label>
+      </div>
+
+      <!-- Duo / group super prompt — shown only when this invoice is flagged as a possible multi-performer act -->
+      <div id="rv-multiperf" style="display:none;margin-top:9px;background:rgba(246,173,85,0.12);border:1px solid rgba(246,173,85,0.5);border-radius:7px;padding:9px 11px">
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <span style="font-size:15px;line-height:1.2">⚠</span>
+          <div style="flex:1">
+            <div style="color:#F6AD55;font-weight:700;font-size:12px;margin-bottom:2px">Possible multi-performer booking</div>
+            <div id="rv-multiperf-reason" style="color:#E8C9A0;font-size:11px;margin-bottom:8px"></div>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#e2e8f0">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="rv-mp-mode" value="solo" tabindex="12" onchange="rvSetMultiPerfMode('solo')" style="cursor:pointer">
+                <span><strong>Solo</strong> — deduct super on the full amount</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-wrap:wrap">
+                <input type="radio" name="rv-mp-mode" value="share" tabindex="13" onchange="rvSetMultiPerfMode('share')" style="cursor:pointer">
+                <span><strong>Group</strong> — super on this performer's share: $</span>
+                <input type="number" id="rv-mp-share" step="0.01" min="0" placeholder="0.00"
+                  oninput="rvSetMultiPerfMode('share')"
+                  style="width:92px;font-size:12px;padding:3px 6px;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none">
+                <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--left"><strong>This performer's share</strong>The part of the invoice that is THIS performer's own labour fee — super is worked out on this amount only. The rest is paid to them in cash (with no super) to pass on to their co-performer(s). The payment to the performer is unchanged. We don't know the split — ask the performer or confirm the treatment with your accountant / ATO.</span></span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="rv-mp-mode" value="none" tabindex="14" onchange="rvSetMultiPerfMode('none')" style="cursor:pointer">
+                <span><strong>Group</strong> — don't deduct super (they organise the group) <span style="color:#9DB5CC">· default</span></span>
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
     </div><!-- /input card -->
 
@@ -784,6 +909,9 @@
       <button id="rv-prev-btn" onclick="reviewViewPrevious()" tabindex="-1"
         title="Go to the previous invoice (without confirming)"
         style="background:rgba(255,255,255,0.07);color:#9DB5CC;border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap">← Previous</button>
+      <button id="rv-remove-btn" onclick="reviewRemoveInvoice()" tabindex="-1"
+        title="Remove this invoice from the run entirely — it won't be included in any export"
+        style="background:rgba(229,62,62,0.16);color:#FEB2B2;border:1px solid rgba(229,62,62,0.4);border-radius:5px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">🗑 Remove invoice</button>
       <button id="rv-flag-btn" onclick="reviewFlagIssue()" tabindex="-1"
         title="Mark this invoice as needing attention — shows an amber warning on the Stage 1 row"
         style="background:rgba(232,160,32,0.18);color:#FBD38D;border:1px solid rgba(232,160,32,0.35);border-radius:5px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚠ Needs attention</button>
@@ -845,6 +973,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260522g"></script>
+<script src="app.js?v=20260523d"></script>
 </body>
 </html>

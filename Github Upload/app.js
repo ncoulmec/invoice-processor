@@ -38,6 +38,20 @@ let SUPER_ACCOUNT = '478-C';
 // Override via config.json "superFormUrl".
 let SUPER_FORM_URL = 'https://forms.zohopublic.com/melbourneentertainmentco/form/MECSuperPaymentDetails/formperma/9tfujE0ZwFo01T4gZWmdiplXXc0j7cpqvHhDDrX1nRQ';
 
+// ── Duo / group super detection (config-driven; see config.json) ───────────────
+// Performers who flip between solo and duo/group under one ABN. Lower-cased names.
+let VARIABLE_LINEUP_PERFORMERS = [];
+// Exact "What Did They End Up Booking?" values that imply multiple performers / could go either way.
+let MULTI_OFFERINGS = [];
+let AMBIGUOUS_OFFERINGS = [];
+// Keyword engine so renamed/new offering values are caught without editing config.json.
+const MULTI_KEYWORDS = ['duo','trio','quartet','quintet','sextet','band','pair','group','ensemble','mariachi','choir','collective'];
+const SOLO_KEYWORDS  = ['soloist'];
+
+// ── Known retail/AP suppliers (Dan Murphy's etc.) — see config.json knownSuppliers ───────────
+// Gmail reader flags these so liquor/supplier tax invoices aren't treated as contractor invoices.
+let KNOWN_SUPPLIERS = [];
+
 const TYPE_LABELS = {
   A: 'No GST · Super ✓',
   B: 'GST · Super ✓',
@@ -84,6 +98,7 @@ let abrCache = {};      // keyed by cleaned 11-digit ABN
 let abrRowData = {};      // keyed by row id, stores ABR lookup result
 let invoiceGSTData = {};        // keyed by row id, stores hasGST from PDF extraction
 let invoiceSuperData = {};      // keyed by row id, stores superWithhold override
+let invoiceSuperShareData = {}; // keyed by row id, duo/group: this performer's own super-assessable share ($). When set, super is calculated on this amount instead of the full service fee. Payment is unchanged.
 let invoicePaidData = {};      // keyed by row id, stores alreadyPaid from PDF extraction
 let invoiceBookingData = {};   // keyed by row id, stores [{bookingId,bookingName,eventDate,cost}] — selected booking matches
 let invoiceExpenseData = {};   // keyed by row id, stores {parking:0, accommodation:0, travel:0, other:0}
@@ -125,6 +140,41 @@ let lastMainStep = 'refresh';
 // Talent List tab toggles: open it, or if already open go back to the last main step.
 function toggleTalent() {
   gotoStep(currentView === 'talent' ? lastMainStep : 'talent');
+}
+
+function showHowItWorks() {
+  const m = document.getElementById('how-modal');
+  if (m) m.style.display = 'flex';
+}
+function closeHowItWorks() {
+  const m = document.getElementById('how-modal');
+  if (m) m.style.display = 'none';
+}
+
+// In-page banner (replaces blocking alert() for routine workflow messages).
+// type: 'info' | 'success' | 'warn' | 'error'. Click to dismiss; auto-dismisses.
+function showBanner(msg, type = 'info') {
+  const palette = {
+    info:    ['#1D4ED8', '#EFF6FF', '#BFDBFE'],
+    success: ['#166534', '#F0FDF4', '#BBF7D0'],
+    warn:    ['#92400E', '#FFFBEB', '#FDE68A'],
+    error:   ['#991B1B', '#FEF2F2', '#FECACA'],
+  };
+  const [fg, bg, bd] = palette[type] || palette.info;
+  let host = document.getElementById('app-banner-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'app-banner-host';
+    host.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:10050;display:flex;flex-direction:column;gap:8px;align-items:center';
+    document.body.appendChild(host);
+  }
+  const b = document.createElement('div');
+  b.style.cssText = `background:${bg};color:${fg};border:1px solid ${bd};border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.14);display:flex;align-items:center;gap:14px;cursor:pointer;max-width:560px`;
+  b.innerHTML = `<span style="flex:1;white-space:pre-line">${msg}</span><span style="opacity:.55;font-weight:700">✕</span>`;
+  b.onclick = () => b.remove();
+  host.appendChild(b);
+  setTimeout(() => { b.style.transition = 'opacity .4s'; b.style.opacity = '0'; setTimeout(() => b.remove(), 400); },
+    (type === 'error' || type === 'warn') ? 8000 : 4500);
 }
 
 function renderTalentList() {
@@ -251,6 +301,8 @@ function initEmbeddedData() {
     fundUSI:      r.fundUSI   || '',
     fundABN:      r.fundABN   || '',
     memberNumber: r.memberNumber || '',
+    xeroName:     r.xeroName || '',   // exact Xero contact name → used as the bill "From"
+    variableLineup: r.variableLineup === true,  // duo/group watch-list flag from Zoho Team checkbox (if enabled)
     // SAFF member fields — present only after a live "Refresh from Zoho" (NOT baked into the
     // committed contractors.json, as TFN/DOB are sensitive PII). Empty on the static cache load.
     tfn:          r.tfn   || '',
@@ -308,7 +360,7 @@ async function refreshFromZoho() {
     EMBEDDED_BOOKINGS = book;
     EMBEDDED_BOOKINGS_META = { generated: stamp, recordCount: book.length };
     initEmbeddedData();
-    alert(`✓ Refreshed live from Zoho\n\n${contractors.length} contractors · ${bookings.length} bookings\n(Confirmed · −6/+2 months · still-unpaid only)\n\nas of ${stamp}`);
+    showBanner(`✓ Refreshed live from Zoho — ${contractors.length} contractors · ${bookings.length} bookings (Confirmed · −6/+2 months · still-unpaid only), as of ${stamp}`, 'success');
   } catch (e) {
     console.error('Zoho refresh failed', e);
     alert('Zoho refresh failed:\n' + e.message + '\n\nCheck the URL in ⚙ Settings, and that the proxy is deployed and authorised.');
@@ -559,6 +611,12 @@ const BOOKING_MATCH_STOPWORDS = new Set([
 ]);
 
 function _bookingNameMatches(entName, needle) {
+  // Guard empty/too-short strings. Without this, a blank entertainer name makes
+  // needle.includes('') === true, so an unassigned/nameless booking slot matches EVERY sender —
+  // which made the Gmail reader show the same "— 130 unpaid" badge for every contractor.
+  entName = (entName || '').trim();
+  needle  = (needle  || '').trim();
+  if (entName.length < 3 || needle.length < 3) return false;
   if (entName.includes(needle) || needle.includes(entName)) return true;
   // Word-level: require ≥2 meaningful words to match (prevents "band" false-positive)
   const words = entName.split(/\W+/).filter(w => w.length > 2 && !BOOKING_MATCH_STOPWORDS.has(w));
@@ -656,6 +714,79 @@ function getContractorBookings(zohoId, refDate) {
     }
   }
   return results.sort((a, b) => a.daysDiff - b.daysDiff);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Duo / group super detection
+// ══════════════════════════════════════════════════════════════════════════════
+// Some performers invoice under one ABN but sometimes work as a duo/group (e.g. Harry Longworth).
+// MEC pays the full invoice (the performer pays their partner) but must NOT pay the partner's super
+// into the performer's fund. These helpers flag such invoices so the operator is prompted in Review;
+// the actual super-assessable share is operator/performer-entered (the tool never guesses a number).
+
+// Is this contractor on the "variable lineup" watch-list (flips between solo and duo/group)?
+function isVariableLineup(contractor) {
+  if (!contractor) return false;
+  if (contractor.variableLineup === true) return true;            // Zoho Team checkbox (once enabled)
+  const n = (contractor.name || '').toLowerCase().trim();
+  return !!n && VARIABLE_LINEUP_PERFORMERS.indexOf(n) !== -1;     // config.json name list
+}
+
+// Classify a single offering string → 'multi' | 'ambiguous' | 'solo'.
+function classifyOffering(offer) {
+  const s = (offer || '').toLowerCase().trim();
+  if (!s) return null;
+  if (MULTI_OFFERINGS.indexOf(s) !== -1) return 'multi';
+  if (AMBIGUOUS_OFFERINGS.indexOf(s) !== -1) return 'ambiguous';
+  if (SOLO_KEYWORDS.some(k => s.indexOf(k) !== -1)) return 'solo';           // "Complete Soloist"
+  if (MULTI_KEYWORDS.some(k => new RegExp('\\b' + k).test(s))) return 'multi'; // duo/trio/band/pair/group…
+  return 'solo';
+}
+
+// Strongest offering signal across a booking's offerings: 'multi' | 'ambiguous' | null.
+function bookingOfferingSignal(booking) {
+  const offers = booking && booking.offerings;
+  if (!Array.isArray(offers) || !offers.length) return null;
+  let sig = null;
+  for (const o of offers) {
+    const c = classifyOffering(o);
+    if (c === 'multi') return 'multi';
+    if (c === 'ambiguous') sig = 'ambiguous';
+  }
+  return sig;
+}
+
+// Does the invoice's raw text mention a duo/group?
+function invoiceTextMultiHint(id) {
+  const t = (invoiceRawText['id_' + id] || '').toLowerCase();
+  if (!t) return false;
+  if (/\b(duo|trio|quartet|quintet|sextet|ensemble|mariachi)\b/.test(t)) return true;
+  if (/\b\d+\s*(?:x\s*)?(?:performers|musicians|players|artists|piece)\b/.test(t)) return true;
+  if (/\bx\s*\d+\s*(?:performers|musicians|players|artists)\b/.test(t)) return true;
+  return false;
+}
+
+// Combined per-row flag. Returns { level:'multi'|'ambiguous'|null, reasons:[...] }.
+// Pass explicit name/total/date so it works both at row-creation time (before inputs exist) and
+// from the Review modal (reading current DOM values).
+function multiPerfFlag(id, match, name, total, date) {
+  const reasons = [];
+  let level = null;
+  const escalate = lvl => { if (lvl === 'multi') level = 'multi'; else if (lvl === 'ambiguous' && level !== 'multi') level = 'ambiguous'; };
+
+  if (isVariableLineup(match)) { escalate('multi'); reasons.push(`${match.name} is on the variable-lineup watch-list (sometimes performs as a duo/group)`); }
+
+  const bm = getBookingMatchForRow(name || (match && match.name) || '', total || 0, date || '', invoiceBookingData['id_' + id] || null);
+  const sig = bm ? bookingOfferingSignal(bm.booking) : null;
+  if (sig) {
+    const offerTxt = (bm.booking.offerings || []).join(', ');
+    if (sig === 'multi') { escalate('multi'); reasons.push(`the booking was logged as a group${offerTxt ? ' (' + offerTxt + ')' : ''}`); }
+    else { escalate('ambiguous'); reasons.push(`the booking offering could be solo or group${offerTxt ? ' (' + offerTxt + ')' : ''}`); }
+  }
+
+  if (invoiceTextMultiHint(id)) { escalate('multi'); reasons.push('the invoice text mentions a duo/group'); }
+
+  return { level, reasons };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1557,20 +1688,28 @@ function parseInvoiceText(text, filename) {
   // The user can override any value — these are hints only.
   const detectedExpenses = { parking: 0, accommodation: 0, travel: 0 };
 
-  // Travel: "$150 travel", "+ $150 travel", "travel: $150", "travel allowance $150"
-  const travelM = text.match(/\+?\s*\$\s*(\d+(?:\.\d{2})?)\s+(?:travel|travelling|transportation)\b/i)
-                || text.match(/\btravel(?:\s+(?:allowance|expense|fee|cost|reimbursement))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
-  if (travelM) detectedExpenses.travel = parseFloat(travelM[1]);
+  // Number capture: supports thousands separators ($1,140) — commas stripped before parse.
+  const expNum = '(\\d+(?:,\\d{3})*(?:\\.\\d{2})?)';
+  const expVal = m => m ? parseFloat(String(m[1]).replace(/,/g, '')) : 0;
+  // The LABELLED form ("Travel = $300", "travel: $150", "travel $150") is tried first so a
+  // line like "8 x $80ph = $640  Travel = $300" maps $300 to travel — not the $640 fee.
+  // Same-line whitespace only ([ \t], never \n) so the label can't reach a value on the next line.
+  // The value-before-keyword form ("$150 travel") is the fallback for invoices without a "=" / ":".
 
-  // Parking: "$20 parking", "parking: $20", "parking fee $20"
-  const parkingM = text.match(/\$\s*(\d+(?:\.\d{2})?)\s+parking\b/i)
-                 || text.match(/\bparking(?:\s+(?:expense|fee|cost|reimbursement))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
-  if (parkingM) detectedExpenses.parking = parseFloat(parkingM[1]);
+  // Travel: "Travel = $300", "travel: $150", "travel $150", "$150 travel"
+  const travelM = text.match(new RegExp('\\btravel(?:ling)?(?:[ \\t]+(?:allowance|expense|fee|cost|reimbursement))?[ \\t]*[:=\\-]?[ \\t]*\\$[ \\t]*' + expNum, 'i'))
+                || text.match(new RegExp('\\+?[ \\t]*\\$[ \\t]*' + expNum + '[ \\t]+(?:travel|travelling|transportation)\\b', 'i'));
+  if (travelM) detectedExpenses.travel = expVal(travelM);
 
-  // Accommodation: "$200 accommodation", "accommodation: $200", "hotel $200"
-  const accomM = text.match(/\$\s*(\d+(?:\.\d{2})?)\s+(?:accommodation|accom|hotel|motel|lodging)\b/i)
-               || text.match(/\b(?:accommodation|accom|hotel|motel|lodging)(?:\s+(?:expense|fee|cost))?\s*[:\-]?\s*\$\s*(\d+(?:\.\d{2})?)/i);
-  if (accomM) detectedExpenses.accommodation = parseFloat(accomM[1]);
+  // Parking: "Parking = $20", "parking: $20", "parking fee $20", "$20 parking"
+  const parkingM = text.match(new RegExp('\\bparking(?:[ \\t]+(?:expense|fee|cost|reimbursement))?[ \\t]*[:=\\-]?[ \\t]*\\$[ \\t]*' + expNum, 'i'))
+                 || text.match(new RegExp('\\$[ \\t]*' + expNum + '[ \\t]+parking\\b', 'i'));
+  if (parkingM) detectedExpenses.parking = expVal(parkingM);
+
+  // Accommodation: "Accom = $200", "accommodation: $200", "hotel $200", "$200 accommodation"
+  const accomM = text.match(new RegExp('\\b(?:accommodation|accom|hotel|motel|lodging)(?:[ \\t]+(?:expense|fee|cost))?[ \\t]*[:=\\-]?[ \\t]*\\$[ \\t]*' + expNum, 'i'))
+               || text.match(new RegExp('\\$[ \\t]*' + expNum + '[ \\t]+(?:accommodation|accom|hotel|motel|lodging)\\b', 'i'));
+  if (accomM) detectedExpenses.accommodation = expVal(accomM);
 
   return { name, invoiceNumber, date, performanceDate, perfDateGuess, total, abn, hasGST, alreadyPaid, invoiceTypeHint, detectedExpenses };
 }
@@ -1779,6 +1918,14 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
   const pdfNameNote = (match && data.name && data.name.trim().toLowerCase() !== match.name.trim().toLowerCase())
     ? `<div style="font-size:10px;color:#999;margin-top:1px">PDF: ${escHtml(data.name)}</div>` : '';
 
+  // Duo/group super: flag invoices where the performer may be working as a multi-act under one ABN.
+  // Flagged rows DEFAULT to NO super withheld; the operator confirms the treatment in Review.
+  const mpFlag = multiPerfFlag(id, match, data.name, data.total, data.performanceDate || data.date);
+  const superDefaultOn = (match && ['C', 'D'].includes(match.type)) ? false : !mpFlag.level;
+  const mpMarker = mpFlag.level
+    ? `<div style="font-size:9px;color:#B7791F;margin-top:2px;line-height:1.2" title="${escHtml('Possible multi-performer — ' + mpFlag.reasons.join('; ') + '. Super defaulted OFF; confirm in Review.')}">⚠ duo/group?</div>`
+    : '';
+
   const tr = document.createElement('tr');
   if (dupWarning) tr.style.background = '#FFFBEB';
   tr.id = 'row-' + id;
@@ -1814,9 +1961,10 @@ function appendInvoiceRow(tbody, id, data, match, filename, dupWarning) {
       <input type="hidden" id="itype-${id}" value="${isAP ? 'ap' : 'event'}">
     </td>
     <td style="text-align:center;vertical-align:middle;">
-      <input type="checkbox" id="s1-super-${id}" ${(match && ['C','D'].includes(match.type)) ? '' : 'checked'}
+      <input type="checkbox" id="s1-super-${id}" ${superDefaultOn ? 'checked' : ''}
         style="cursor:pointer;width:15px;height:15px;accent-color:#27AE60"
-        title="Withhold 12% super for this invoice. Defaults ON for sole traders (Type A/B), OFF for companies/partnerships. Untick to skip super for this contractor. To exclude the whole invoice, remove it with the ✕ button.">
+        title="Deduct super for this invoice (12% by default, or the contractor's Zoho rate). Defaults ON for sole traders (Type A/B), OFF for companies/partnerships and for possible duo/group invoices. Untick to skip super for this contractor. To exclude the whole invoice, remove it with the ✕ button.">
+      ${mpMarker}
     </td>
     <td style="white-space:nowrap">
       <button class="btn btn-secondary btn-sm" onclick="openReviewModal('${id}')" id="rv-btn-${id}" title="Review invoice — verify &amp; correct extracted fields" style="margin-right:3px">👁 Review</button>
@@ -1896,6 +2044,7 @@ function clearAllInvoices() {
     Object.keys(store).forEach(k => delete store[k]);
   });
   if (window.invoiceSuperData) Object.keys(invoiceSuperData).forEach(k => delete invoiceSuperData[k]);
+  Object.keys(invoiceSuperShareData).forEach(k => delete invoiceSuperShareData[k]);
   if (window.invoicePaidData)  Object.keys(invoicePaidData).forEach(k => delete invoicePaidData[k]);
   if (window.invoiceTypeData)  Object.keys(invoiceTypeData).forEach(k => delete invoiceTypeData[k]);
   Object.keys(invoicePerfGuess).forEach(k => delete invoicePerfGuess[k]);
@@ -1974,6 +2123,13 @@ function openReviewModal(id) {
   g('rv-exp-accommodation').value = storedExp.accommodation || '';
   g('rv-exp-travel').value        = storedExp.travel        || '';
   if (g('rv-exp-other')) g('rv-exp-other').value = storedExp.other || '';
+
+  // Duo / group super panel — shown when this invoice is flagged as a possible multi-performer act.
+  // Restore the share input first so rvUpdateServiceFee()/the mode picker see the saved value.
+  const storedShare = invoiceSuperShareData['id_' + id];
+  if (g('rv-mp-share')) g('rv-mp-share').value = (storedShare != null ? storedShare : '');
+  rvSyncMultiPerfPanel(id);
+
   rvUpdateServiceFee();
 
   // Trigger perf date day-of-week display
@@ -2274,6 +2430,43 @@ function reviewViewPrevious() {
   const prevId = allRows[currentIdx - 1];
   closeReviewModal();
   setTimeout(() => openReviewModal(prevId), 80);
+}
+
+// Remove the current invoice from the run without leaving the Review modal.
+// Cleans up all per-invoice data stores, then advances to the next invoice
+// (preferring an unreviewed one) — or closes the modal if none remain.
+function reviewRemoveInvoice() {
+  const id = reviewModalRowId;
+  if (id == null) return;
+
+  const nm = (document.getElementById('name-' + id)?.value || '').trim();
+  if (!confirm(`Remove this invoice${nm ? ' for ' + nm : ''} from the run?\n\nIt will be taken out of the list and won't be included in any export. This can't be undone.`)) return;
+
+  // Decide where to go next BEFORE the row is removed.
+  const allRows = reviewableRowIds();
+  const currentIdx = allRows.indexOf(String(id));
+  const candidates = [
+    ...allRows.slice(currentIdx + 1),
+    ...allRows.slice(0, currentIdx),
+  ].filter(rid => String(rid) !== String(id));
+  const nextId = candidates.find(rid => !reviewedRows.has(String(rid))) || candidates[0] || null;
+
+  // Drop it from the review/flag tracking sets.
+  reviewedRows.delete(String(id));
+  flaggedRows.delete(String(id));
+
+  // Clear every per-invoice data store keyed by this id (mirrors clearAllInvoices).
+  [invoiceGSTData, invoiceExpenseData, invoiceBookingData, invoiceRawText, invoiceSuperShareData,
+   window.invoiceSuperData, window.invoicePaidData, window.invoiceTypeData].forEach(store => {
+    if (store) delete store['id_' + id];
+  });
+  delete invoicePerfGuess['id_' + id];
+
+  // Close, then remove the row (revokes its PDF URL + updates the process count).
+  closeReviewModal();
+  removeRow(id);
+
+  if (nextId) setTimeout(() => openReviewModal(nextId), 80);
 }
 
 async function reviewConfirmAndNext() {
@@ -2585,7 +2778,7 @@ function updateReviewStatus() {
             <th style="${thStyle};text-align:center">Paid?</th>
             <th style="${thStyle};text-align:left">Event date</th>
             <th style="${thStyle};text-align:left">Booking</th>
-            <th style="${thStyle};text-align:right">Cost</th>
+            <th style="${thStyle};text-align:right">Cost<br><span id="rv-cost-tally" style="font-weight:700;font-size:10px;color:#86EFAC">—</span></th>
             <th style="${thStyle};text-align:right">Near</th>
           </tr></thead>`;
         let body = '';
@@ -2704,6 +2897,58 @@ function rvUpdateServiceFee() {
   }
 }
 
+// ── Duo / group super panel (Review modal) ────────────────────────────────────
+// Shows/hides the amber multi-performer prompt for the current invoice and seeds its mode.
+function rvSyncMultiPerfPanel(id) {
+  const panel  = document.getElementById('rv-multiperf');
+  const plain  = document.getElementById('rv-super-plain');
+  if (!panel) return;
+  const g = el => document.getElementById(el);
+  const name  = g('rv-name')?.value || '';
+  const abn   = (g('rv-abn')?.value || '').replace(/\s/g, '');
+  const total = parseFloat(g('rv-total')?.value || '0') || 0;
+  const date  = g('rv-date')?.value || g('rv-perfdate')?.value || '';
+  const match = matchContractor(name, abn);
+  const flag  = multiPerfFlag(id, match, name, total, date);
+
+  if (!flag.level) {
+    panel.style.display = 'none';
+    if (plain) plain.style.display = '';   // restore the normal single "Withhold super?" toggle
+    delete invoiceSuperShareData['id_' + id]; // no longer a multi-performer row → drop any stale share override
+    return;
+  }
+
+  // Flagged → show the panel, hide the plain toggle (the radios become the single control).
+  panel.style.display = 'block';
+  if (plain) plain.style.display = 'none';
+  const reasonEl = g('rv-multiperf-reason');
+  if (reasonEl) {
+    const lead = flag.level === 'ambiguous' ? 'This booking might be a group' : 'This looks like a multi-performer booking';
+    reasonEl.textContent = `${lead} — ${flag.reasons.join('; ')}. Super is OFF by default; confirm how to treat it.`;
+  }
+
+  // Determine the current mode from saved state: share value → 'share'; withhold on → 'solo'; else 'none'.
+  const storedShare = invoiceSuperShareData['id_' + id];
+  const withholdOn  = g('rv-super')?.checked;
+  let mode;
+  if (storedShare != null && storedShare !== '' && parseFloat(storedShare) > 0) mode = 'share';
+  else if (withholdOn) mode = 'solo';
+  else mode = 'none';
+  rvSetMultiPerfMode(mode);
+}
+
+// Apply a multi-performer mode: 'solo' (super on full) | 'share' (super on entered share) | 'none' (no super).
+// Keeps the hidden "Withhold super?" checkbox (rv-super) in sync — that stays the canonical withhold flag.
+function rvSetMultiPerfMode(mode) {
+  const share   = document.getElementById('rv-mp-share');
+  const superCb = document.getElementById('rv-super');
+  document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => { r.checked = (r.value === mode); });
+  if (mode === 'solo')      { if (superCb) superCb.checked = true;  if (share) share.value = ''; }
+  else if (mode === 'share'){ if (superCb) superCb.checked = true;  }
+  else                      { if (superCb) superCb.checked = false; if (share) share.value = ''; } // 'none'
+  rvUpdateServiceFee();
+}
+
 let rvABRTimer = null;
 function rvAutoABR(val) {
   const clean = (val || '').replace(/\s/g, '');
@@ -2777,6 +3022,18 @@ function rvBookingSelectionChanged(userInitiated) {
   const selectedTotal = checked.reduce((s, cb) => s + (parseFloat(cb.dataset.cost) || 0), 0);
   const invoiceTotal  = parseFloat(document.getElementById('rv-total')?.value || '0');
 
+  // Running tally under the COST column header — sums the cost of every ticked booking.
+  const tallyEl = document.getElementById('rv-cost-tally');
+  if (tallyEl) {
+    if (!checked.length) { tallyEl.textContent = '—'; tallyEl.style.color = '#86EFAC'; }
+    else {
+      tallyEl.textContent = '$' + selectedTotal.toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+      // green if it matches the invoice total, amber if it differs
+      const match = invoiceTotal > 0 && Math.abs(selectedTotal - invoiceTotal) <= 1;
+      tallyEl.style.color = match ? '#86EFAC' : '#FBD38D';
+    }
+  }
+
   // ── Total-card flag: quiet red border when the invoice is billed for MORE than Zoho expected ──
   rvFlagTotalVsBooking(invoiceTotal, selectedTotal, checked.length);
 
@@ -2810,8 +3067,8 @@ function rvRenderExtraPerfDates(checked) {
     const dateVal = cb.dataset.date || '';
     const bname = cb.dataset.name || '';
     const readable = dateVal ? fmtReadableDOW(dateVal) : '';
-    return `<div>
-      <div style="color:#8BAAC0;font-size:9px;margin-bottom:2px;font-weight:600;letter-spacing:.3px">EVENT DATE ${i + 2}${bname ? ` · <span style="color:#93c5fd;font-weight:500">${escHtml(bname)}</span>` : ''}</div>
+    return `<div style="flex:0 0 200px;max-width:240px">
+      <div style="color:#8BAAC0;font-size:9px;margin-bottom:2px;font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(bname)}">EVENT DATE ${i + 2}${bname ? ` · <span style="color:#93c5fd;font-weight:500">${escHtml(bname)}</span>` : ''}</div>
       <input type="date" value="${dateVal}" data-extra-bid="${bid}"
         onchange="rvExtraPerfDateChanged('${bid}', this.value); this.nextElementSibling.textContent=fmtReadableDOW(this.value)"
         onclick="try{this.showPicker()}catch(e){}"
@@ -2872,6 +3129,17 @@ function reviewLooksGood() {
   window.invoiceSuperData['id_' + id] = rvSuperChecked;
   const s1SuperEl = document.getElementById('s1-super-' + id);
   if (s1SuperEl) s1SuperEl.checked = rvSuperChecked;
+
+  // Duo / group: persist this performer's super-assessable share (only when the panel is shown,
+  // 'share' mode is selected, and a positive amount is entered). Otherwise clear any prior override.
+  const mpVisible = document.getElementById('rv-multiperf')?.style.display !== 'none';
+  const mpMode    = document.querySelector('input[name="rv-mp-mode"]:checked')?.value;
+  const shareNum  = parseFloat(document.getElementById('rv-mp-share')?.value || '');
+  if (mpVisible && mpMode === 'share' && isFinite(shareNum) && shareNum > 0) {
+    invoiceSuperShareData['id_' + id] = shareNum;
+  } else {
+    delete invoiceSuperShareData['id_' + id];
+  }
 
   // Save expense splits
   const expParking       = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
@@ -3134,6 +3402,8 @@ function updateProcessCount() {
   const eventOnly = pdfRows + manualRows;
   document.getElementById('process-count').textContent = total
     ? `${total} invoice${total!==1?'s':''} ready to process${apRows ? ` (incl. ${apRows} AP)` : ''}` : '';
+  const btn = document.getElementById('process-btn');
+  if (btn) btn.innerHTML = total ? `Process &amp; Review ${total} Invoice${total!==1?'s':''} →` : 'Process &amp; Review Invoices →';
 }
 
 // ── Manual entry ──
@@ -3342,7 +3612,12 @@ function collectRows() {
     // Super is withheld on service fee + travel (time-based), but NOT on parking/accommodation/other
     // (pure reimbursements — e.g. parking, accom, and "other" out-of-pocket purchases like a table or cord)
     const superExcluded = expenses ? ((expenses.parking||0) + (expenses.accommodation||0) + (expenses.other||0)) : 0;
-    const superBase = total - superExcluded;
+    // Duo/group override: when the operator has set this performer's own share (Review modal),
+    // super is assessed on that amount instead of the service fee. Payment is unchanged — Bill 1 is
+    // total minus this (smaller) super, so the performer receives the partner's portion in cash.
+    const shareOverride = invoiceSuperShareData['id_'+id];
+    const hasShareOverride = shareOverride != null && shareOverride !== '' && isFinite(parseFloat(shareOverride)) && parseFloat(shareOverride) > 0;
+    const superBase = hasShareOverride ? parseFloat(shareOverride) : (total - superExcluded);
     // Explicitly-linked bookings from the Review modal (takes precedence over fuzzy match for paid check)
     const linkedBookings = invoiceBookingData['id_'+id] || null;
     return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, withholdSuper, invoiceType, source, rowId: id, linkedBookings};
@@ -3635,6 +3910,7 @@ function linkContractor(rowId, contractorId) {
     fundUSI: c.fundUSI || null,
     fundABN: c.fundABN || null,
     memberNumber: c.memberNumber || null,
+    xeroName: c.xeroName || null,
     email: c.email || null,
     phone: c.phone || null,
     abn: c.abn || p.abn || null,
@@ -4044,6 +4320,10 @@ function exportXeroCSV() {
     // use a safe fallback so the export never crashes on a missing contractor.
     const c = p.contractor || {};
     const cName     = p.contractor?.name || p.name || '(Unknown)';
+    // The Xero bill "From"/ContactName uses the exact Xero entity name when we have it
+    // (e.g. "Jazz to Rock Entertainment Pty Ltd"), so it matches the existing Xero contact and
+    // doesn't create a duplicate. Falls back to the contractor name. Descriptions still use cName.
+    const billContact = c.xeroName || cName;
     const invNum    = p.invoiceNumber || autoInvNum(p);
     const dateXero  = resolveDate(p);
     const dateReadable = formatDateReadable(p.perfDate || p.date);
@@ -4085,7 +4365,7 @@ function exportXeroCSV() {
     const feeAmount = isGSTContractor
       ? (grossFee - superAmt / 1.1).toFixed(2)
       : (grossFee - superAmt).toFixed(2);
-    rows.push(mkRow(cName, billRef, eventRef, dateXero, dateXero, feeDesc, 1, feeAmount, acctCode, taxType));
+    rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, feeDesc, 1, feeAmount, acctCode, taxType));
 
     // Lines 2+ — expense splits (parking / accommodation / travel). Same billRef so Xero keeps
     // them on the one bill. Travel uses the sub-contractor account (direct cost of sale).
@@ -4102,7 +4382,7 @@ function exportXeroCSV() {
       expItems.filter(x => x.amount > 0).forEach(x => {
         const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
         const expDesc  = `${x.label} - ${cName} | Inv: ${invNum}`;
-        rows.push(mkRow(cName, billRef, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
+        rows.push(mkRow(billContact, billRef, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
       });
     }
   });
@@ -4132,7 +4412,7 @@ function exportXeroCSV() {
 // SEPARATE ABA batch from the contractor bills, so they live in their own CSV file.
 function exportSuperBillsCSV() {
   if (!superDeductionsEnabled()) {
-    alert('Super deductions are currently OFF.\n\nTick "Withhold super deductions" in the export panel to generate the super bills.');
+    showBanner('Super is currently OFF for this run. Tick “Include super contributions in this pay run” to generate the super bills.', 'warn');
     return;
   }
   const HDR = ['*ContactName','EmailAddress','POAddressLine1','POAddressLine2','POAddressLine3',
@@ -4189,7 +4469,7 @@ function exportSuperBillsCSV() {
     });
 
   if (rows.length === 1) {
-    alert('No super-eligible contractor invoices in this run — no super bills to generate.');
+    showBanner('No super-eligible contractor invoices in this run — no super bills to generate.', 'info');
     return;
   }
   downloadCSV(rows, `MEC_Xero_Bills_Super_${today()}.csv`);
@@ -4200,7 +4480,7 @@ function exportSuperBillsCSV() {
 // ══════════════════════════════════════════════════════════════════════════════
 function exportSuperCSV() {
   if (!superDeductionsEnabled()) {
-    alert('Super deductions are currently OFF.\n\nTick "Withhold super deductions" in the export panel to enable the Super CSV.');
+    showBanner('Super is currently OFF for this run. Tick “Include super contributions in this pay run” to enable the Super CSV.', 'warn');
     return;
   }
   const rows = [['EmployerName','MemberFirstName','MemberLastName','TFN',
@@ -4327,7 +4607,7 @@ function initSaffPeriodDefaults() {
 
 function exportSAFFCSV() {
   if (!superDeductionsEnabled()) {
-    alert('Super deductions are currently OFF.\n\nTick "Withhold super deductions" in the export panel to generate the SAFF file.');
+    showBanner('Super is currently OFF for this run. Tick “Include super contributions in this pay run” to generate the SAFF file.', 'warn');
     return;
   }
   const startEl = document.getElementById('saff-period-start');
@@ -4358,7 +4638,7 @@ function exportSAFFCSV() {
       if (p.invoiceNumber) e.refs.push(p.invoiceNumber);
     });
 
-  if (byMember.size === 0) { alert('No super-eligible contractors in this run — nothing to export.'); return; }
+  if (byMember.size === 0) { showBanner('No super-eligible contractors in this run — nothing to export.', 'info'); return; }
 
   const rows = [SAFF_HEADER.slice()];
   const warnings = [];
@@ -4949,6 +5229,8 @@ async function gmailScanInbox() {
   btn.disabled = true;
   btn.textContent = '⏳ Scanning…';
   statusEl.textContent = '';
+  // Revoke any cached attachment blob URLs from a previous scan before discarding the items.
+  gmailStagingItems.forEach(i => { if (i.pdfBlobUrl) { try { URL.revokeObjectURL(i.pdfBlobUrl); } catch (e) {} } });
   gmailStagingItems = [];
 
   const sel = document.getElementById('gmail-days-back');
@@ -4962,21 +5244,26 @@ async function gmailScanInbox() {
   const exclusions = '-from:danmurphys.com.au -subject:remittance -subject:"remittance advice" -subject:"This inbox is for pay"';
 
   try {
-    // Search 1: emails with PDF attachments, not yet labeled
+    // Search 1: emails with PDF attachments, not yet labeled (due for submission)
     const q1 = `has:attachment filename:pdf -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
     // Search 2: invoice-subject emails without attachments (likely contain links)
     const q2 = `(subject:invoice OR subject:"tax invoice") -has:attachment -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
+    // Search 3: PDF emails ALREADY labeled "Invoice Fetched" (shown in a separate section so you
+    // can see what's been done and re-fetch one for testing).
+    const q3 = `has:attachment filename:pdf label:"Invoice Fetched" ${exclusions} ${dateFilter}`;
 
     statusEl.textContent = 'Searching inbox…';
-    const [r1, r2] = await Promise.all([
+    const [r1, r2, r3] = await Promise.all([
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q1) + '&maxResults=50').then(r => r.json()),
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q2) + '&maxResults=20').then(r => r.json()),
+      gmailAPIFetch('/messages?q=' + encodeURIComponent(q3) + '&maxResults=50').then(r => r.json()),
     ]);
 
-    // Deduplicate — attachment emails take priority
+    // Deduplicate — attachment emails take priority, then links, then already-fetched
     const seen = new Map();
     for (const m of (r1.messages || [])) seen.set(m.id, 'attachment');
     for (const m of (r2.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'link'); }
+    for (const m of (r3.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'attachment'); }
 
     if (seen.size === 0) {
       statusEl.textContent = '✅ No new invoice emails found.';
@@ -4995,6 +5282,8 @@ async function gmailScanInbox() {
     }
 
     gmailRenderStaging();
+    // Read each attachment PDF to flag known suppliers (Dan Murphy's etc.) and untick them.
+    await gmailDetectSuppliers();
   } catch(e) {
     console.error('Gmail scan error:', e);
     statusEl.textContent = '❌ Error: ' + e.message;
@@ -5056,6 +5345,8 @@ function gmailProcessMessage(msg, expectedType) {
 
   // Check Gmail star (team uses this to flag emails being worked on)
   const starred = (msg.labelIds || []).includes('STARRED');
+  // Already imported? (labeled "Invoice Fetched") — shown in a separate section, unticked by default.
+  const fetched = !!gmailInvoiceFetchedLabelId && (msg.labelIds || []).includes(gmailInvoiceFetchedLabelId);
   const emailDateObj = dateStr ? new Date(dateStr) : null;
 
   // Match sender display name against Zoho contractor database + booking payment status
@@ -5068,8 +5359,11 @@ function gmailProcessMessage(msg, expectedType) {
   const unpaidBookings = pastBookings.filter(b => !b.entertainer.paid);
   const allPaid = pastBookings.length > 0 && unpaidBookings.length === 0;
 
-  const base = { messageId: msg.id, subject, from, date: dateFormatted, emailDateObj, selected: true, starred,
-    zohoMatch, zohoBookings, pastBookings, futureBookings, unpaidBookings, allPaid };
+  // Capture the email body for the import-review modal (HTML preferred; plain text fallback).
+  const bodyHtml = gmailBodyHtml(msg.payload);
+  const bodyTextFallback = gmailBodyText(msg.payload);
+  const base = { messageId: msg.id, subject, from, date: dateFormatted, emailDateObj, selected: true, starred, fetched,
+    zohoMatch, zohoBookings, pastBookings, futureBookings, unpaidBookings, allPaid, bodyHtml, bodyTextFallback };
 
   // Detect remittance/receipt-type emails — flag and uncheck by default
   const suspectWords = /remittance|receipt|payment\s+confirmation|payment\s+advice|paid\s+to\s+you/i;
@@ -5086,7 +5380,7 @@ function gmailProcessMessage(msg, expectedType) {
         filename: att.filename,
         attachmentId: att.attachmentId,
         size: att.size,
-        selected: !attSuspect && !allPaid,   // auto-uncheck if likely already processed
+        selected: !attSuspect && !allPaid && !fetched,   // auto-uncheck if suspect, already paid, or already fetched
         warning
       });
     }
@@ -5150,21 +5444,47 @@ function gmailRenderStaging() {
   const readyCt   = gmailStagingItems.filter(i => i.type === 'attachment' && !i.warning).length;
   const paidCt    = gmailStagingItems.filter(i => i.warning === 'already-paid').length;
   const remitCt   = gmailStagingItems.filter(i => i.warning === 'remittance').length;
+  const supplierCt= gmailStagingItems.filter(i => i.warning === 'supplier').length;
   const linkCt    = gmailStagingItems.filter(i => i.type === 'link').length;
   const unkCt     = gmailStagingItems.filter(i => i.type === 'unknown').length;
+  const fetchedCt = gmailStagingItems.filter(i => i.fetched).length;
   let s = `<strong style="color:#27AE60">📎 ${readyCt} ready to import</strong>`;
-  if (paidCt)  s += ` &nbsp;·&nbsp; <strong style="color:#C05621">⚠ ${paidCt} may already be paid</strong>`;
-  if (remitCt) s += ` &nbsp;·&nbsp; <span style="color:#C05621">${remitCt} remittance</span>`;
-  if (linkCt)  s += ` &nbsp;·&nbsp; <span style="color:#E8A020">🔗 ${linkCt} link only</span>`;
-  if (unkCt)   s += ` &nbsp;·&nbsp; <span style="color:#888">${unkCt} no PDF</span>`;
+  if (fetchedCt) s += ` &nbsp;·&nbsp; <span style="color:#5A7A86">✓ ${fetchedCt} already fetched</span>`;
+  if (paidCt)    s += ` &nbsp;·&nbsp; <strong style="color:#C05621">⚠ ${paidCt} may already be paid</strong>`;
+  if (remitCt)   s += ` &nbsp;·&nbsp; <span style="color:#C05621">${remitCt} remittance</span>`;
+  if (supplierCt)s += ` &nbsp;·&nbsp; <span style="color:#9333EA">🍷 ${supplierCt} supplier</span>`;
+  if (linkCt)    s += ` &nbsp;·&nbsp; <span style="color:#E8A020">🔗 ${linkCt} link only</span>`;
+  if (unkCt)     s += ` &nbsp;·&nbsp; <span style="color:#888">${unkCt} no PDF</span>`;
   summary.innerHTML = s;
 
   tbody.innerHTML = '';
-  gmailStagingItems.forEach((item, idx) => {
+  // Render in two stacked sections: due-for-submission first, already-fetched below.
+  const anyFetched = gmailStagingItems.some(i => i.fetched);
+  const order = [
+    ...gmailStagingItems.map((it, i) => ({ it, i })).filter(x => !x.it.fetched),
+    ...gmailStagingItems.map((it, i) => ({ it, i })).filter(x => x.it.fetched),
+  ];
+  const sectionDone = { due: false, fetched: false };
+  order.forEach(({ it: item, i: idx }) => {
+    if (anyFetched && !item.fetched && !sectionDone.due) {
+      const dh = document.createElement('tr');
+      dh.innerHTML = `<td colspan="10" style="background:#E8F4F7;color:#1D7A8C;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">📥 DUE FOR SUBMISSION</td>`;
+      tbody.appendChild(dh);
+      sectionDone.due = true;
+    }
+    if (item.fetched && !sectionDone.fetched) {
+      const fh = document.createElement('tr');
+      fh.innerHTML = `<td colspan="10" style="background:#EDF2F7;color:#5A7A86;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">✓ ALREADY FETCHED (previously imported) · tick a row to re-import for testing</td>`;
+      tbody.appendChild(fh);
+      sectionDone.fetched = true;
+    }
     const tr = document.createElement('tr');
+    if (item.fetched) tr.style.opacity = '0.7';
     const canImport = item.type === 'attachment';
     const typeIcon = item.type === 'attachment' ? '📎' : item.type === 'link' ? '🔗' : '❓';
-    const badge = item.warning === 'remittance'
+    const badge = item.warning === 'supplier'
+      ? `<span style="color:#9333EA;font-size:11px;font-weight:600" title="Detected as a ${item.supplier || 'supplier'} tax invoice (a purchase, not a contractor performance invoice). Unticked by default — open the row to review and include it if you do want it.">🍷 ${item.supplier || 'Supplier'}</span>`
+      : item.warning === 'remittance'
       ? `<span style="color:#C05621;font-size:11px;font-weight:600" title="Looks like a remittance advice or payment confirmation — not a contractor invoice. Unchecked by default.">⚠ Remittance?</span>`
       : item.warning === 'already-paid'
       ? `<span style="color:#C05621;font-size:11px;font-weight:600" title="All Zoho bookings for this contractor appear already paid — this invoice may already have been processed. Unchecked by default.">⚠ May be paid</span>`
@@ -5224,6 +5544,13 @@ function gmailRenderStaging() {
       <td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.filename}">${item.filename}</td>
       <td>${badge}</td>
       <td style="white-space:nowrap">${previewBtn}${actionCell ? ' ' + actionCell : ''}</td>`;
+    // Click anywhere on the row (except a control) to open the import-review modal.
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to review this email + PDF and decide whether to import it';
+    tr.addEventListener('click', e => {
+      if (e.target.closest('button, input, a, select')) return;
+      gmailOpenReview(idx);
+    });
     tbody.appendChild(tr);
   });
 
@@ -5251,7 +5578,7 @@ function gmailToggleAll(checked) {
 
 async function gmailImportSelected() {
   const selected = gmailStagingItems.filter(i => i.selected && i.type === 'attachment');
-  if (!selected.length) { alert('No PDF invoices selected.'); return; }
+  if (!selected.length) { showBanner('No PDF invoices selected.', 'warn'); return; }
 
   const btn = document.getElementById('gmail-import-btn');
   const statusEl = document.getElementById('gmail-import-status');
@@ -5459,6 +5786,170 @@ function gmailClosePDF() {
   if (frame)   { if (overlay._blobUrl) { URL.revokeObjectURL(overlay._blobUrl); overlay._blobUrl = null; } frame.src = ''; }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Supplier detection (Dan Murphy's etc.) + import-review modal
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Return the supplier label if the text matches a known retail/AP supplier, else null.
+function detectSupplier(text) {
+  if (!KNOWN_SUPPLIERS.length) return null;
+  const t = (text || '').toLowerCase();
+  const digits = (text || '').replace(/\D/g, '');
+  for (const s of KNOWN_SUPPLIERS) {
+    if (s.keywords.some(k => k && t.includes(k))) return s.label;
+    if (s.abn && s.abn.length >= 9 && digits.includes(s.abn)) return s.label;
+  }
+  return null;
+}
+
+// Fetch an attachment's bytes once and cache a blob URL on the staging item (reused by the
+// supplier scan, the PDF preview and the import-review modal).
+async function gmailFetchAttachmentBlobUrl(item) {
+  if (item.pdfBlobUrl) return item.pdfBlobUrl;
+  const resp = await gmailAPIFetch('/messages/' + item.messageId + '/attachments/' + item.attachmentId);
+  const data = await resp.json();
+  if (!data.data) throw new Error('No attachment data returned');
+  const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = atob(b64);
+  const buf = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i);
+  const blob = new Blob([buf], { type: 'application/pdf' });
+  item._pdfBlob = blob;
+  item.pdfBlobUrl = URL.createObjectURL(blob);
+  return item.pdfBlobUrl;
+}
+
+// Extract the original HTML body of an email (for the import-review modal's left pane).
+function gmailBodyHtml(payload) {
+  if (!payload) return '';
+  const dec = d => atob(d.replace(/-/g, '+').replace(/_/g, '/'));
+  function find(parts) {
+    if (!parts) return '';
+    for (const p of parts) {
+      if (p.mimeType === 'text/html' && p.body?.data) return dec(p.body.data);
+      if (p.parts) { const h = find(p.parts); if (h) return h; }
+    }
+    return '';
+  }
+  if (payload.mimeType === 'text/html' && payload.body?.data) return dec(payload.body.data);
+  return find(payload.parts || []);
+}
+
+// Post-scan pass: read each attachment PDF and flag known suppliers. Low email volume makes the
+// extra fetch+parse acceptable; failures are swallowed so one bad PDF can't break the scan.
+async function gmailDetectSuppliers() {
+  if (!KNOWN_SUPPLIERS.length) return;
+  const statusEl = document.getElementById('gmail-scan-status');
+  const items = gmailStagingItems.filter(i => i.type === 'attachment' && i.attachmentId && !i.warning && !i.fetched);
+  let n = 0;
+  for (const item of items) {
+    n++;
+    if (statusEl) statusEl.textContent = `Checking PDFs for suppliers… ${n}/${items.length}`;
+    try {
+      await gmailFetchAttachmentBlobUrl(item);
+      const file = new File([item._pdfBlob], item.filename || 'invoice.pdf', { type: 'application/pdf' });
+      const data = await extractPDFData(file);
+      item.pdfText = data?._rawText || '';
+      const sup = detectSupplier(`${item.pdfText} ${item.subject || ''} ${item.from || ''}`);
+      if (sup) { item.supplier = sup; item.warning = 'supplier'; item.selected = false; }
+    } catch (e) { /* leave row unflagged on parse error */ }
+  }
+  const flagged = gmailStagingItems.filter(i => i.supplier).length;
+  if (statusEl) statusEl.textContent = `✅ Scan complete${flagged ? ` · ${flagged} supplier invoice(s) flagged & unticked` : ''}.`;
+  gmailRenderStaging();
+}
+
+// ── Import-review modal: original email (left) + PDF (right) + Include/Exclude + prev/next ──
+let gmailReviewIdx = -1;
+
+async function gmailOpenReview(idx) {
+  const item = gmailStagingItems[idx];
+  if (!item) return;
+  gmailReviewIdx = idx;
+  const g = id => document.getElementById(id);
+  const fromClean = (item.from || '').replace(/<[^>]+>/g, '').replace(/"/g, '').trim();
+  g('gmail-rev-subject').textContent = item.subject || '(no subject)';
+  g('gmail-rev-meta').textContent =
+    `${fromClean} · ${item.date || ''}` +
+    (item.zohoMatch ? ` · ✓ ${item.zohoMatch.name} in Zoho` : ' · ? not in Zoho') +
+    (item.supplier ? ` · 🍷 ${item.supplier} (supplier)` : '');
+
+  // Left pane — original HTML email (sandboxed; no scripts run)
+  const emailFrame = g('gmail-rev-email');
+  emailFrame.srcdoc = item.bodyHtml
+    || `<pre style="font-family:system-ui;white-space:pre-wrap;padding:14px;color:#333;font-size:13px">${escHtml(item.bodyTextFallback || '(no email body available)')}</pre>`;
+
+  // Right pane — the attached PDF (fetched + cached on demand)
+  const pdfFrame = g('gmail-rev-pdf');
+  const pdfNone  = g('gmail-rev-pdf-none');
+  g('gmail-rev-pdfname').textContent = (item.type === 'attachment' && item.filename) ? '— ' + item.filename : '';
+  if (item.type === 'attachment' && item.attachmentId) {
+    pdfNone.style.display = 'none';
+    pdfFrame.style.display = 'block';
+    pdfFrame.src = '';
+    try {
+      const url = await gmailFetchAttachmentBlobUrl(item);
+      if (gmailReviewIdx === idx) pdfFrame.src = url;   // ignore if user navigated away while loading
+    } catch (e) {
+      pdfFrame.style.display = 'none';
+      pdfNone.textContent = 'Could not load the PDF.';
+      pdfNone.style.display = 'flex';
+    }
+  } else {
+    pdfFrame.style.display = 'none';
+    pdfFrame.src = '';
+    pdfNone.textContent = item.type === 'link' ? 'This email has an invoice link, not a PDF attachment.' : 'No PDF attached to this email.';
+    pdfNone.style.display = 'flex';
+  }
+
+  gmailReviewUpdateButtons();
+  g('gmail-review-overlay').style.display = 'flex';
+}
+
+function gmailReviewUpdateButtons() {
+  const item = gmailStagingItems[gmailReviewIdx];
+  if (!item) return;
+  const g = id => document.getElementById(id);
+  const importable = item.type === 'attachment';
+  const inc = g('gmail-rev-include');
+  const exc = g('gmail-rev-exclude');
+  inc.disabled = !importable;
+  inc.style.opacity = importable ? '1' : '0.4';
+  inc.style.cursor = importable ? 'pointer' : 'not-allowed';
+  const willImport = importable && item.selected;
+  inc.style.outline = willImport ? '2px solid #4ADE80' : 'none';
+  exc.style.outline = !willImport ? '2px solid #F87171' : 'none';
+  const st = g('gmail-rev-status');
+  if (!importable)        { st.textContent = 'No PDF — can’t import'; st.style.background = '#475569'; st.style.color = '#e2e8f0'; }
+  else if (item.selected) { st.textContent = '✓ Will be imported';   st.style.background = '#166534'; st.style.color = '#fff'; }
+  else                    { st.textContent = '✗ Excluded';           st.style.background = '#7F1D1D'; st.style.color = '#fff'; }
+  g('gmail-rev-counter').textContent = `${gmailReviewIdx + 1} of ${gmailStagingItems.length}`;
+}
+
+function gmailReviewSetInclude(include) {
+  const item = gmailStagingItems[gmailReviewIdx];
+  if (!item || item.type !== 'attachment') return;
+  item.selected = !!include;
+  gmailReviewUpdateButtons();
+  gmailRenderStaging();   // reflect the tick/untick in the list behind the modal
+}
+
+async function gmailReviewNav(dir) {
+  let n = gmailReviewIdx + dir;
+  if (n < 0) n = 0;
+  if (n >= gmailStagingItems.length) n = gmailStagingItems.length - 1;
+  if (n === gmailReviewIdx) return;
+  await gmailOpenReview(n);
+}
+
+function gmailCloseReview() {
+  const overlay = document.getElementById('gmail-review-overlay');
+  if (overlay) overlay.style.display = 'none';
+  const ef = document.getElementById('gmail-rev-email'); if (ef) ef.srcdoc = '';
+  const pf = document.getElementById('gmail-rev-pdf');   if (pf) pf.src = '';
+  gmailReviewIdx = -1;   // blob URLs stay cached on items; revoked on next scan
+}
+
 async function gmailApplyLabel(messageId) {
   if (!gmailInvoiceFetchedLabelId) return;
   try {
@@ -5482,6 +5973,14 @@ function applyConfig(cfg){
   if (cfg.clearinghouseName) CLEARINGHOUSE_NAME = cfg.clearinghouseName;
   if (cfg.superAccount)      SUPER_ACCOUNT      = cfg.superAccount;
   if (cfg.superFormUrl)      SUPER_FORM_URL     = cfg.superFormUrl;
+  if (Array.isArray(cfg.variableLineupPerformers)) VARIABLE_LINEUP_PERFORMERS = cfg.variableLineupPerformers.map(s => String(s).toLowerCase().trim());
+  if (Array.isArray(cfg.multiPerformerOfferings))  MULTI_OFFERINGS            = cfg.multiPerformerOfferings.map(s => String(s).toLowerCase().trim());
+  if (Array.isArray(cfg.ambiguousOfferings))       AMBIGUOUS_OFFERINGS        = cfg.ambiguousOfferings.map(s => String(s).toLowerCase().trim());
+  if (Array.isArray(cfg.knownSuppliers)) KNOWN_SUPPLIERS = cfg.knownSuppliers.map(s => ({
+    label: s.label || s.name || 'Supplier',
+    keywords: (s.keywords || s.match || []).map(k => String(k).toLowerCase().trim()).filter(Boolean),
+    abn: String(s.abn || '').replace(/\D/g, '')
+  }));
 }
 
 // ── Super-details completeness (shared by the Stage-2 gate, exports and the Talent List) ──
