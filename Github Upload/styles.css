@@ -196,6 +196,11 @@
   .rv-tip-box.rv-tip-box--right { left:auto; right:-4px; transform:translateY(-4px); }
   .rv-tip:hover .rv-tip-box.rv-tip-box--right { transform:translateY(0); }
   .rv-tip-box.rv-tip-box--right::after { left:auto; right:9px; transform:none; }
+  /* Left-anchored variant — for ? icons near the left edge of the panel so the box
+     opens rightward and doesn't get clipped off the left side. */
+  .rv-tip-box.rv-tip-box--left { left:-4px; right:auto; transform:translateY(-4px); }
+  .rv-tip:hover .rv-tip-box.rv-tip-box--left { transform:translateY(0); }
+  .rv-tip-box.rv-tip-box--left::after { left:9px; right:auto; transform:none; }
   /* ── Stage 2 warning chips: instant, nicely-formatted hover tooltip ── */
   .s2-tip { position:relative; display:inline-block; }
   .s2-tip .s2-tip-box {
