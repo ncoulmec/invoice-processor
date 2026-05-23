@@ -5296,22 +5296,31 @@ function gmailHeader(headers, name) {
   return (headers || []).find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
 }
 
+// Decode Gmail base64url body data as UTF-8 (atob alone yields a Latin-1 string, which is what
+// produced the "Â" mojibake before non-breaking spaces / curly quotes in the email viewer).
+function gmailDecodeB64(data) {
+  const bin = atob((data || '').replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  try { return new TextDecoder('utf-8').decode(bytes); } catch (e) { return bin; }
+}
+
 function gmailBodyText(payload) {
   if (!payload) return '';
   function fromParts(parts) {
     if (!parts) return '';
     for (const p of parts) {
       if (p.mimeType === 'text/plain' && p.body?.data)
-        return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));
+        return gmailDecodeB64(p.body.data);
       if (p.parts) { const t = fromParts(p.parts); if (t) return t; }
     }
     for (const p of parts) {
       if (p.mimeType === 'text/html' && p.body?.data)
-        return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/')).replace(/<[^>]+>/g,' ');
+        return gmailDecodeB64(p.body.data).replace(/<[^>]+>/g,' ');
     }
     return '';
   }
-  if (payload.body?.data) return atob(payload.body.data.replace(/-/g,'+').replace(/_/g,'/'));
+  if (payload.body?.data) return gmailDecodeB64(payload.body.data);
   return fromParts(payload.parts || []);
 }
 
@@ -5822,7 +5831,7 @@ async function gmailFetchAttachmentBlobUrl(item) {
 // Extract the original HTML body of an email (for the import-review modal's left pane).
 function gmailBodyHtml(payload) {
   if (!payload) return '';
-  const dec = d => atob(d.replace(/-/g, '+').replace(/_/g, '/'));
+  const dec = gmailDecodeB64;
   function find(parts) {
     if (!parts) return '';
     for (const p of parts) {
@@ -5930,8 +5939,10 @@ function gmailReviewSetInclude(include) {
   const item = gmailStagingItems[gmailReviewIdx];
   if (!item || item.type !== 'attachment') return;
   item.selected = !!include;
-  gmailReviewUpdateButtons();
   gmailRenderStaging();   // reflect the tick/untick in the list behind the modal
+  // Advance to the next invoice so decisions flow; on the last one, just refresh the buttons.
+  if (gmailReviewIdx < gmailStagingItems.length - 1) gmailReviewNav(1);
+  else gmailReviewUpdateButtons();
 }
 
 async function gmailReviewNav(dir) {

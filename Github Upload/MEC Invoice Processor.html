@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523d">
+<link rel="stylesheet" href="styles.css?v=20260523e">
 </head>
 <body>
 
@@ -440,14 +440,14 @@
               </div>
             </div>
           </div>
-          <!-- footer: navigation + decision -->
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0F1B33;border-top:1px solid #2A3A5C">
-            <button onclick="gmailReviewNav(-1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:7px 13px;font-size:12px;cursor:pointer">← Prev</button>
-            <button onclick="gmailReviewNav(1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:7px 13px;font-size:12px;cursor:pointer">Next →</button>
-            <span id="gmail-rev-counter" style="color:#7E8FB0;font-size:11px"></span>
+          <!-- footer: all navigation + decision grouped together -->
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0F1B33;border-top:1px solid #2A3A5C">
+            <span id="gmail-rev-counter" style="color:#7E8FB0;font-size:11px;min-width:62px"></span>
             <div style="flex:1"></div>
+            <button onclick="gmailReviewNav(-1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">← Prev</button>
             <button id="gmail-rev-exclude" onclick="gmailReviewSetInclude(false)" style="background:#7F1D1D;color:#fff;border:1px solid #B91C1C;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✗ Don't import</button>
             <button id="gmail-rev-include" onclick="gmailReviewSetInclude(true)" style="background:#166534;color:#fff;border:1px solid #16A34A;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Import this</button>
+            <button onclick="gmailReviewNav(1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">Next →</button>
           </div>
         </div>
       </div>
@@ -537,63 +537,76 @@
       </div>
     </div>
 
-    <div style="margin-bottom:14px;padding:11px 16px;background:#EAF6F8;border:1px solid var(--teal-light);border-radius:8px;font-size:13px;color:var(--navy)">
-      <strong>Complete these in order:</strong>
-      &nbsp;①&nbsp;Xero contractor bills &nbsp;→&nbsp; ②&nbsp;Xero super bills &nbsp;→&nbsp; ③&nbsp;AustralianSuper SAFF.
-      <span style="color:#5A7A86">&nbsp;(The invoice-PDF ZIP below is an optional helper, not a required step.)</span>
+    <div style="margin-bottom:16px;font-size:13px;color:#5A7A86">
+      Complete these in order — steps <strong style="color:var(--navy)">1</strong> &amp; <strong style="color:var(--navy)">2</strong> import to Xero, step <strong style="color:var(--navy)">3</strong> uploads to AustralianSuper.
     </div>
 
-    <div class="export-grid">
-      <div class="export-card">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--teal);text-transform:uppercase">Export 1 of 3 · uploads to Xero</div>
-        <h3>📊 Xero Bills — Contractor</h3>
-        <p><strong>Bill 1.</strong> One bill per contractor engagement, paid <strong>net</strong> (invoice
-           total minus super). The super amount is noted on the first line; there is no separate super
-           line for non-GST contractors. Import via <strong>Accounting → Purchases → Import</strong> and
-           pay in the normal ABA batch.</p>
-        <div id="xero-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Download Contractor Bills CSV</button>
-      </div>
-      <div class="export-card">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--teal);text-transform:uppercase">Export 2 of 3 · uploads to Xero</div>
-        <h3>🧾 Xero Bills — Super</h3>
-        <p><strong>Bill 2.</strong> One bill per super-eligible invoice, billed to the
-           <strong>clearing-house supplier</strong>, single description line, coded to
-           <strong>478-C</strong> (BAS Excluded). Import alongside the contractor bills but
-           <strong>pay as a separate ABA batch</strong>.</p>
-        <div id="super-bills-preview-count" style="font-size:12px;color:#888;margin-bottom:8px;"></div>
-        <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;color:#555;margin-bottom:10px;cursor:pointer">
-          <input type="checkbox" id="super-consolidate" onchange="buildResultsView()" style="margin-top:2px">
-          <span><strong>Combine into one bill</strong> — a single bill to the clearing house with one line per contractor (instead of one bill per invoice). Cleaner if you pay the clearing house as a single payment.</span>
-        </label>
-        <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Download Super Bills CSV</button>
-      </div>
-      <div class="export-card">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#1E8449;text-transform:uppercase">Export 3 of 3 · uploads to AustralianSuper</div>
-        <h3>🏦 AustralianSuper SAFF (SuperStream)</h3>
-        <p>The <strong>SuperStream Alternative File Format</strong> file you upload to AustralianSuper's
-           Employer Portal / QuickSuper (<strong>Contribution Files → Upload File</strong>). Built to the
-           QuickSuper Contribution CSV spec (columns A–AM); one row per super-eligible performer.</p>
-        <div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-          <label style="font-size:11px;color:#555">Contribution period start
-            <input type="date" id="saff-period-start" style="display:block;font-size:12px;padding:3px 6px;margin-top:2px;border:1px solid #CBD5E0;border-radius:4px">
-          </label>
-          <label style="font-size:11px;color:#555">Contribution period end
-            <input type="date" id="saff-period-end" style="display:block;font-size:12px;padding:3px 6px;margin-top:2px;border:1px solid #CBD5E0;border-radius:4px">
-          </label>
+    <div style="display:flex;flex-direction:column;gap:14px;max-width:900px">
+
+      <!-- Step 1 — Contractor bills (+ PDF ZIP) -->
+      <div style="display:flex;gap:16px;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,0.04)">
+        <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px">1</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px">
+            <h3 style="margin:0;font-size:15px;color:var(--navy)">Contractor bills</h3>
+            <span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--teal);background:#E8F4F7;border-radius:11px;padding:2px 10px">→ Xero</span>
+          </div>
+          <p style="margin:0 0 13px;font-size:13px;color:#5A6B7B;line-height:1.55">One bill per contractor, paid <strong>net</strong> (total minus super), coded 301 / 301-A. Import via <strong>Accounting → Purchases → Import</strong>. The invoice-PDF ZIP holds every PDF renamed <em>Name · Invoice# · Date</em> so you can drag them onto the matching bills.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Contractor Bills CSV</button>
+            <button class="btn btn-secondary" onclick="downloadInvoicesZip()">⬇ Invoice PDFs (ZIP)</button>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:9px">
+            <span id="xero-preview-count" style="font-size:11px;color:#94A3B8"></span>
+            <span id="zip-preview-count" style="font-size:11px;color:#94A3B8"></span>
+          </div>
         </div>
-        <div id="saff-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-green" onclick="exportSAFFCSV()">⬇ Download SAFF CSV</button>
       </div>
-      <div class="export-card">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase">Optional helper</div>
-        <h3>📎 Invoice PDFs (for Xero)</h3>
-        <p>Re-download every uploaded invoice PDF in one ZIP, renamed
-           <strong>Name - Invoice# - Event date</strong> so they sort cleanly and drag straight onto
-           the matching Xero bills.</p>
-        <div id="zip-preview-count" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <button class="btn btn-secondary" onclick="downloadInvoicesZip()">⬇ Download all invoices (ZIP)</button>
+
+      <!-- Step 2 — Super bills -->
+      <div style="display:flex;gap:16px;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,0.04)">
+        <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px">2</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px">
+            <h3 style="margin:0;font-size:15px;color:var(--navy)">Super bills</h3>
+            <span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--teal);background:#E8F4F7;border-radius:11px;padding:2px 10px">→ Xero</span>
+          </div>
+          <p style="margin:0 0 12px;font-size:13px;color:#5A6B7B;line-height:1.55">One bill per super-eligible invoice, billed to the clearing-house supplier and coded <strong>478-C</strong> (BAS Excluded). Import alongside the contractor bills, but <strong>pay as a separate ABA batch</strong>.</p>
+          <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:#5A6B7B;margin-bottom:13px;cursor:pointer;max-width:560px">
+            <input type="checkbox" id="super-consolidate" onchange="buildResultsView()" style="margin-top:2px">
+            <span><strong>Combine into one bill</strong> — a single bill to the clearing house with one line per contractor. Cleaner if you pay the clearing house in a single payment.</span>
+          </label>
+          <div>
+            <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Super Bills CSV</button>
+            <span id="super-bills-preview-count" style="font-size:11px;color:#94A3B8;margin-left:12px"></span>
+          </div>
+        </div>
       </div>
+
+      <!-- Step 3 — AustralianSuper SAFF -->
+      <div style="display:flex;gap:16px;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,0.04)">
+        <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:#1E8449;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px">3</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px">
+            <h3 style="margin:0;font-size:15px;color:var(--navy)">AustralianSuper SAFF (SuperStream)</h3>
+            <span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#1E8449;background:#E8F6EE;border-radius:11px;padding:2px 10px">→ AustralianSuper</span>
+          </div>
+          <p style="margin:0 0 12px;font-size:13px;color:#5A6B7B;line-height:1.55">The SuperStream file you upload to AustralianSuper's Employer Portal / QuickSuper (<strong>Contribution Files → Upload File</strong>). One row per super-eligible performer.</p>
+          <div style="display:flex;gap:14px;margin-bottom:13px;flex-wrap:wrap;align-items:flex-end">
+            <label style="font-size:11px;color:#5A6B7B">Contribution period start
+              <input type="date" id="saff-period-start" style="display:block;font-size:12px;padding:4px 7px;margin-top:3px;border:1px solid #CBD5E0;border-radius:5px">
+            </label>
+            <label style="font-size:11px;color:#5A6B7B">Contribution period end
+              <input type="date" id="saff-period-end" style="display:block;font-size:12px;padding:4px 7px;margin-top:3px;border:1px solid #CBD5E0;border-radius:5px">
+            </label>
+          </div>
+          <div>
+            <button class="btn btn-green" onclick="exportSAFFCSV()">⬇ SAFF CSV</button>
+            <span id="saff-preview-count" style="font-size:11px;color:#94A3B8;margin-left:12px"></span>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <div style="margin-top:14px">
@@ -973,6 +986,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523d"></script>
+<script src="app.js?v=20260523e"></script>
 </body>
 </html>
