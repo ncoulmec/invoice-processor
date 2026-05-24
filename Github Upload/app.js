@@ -2141,7 +2141,7 @@ function openReviewModal(id) {
   const perfInput = g('rv-perfdate');
   const isGuess = !!invoicePerfGuess['id_' + id] && !!(perfInput && perfInput.value);
   if (perfGuessWarn) perfGuessWarn.style.display = isGuess ? 'block' : 'none';
-  if (perfInput) perfInput.style.borderColor = isGuess ? '#F6AD55' : '#3A5068';
+  if (perfInput) perfInput.style.borderColor = isGuess ? '#F6AD55' : '#5778A6';
 
   // Modal title
   const name = g('rv-name').value || 'Invoice';
@@ -2802,6 +2802,10 @@ function updateReviewStatus() {
         // Matched contractor but no bookings in cache window
         html = `<div style="font-size:11px;color:#8BAAC0">No bookings in cache (cache covers ~12 months). Check Zoho directly.</div>`;
       }
+    } else if (!bookings.length) {
+      // No Zoho booking data loaded this session — the table can't be built.
+      html = `<div style="font-size:11px;color:#FBD38D;background:rgba(246,173,85,0.10);border:1px solid rgba(246,173,85,0.4);border-radius:6px;padding:8px 10px;line-height:1.5">
+        ⚠ <strong>No Zoho bookings loaded this session.</strong> Go to <strong>Step 1</strong> and hit <strong>↻ Refresh from Zoho</strong> — the booking(s) for this contractor will then appear here to tick.</div>`;
     } else if (nameVal) {
       // ── Fuzzy fallback when contractor not matched ──
       const totalVal = parseFloat(document.getElementById('rv-total')?.value||'0');
@@ -2855,7 +2859,7 @@ function rvHighlightMissing() {
     const el = document.getElementById(id);
     if (!el) return;
     const empty = !(el.value || '').trim();
-    el.style.borderColor = empty ? '#FC8181' : '#46618A';
+    el.style.borderColor = empty ? '#FC8181' : '#5778A6';
     el.style.boxShadow  = empty ? '0 0 0 2px rgba(252,129,129,0.30)' : '';
   });
   rvUpdateRail();

@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523f">
+<link rel="stylesheet" href="styles.css?v=20260523g">
 </head>
 <body>
 
@@ -782,15 +782,15 @@
                   <input type="text" id="rv-name" tabindex="1" placeholder="Start typing to search Zoho…"
                     oninput="reviewSearchContractor(this.value); updateReviewStatus(); rvHighlightMissing();"
                     onblur="setTimeout(()=>{const d=document.getElementById('rv-drop');if(d)d.style.display='none'},200)"
-                    style="font-size:14px;padding:8px 10px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                    style="font-size:14px;padding:8px 10px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
                   <div id="rv-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #CBD5E0;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>
                 </div>
               </div>
               <div>
                 <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">ABN <span id="rv-abn-zoho-badge" style="display:none;font-size:9px;color:#60A5FA;font-weight:600;text-transform:none;letter-spacing:0;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:3px;padding:1px 5px;vertical-align:middle">from Zoho</span></div>
                 <input type="text" id="rv-abn" tabindex="2" maxlength="14" placeholder="XX XXX XXX XXX"
-                  oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#46618A'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
-                  style="font-size:13px;padding:8px 9px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                  oninput="updateReviewStatus(); rvAutoABR(this.value); this.style.borderColor='#5778A6'; this.title=''; const b=document.getElementById('rv-abn-zoho-badge'); if(b)b.style.display='none';"
+                  style="font-size:13px;padding:8px 9px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
             </div>
           </div>
@@ -804,62 +804,61 @@
           <!-- Phase: ENTER -->
           <div class="rv-phase-div">Enter the invoice details<span class="ln"></span></div>
 
-          <!-- Card 3 · Invoice facts (date · invoice # · total) -->
+          <!-- Card 3 · Invoice details (date + invoice # side by side · compact horizontal total) -->
           <div class="rv-card">
-            <div class="rv-card-head"><span class="rv-card-num">3</span>Invoice facts</div>
+            <div class="rv-card-head"><span class="rv-card-num">3</span>Invoice details</div>
 
-            <!-- Performance / event date -->
-            <div style="margin-bottom:9px">
-              <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px" title="The date of the actual performance or event — auto-filled when a Zoho booking is selected above">
-                Performance Date <span style="color:#4ADE80;font-size:8px;font-weight:500;text-transform:none;letter-spacing:0">(auto from booking)</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">
+              <!-- Performance / event date -->
+              <div>
+                <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px" title="The date of the actual performance or event — auto-filled when a Zoho booking is selected above">
+                  Performance Date <span style="color:#4ADE80;font-size:8px;font-weight:500;text-transform:none;letter-spacing:0">(auto)</span>
+                </div>
+                <input type="date" id="rv-perfdate" tabindex="3"
+                  onchange="updatePerfDateDOW(); rvHighlightMissing(); rvClearPerfGuess()"
+                  onclick="try{this.showPicker()}catch(e){}"
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
+                <div id="rv-perfdate-dow" style="font-size:11px;color:#9DB5CC;font-weight:600;margin-top:3px;min-height:14px"></div>
+                <div id="rv-perfdate-warn" style="display:none;font-size:10px;color:#F6AD55;font-weight:600;margin-top:2px">⚠ Best-guess — confirm against the invoice</div>
               </div>
-              <input type="date" id="rv-perfdate" tabindex="3"
-                onchange="updatePerfDateDOW(); rvHighlightMissing(); rvClearPerfGuess()"
-                onclick="try{this.showPicker()}catch(e){}"
-                style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
-              <div id="rv-perfdate-dow" style="font-size:12px;color:#9DB5CC;font-weight:600;margin-top:3px;min-height:15px"></div>
-              <div id="rv-perfdate-warn" style="display:none;font-size:11px;color:#F6AD55;font-weight:600;margin-top:2px">⚠ Best-guess date — please confirm against the invoice</div>
-              <div id="rv-perfdate-extra" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
-            </div>
-
-            <!-- Invoice number -->
-            <div style="margin-bottom:10px">
-              <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
-              <input type="text" id="rv-inv" tabindex="4" oninput="rvHighlightMissing()"
-                style="font-size:13px;padding:7px 9px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
-            </div>
-
-            <!-- Prominent Total card with auto-calculated breakdown -->
-            <div id="rv-total-card" style="background:rgba(39,174,96,0.08);border:1.5px solid rgba(39,174,96,0.45);border-radius:9px;padding:11px 13px;transition:border-color .15s,background .15s">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">
-                <div style="color:#8BAAC0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST)</div>
-                <div id="rv-total-warn" style="display:none;font-size:9px;font-weight:700;color:#FCA5A5;background:rgba(197,48,48,0.20);border:1px solid rgba(252,129,129,0.55);border-radius:4px;padding:2px 6px;white-space:nowrap"></div>
+              <!-- Invoice number -->
+              <div>
+                <div style="color:#8BAAC0;font-size:10px;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Invoice #</div>
+                <input type="text" id="rv-inv" tabindex="4" oninput="rvHighlightMissing()"
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
-              <div style="display:flex;align-items:center;gap:5px">
-                <span style="font-size:24px;color:#7Fd1a3;font-weight:700;line-height:1">$</span>
+            </div>
+            <!-- extra perf-date inputs (one per extra ticked booking) -->
+            <div id="rv-perfdate-extra" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
+
+            <!-- Total (inc. GST) — breakdown on the left, big number on the right -->
+            <div id="rv-total-card" style="background:rgba(39,174,96,0.08);border:1.5px solid rgba(39,174,96,0.45);border-radius:9px;padding:9px 13px;margin-top:10px;display:flex;align-items:center;gap:16px;transition:border-color .15s,background .15s">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+                  <span style="color:#8BAAC0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST)</span>
+                  <div id="rv-total-warn" style="display:none;font-size:9px;font-weight:700;color:#FCA5A5;background:rgba(197,48,48,0.20);border:1px solid rgba(252,129,129,0.55);border-radius:4px;padding:2px 6px;white-space:nowrap"></div>
+                </div>
+                <div style="font-size:11px;display:flex;flex-direction:column;gap:3px">
+                  <div style="display:flex;justify-content:space-between;color:#9DB5CC"><span>Subtotal (ex-GST)</span><span id="rv-bd-subtotal" style="color:#e2e8f0;font-weight:600">—</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;color:#9DB5CC">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+                      <input type="checkbox" id="rv-gst" tabindex="10" onchange="rvUpdateTotalBreakdown(); updateReviewStatus();" style="width:14px;height:14px;cursor:pointer;accent-color:#1D7A8C">
+                      <span>+ GST (10%)</span>
+                    </label>
+                    <span id="rv-bd-gst" style="color:#e2e8f0;font-weight:600">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);padding-top:4px;color:#fff;font-weight:700"><span>Total</span><span id="rv-bd-total">—</span></div>
+                </div>
+              </div>
+              <div style="flex:none;display:flex;align-items:center;gap:3px">
+                <span style="font-size:20px;color:#7Fd1a3;font-weight:700;line-height:1">$</span>
                 <input type="number" id="rv-total" tabindex="5" step="0.01" placeholder="0.00"
                   oninput="rvUpdateServiceFee(); rvUpdateTotalBreakdown(); rvBookingSelectionChanged();"
                   title="Invoice total including GST (if applicable). Super and Xero amounts are calculated from this."
-                  style="font-size:26px;font-weight:700;padding:4px 8px;width:100%;text-align:right;border:1px solid #46618A;border-radius:6px;background:#16263c;color:#fff;outline:none">
-              </div>
-              <div style="margin-top:9px;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;font-size:12px;display:flex;flex-direction:column;gap:5px">
-                <div style="display:flex;justify-content:space-between;color:#9DB5CC">
-                  <span>Subtotal (ex-GST)</span><span id="rv-bd-subtotal" style="color:#e2e8f0;font-weight:600">—</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;color:#9DB5CC">
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
-                    <input type="checkbox" id="rv-gst" tabindex="10" onchange="rvUpdateTotalBreakdown(); updateReviewStatus();" style="width:15px;height:15px;cursor:pointer;accent-color:#1D7A8C">
-                    <span>+ GST (10%)</span>
-                  </label>
-                  <span id="rv-bd-gst" style="color:#e2e8f0;font-weight:600">—</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);padding-top:5px;color:#fff;font-weight:700;font-size:13px">
-                  <span>Total (inc. GST)</span><span id="rv-bd-total">—</span>
-                </div>
+                  style="font-size:23px;font-weight:700;padding:5px 8px;width:120px;text-align:right;border:1px solid #5778A6;border-radius:6px;background:#16263c;color:#fff;outline:none">
               </div>
             </div>
           </div>
-
           <!-- Card 4 · Reimbursements / expense splits -->
           <div class="rv-card">
             <div class="rv-card-head"><span class="rv-card-num">4</span>Reimbursements &amp; expense splits <span style="font-weight:400;color:#6B86A3;text-transform:none;letter-spacing:0;margin-left:2px">· optional</span></div>
@@ -868,23 +867,23 @@
                 <label style="color:#9DB5CC;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">✈ Travel $
                   <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--left"><strong>Travel</strong>Stays inside the super base — super IS calculated on travel (treated as part of the service). Split it out only for accounting visibility.</span></span></label>
                 <input type="number" id="rv-exp-travel" tabindex="6" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
-                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
               <div>
                 <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🚗 Parking $</label>
                 <input type="number" id="rv-exp-parking" tabindex="7" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
-                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
               <div>
                 <label style="color:#9DB5CC;font-size:11px;display:block;margin-bottom:3px">🏨 Accom $</label>
                 <input type="number" id="rv-exp-accommodation" tabindex="8" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
-                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
               <div>
                 <label style="color:#9DB5CC;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">📦 Other $
                   <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Other (no super)</strong>A straight reimbursement for anything that isn't labour — e.g. buying a table, an extra cord, consumables they bought for the job. <strong style="display:inline;color:#FBD38D">No super is deducted on this amount.</strong> Use it when the contractor has attached a receipt/invoice for an out-of-pocket purchase.</span></span></label>
                 <input type="number" id="rv-exp-other" tabindex="9" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
-                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                  style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
               </div>
             </div>
             <div id="rv-service-fee-display" style="color:#8BAAC0;font-size:11px;margin-top:4px"></div>
@@ -915,7 +914,7 @@
                       <input type="radio" name="rv-mp-mode" value="share" tabindex="13" onchange="rvSetMultiPerfMode('share')" style="cursor:pointer">
                       <span><strong>Group</strong> — super on this performer's share: $</span>
                       <input type="number" id="rv-mp-share" step="0.01" min="0" placeholder="0.00" oninput="rvSetMultiPerfMode('share')"
-                        style="width:92px;font-size:12px;padding:3px 6px;border:1px solid #46618A;border-radius:5px;background:#28415F;color:#fff;outline:none">
+                        style="width:92px;font-size:12px;padding:3px 6px;border:1px solid #5778A6;border-radius:5px;background:#33507A;color:#fff;outline:none">
                       <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--left"><strong>This performer's share</strong>The part of the invoice that is THIS performer's own labour fee — super is worked out on this amount only. The rest is paid to them in cash (with no super) to pass on to their co-performer(s). The payment to the performer is unchanged. We don't know the split — ask the performer or confirm the treatment with your accountant / ATO.</span></span>
                     </label>
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -1000,6 +999,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523f"></script>
+<script src="app.js?v=20260523g"></script>
 </body>
 </html>

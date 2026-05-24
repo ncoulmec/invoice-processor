@@ -217,7 +217,7 @@
                   text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
   .rv-phase-div::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:#60A5FA; }
   .rv-phase-div .ln { flex:1; height:1px; background:rgba(255,255,255,0.1); }
-  .rv-card { background:rgba(255,255,255,0.045); border:1px solid rgba(255,255,255,0.13); border-radius:8px; padding:10px 12px; }
+  .rv-card { background:rgba(0,0,0,0.20); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:10px 12px; }
   .rv-card-head { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; color:#cfe0f0;
                   text-transform:uppercase; letter-spacing:.4px; margin-bottom:9px; }
   .rv-card-num { width:19px; height:19px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
