@@ -2253,6 +2253,9 @@ function openReviewModal(id) {
   // Update Previous / Next button states
   rvUpdateNextPrevButtons();
 
+  // Reflect completion state on the progress rail
+  rvUpdateRail();
+
   // Focus contractor field after render
   setTimeout(() => g('rv-name')?.focus(), 80);
 }
@@ -2852,9 +2855,34 @@ function rvHighlightMissing() {
     const el = document.getElementById(id);
     if (!el) return;
     const empty = !(el.value || '').trim();
-    el.style.borderColor = empty ? '#FC8181' : '#3A5068';
+    el.style.borderColor = empty ? '#FC8181' : '#46618A';
     el.style.boxShadow  = empty ? '0 0 0 2px rgba(252,129,129,0.30)' : '';
   });
+  rvUpdateRail();
+}
+
+// ── Progress rail (Review modal) — reflects which of the 5 steps are complete ──
+// Match phase: 1 contractor, 2 booking · Enter phase: 3 invoice facts, 4 reimbursements, 5 super.
+// Steps 4/5 become reachable once a total is present (reimbursements optional; super has a default).
+function rvUpdateRail() {
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const bookingChosen = !!document.querySelector('.rv-booking-cb:checked') || !!val('rv-perfdate');
+  const done = {
+    1: !!val('rv-name'),
+    2: bookingChosen,
+    3: !!val('rv-inv') && !!val('rv-total'),
+    4: !!val('rv-total'),
+    5: !!val('rv-total')
+  };
+  let active = 0;
+  for (let i = 1; i <= 5; i++) { if (!done[i]) { active = i; break; } }
+  for (let i = 1; i <= 5; i++) {
+    const node = document.getElementById('rv-rail-' + i);
+    if (!node) continue;
+    node.classList.remove('rv-rail-node--done', 'rv-rail-node--active');
+    if (done[i]) { node.classList.add('rv-rail-node--done'); node.innerHTML = '✓'; }
+    else { node.innerHTML = String(i); if (i === active) node.classList.add('rv-rail-node--active'); }
+  }
 }
 
 function rvUpdateTotalBreakdown() {
@@ -3036,6 +3064,9 @@ function rvBookingSelectionChanged(userInitiated) {
 
   // ── Total-card flag: quiet red border when the invoice is billed for MORE than Zoho expected ──
   rvFlagTotalVsBooking(invoiceTotal, selectedTotal, checked.length);
+
+  // Booking selection drives the rail's "Match" phase (step 2)
+  rvUpdateRail();
 
   const bar = document.getElementById('rv-booking-total-bar');
   if (!bar) return;
