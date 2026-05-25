@@ -2121,7 +2121,7 @@ function openReviewModal(id) {
   const storedExp = invoiceExpenseData['id_' + id] || {};
   g('rv-exp-parking').value       = storedExp.parking       || '';
   g('rv-exp-accommodation').value = storedExp.accommodation || '';
-  g('rv-exp-travel').value        = storedExp.travel        || '';
+  if (g('rv-exp-travel')) g('rv-exp-travel').value = storedExp.travel || '';
   if (g('rv-exp-other')) g('rv-exp-other').value = storedExp.other || '';
 
   // Duo / group super panel — shown when this invoice is flagged as a possible multi-performer act.
@@ -2141,7 +2141,7 @@ function openReviewModal(id) {
   const perfInput = g('rv-perfdate');
   const isGuess = !!invoicePerfGuess['id_' + id] && !!(perfInput && perfInput.value);
   if (perfGuessWarn) perfGuessWarn.style.display = isGuess ? 'block' : 'none';
-  if (perfInput) perfInput.style.borderColor = isGuess ? '#F6AD55' : '#5778A6';
+  if (perfInput) perfInput.style.borderColor = isGuess ? '#B45309' : '#CBD5E0';
 
   // Modal title
   const name = g('rv-name').value || 'Invoice';
@@ -2175,7 +2175,7 @@ function openReviewModal(id) {
         batchBanner.innerHTML = `<span style="font-size:13px">📋</span> <span><strong>${sameContractorUnreviewed.length} more unreviewed invoice${sameContractorUnreviewed.length>1?'s':''}</strong> for ${escHtml(g('rv-name').value||'')} (${totalForContractor} total) — <span style="opacity:.8">Confirm &amp; Next will take you there</span></span>`;
       } else if (totalForContractor > 1) {
         batchBanner.style.display = 'flex';
-        batchBanner.innerHTML = `<span style="font-size:13px">✓</span> <span style="color:#4ADE80">All ${totalForContractor} invoices for ${escHtml(g('rv-name').value||'')} reviewed</span>`;
+        batchBanner.innerHTML = `<span style="font-size:13px">✓</span> <span style="color:#1F9D63">All ${totalForContractor} invoices for ${escHtml(g('rv-name').value||'')} reviewed</span>`;
       } else {
         batchBanner.style.display = 'none';
       }
@@ -2191,12 +2191,12 @@ function openReviewModal(id) {
   const flagBtn = g('rv-flag-btn');
   if (flagBtn) {
     if (flaggedRows.has(String(id))) {
-      flagBtn.style.background = 'rgba(232,160,32,0.35)';
-      flagBtn.style.color = '#FBD38D';
+      flagBtn.style.background = '#E6D3A8';
+      flagBtn.style.color = '#8A5B12';
       flagBtn.textContent = '⚠ Flagged';
     } else {
-      flagBtn.style.background = 'rgba(232,160,32,0.18)';
-      flagBtn.style.color = '#FBD38D';
+      flagBtn.style.background = '#FBF1DE';
+      flagBtn.style.color = '#8A5B12';
       flagBtn.textContent = '⚠ Needs attention';
     }
   }
@@ -2218,7 +2218,7 @@ function openReviewModal(id) {
         const fmt = zohoABN.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4');
         g('rv-abn').value = fmt;
         g('rv-abn').title = 'ABN imported from Zoho (not on invoice PDF)';
-        g('rv-abn').style.borderColor = '#60A5FA';
+        g('rv-abn').style.borderColor = '#2F6FB3';
         if (abnBadge) abnBadge.style.display = 'inline';
       }
     }
@@ -2280,7 +2280,7 @@ function rvClearPerfGuess() {
   const warn = document.getElementById('rv-perfdate-warn');
   const input = document.getElementById('rv-perfdate');
   if (warn) warn.style.display = 'none';
-  if (input) input.style.borderColor = '#3A5068';
+  if (input) input.style.borderColor = '#CBD5E0';
 }
 
 // Render readable [weekday], [date] [month] [year] for an ISO date string
@@ -2343,32 +2343,32 @@ function rvValidateBeforeConfirm() {
                   : '⚠ Missing fields';
   const bookingLink = paidBookingId
     ? `<a href="https://crm.zoho.com/crm/org657079535/tab/Potentials/${paidBookingId}" target="_blank" rel="noopener"
-         style="display:inline-block;margin-top:7px;font-size:11px;font-weight:600;color:#93c5fd;text-decoration:none;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.35);border-radius:5px;padding:4px 9px">↗ Check that Zoho booking</a>`
+         style="display:inline-block;margin-top:7px;font-size:11px;font-weight:600;color:#2F6FB3;text-decoration:none;background:#EAF2FB;border:1px solid rgba(96,165,250,0.35);border-radius:5px;padding:4px 9px">↗ Check that Zoho booking</a>`
     : '';
   const paidBanner = alreadyPaidWarn
-    ? `<div style="font-size:12px;color:#FCA5A5;background:rgba(197,48,48,0.15);border:1px solid rgba(252,129,129,0.4);border-radius:6px;padding:8px 10px;margin-bottom:${missingFields.length?'12px':'16px'};line-height:1.5">${alreadyPaidWarn}${bookingLink}</div>`
+    ? `<div style="font-size:12px;color:#B91C1C;background:rgba(197,48,48,0.15);border:1px solid rgba(252,129,129,0.4);border-radius:6px;padding:8px 10px;margin-bottom:${missingFields.length?'12px':'16px'};line-height:1.5">${alreadyPaidWarn}${bookingLink}</div>`
     : '';
 
   // Build popup with an editable input for each missing field
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `
-    <div style="background:#1B2A4A;border:1px solid #2A3E5C;border-radius:10px;padding:22px 26px;max-width:400px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.55)">
-      <div style="font-size:14px;font-weight:700;color:#FBD38D;margin-bottom:6px">${headerTxt}</div>
+    <div style="background:#F4F6F8;border:1px solid #E4E8EC;border-radius:10px;padding:22px 26px;max-width:400px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,0.55)">
+      <div style="font-size:14px;font-weight:700;color:#8A5B12;margin-bottom:6px">${headerTxt}</div>
       ${paidBanner}
-      ${missingFields.length ? '<div style="font-size:12px;color:#9DB5CC;margin-bottom:14px">Fill in below and click <strong style="color:#fff">Confirm</strong>, or <strong style="color:#fff">Go back</strong> to complete the form.</div>' : ''}
+      ${missingFields.length ? '<div style="font-size:12px;color:#5B6B7B;margin-bottom:14px">Fill in below and click <strong style="color:#1B2733">Confirm</strong>, or <strong style="color:#1B2733">Go back</strong> to complete the form.</div>' : ''}
       <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:16px">
         ${missingFields.map(f => `
           <div>
-            <label style="font-size:10px;color:#8BAAC0;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px">${f.label}</label>
+            <label style="font-size:10px;color:#5B6B7B;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px">${f.label}</label>
             <input type="${f.type}" id="rv-val-${f.key}" placeholder="${f.placeholder}"
               ${f.type==='number' ? 'step="0.01" min="0"' : ''}
-              style="width:100%;font-size:12px;padding:6px 9px;border:1px solid #FC8181;border-radius:5px;background:#243652;color:#fff;outline:none">
+              style="width:100%;font-size:12px;padding:6px 9px;border:1px solid #C0362C;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none">
           </div>`).join('')}
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button id="rv-val-cancel" style="background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">Go back</button>
-        <button id="rv-val-ok" style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">✓ Confirm</button>
+        <button id="rv-val-cancel" style="background:#F0F3F6;color:#ccc;border:1px solid #CBD5E0;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">Go back</button>
+        <button id="rv-val-ok" style="background:#27AE60;color:#1B2733;border:none;border-radius:5px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">✓ Confirm</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -2433,6 +2433,16 @@ function reviewViewPrevious() {
   const prevId = allRows[currentIdx - 1];
   closeReviewModal();
   setTimeout(() => openReviewModal(prevId), 80);
+}
+
+function reviewViewNext() {
+  // Navigate to the next invoice in DOM order without confirming the current one
+  const allRows = reviewableRowIds();
+  const currentIdx = allRows.indexOf(String(reviewModalRowId));
+  if (currentIdx < 0 || currentIdx >= allRows.length - 1) return; // already at the last
+  const nextId = allRows[currentIdx + 1];
+  closeReviewModal();
+  setTimeout(() => openReviewModal(nextId), 80);
 }
 
 // Remove the current invoice from the run without leaving the Review modal.
@@ -2518,6 +2528,14 @@ function rvUpdateNextPrevButtons() {
     prevBtn.style.pointerEvents = currentIdx <= 0 ? 'none' : '';
   }
 
+  // Next button (non-actioning scan) — dim if at the last invoice
+  const nextScanBtn = document.getElementById('rv-next-btn');
+  if (nextScanBtn) {
+    const atLast = currentIdx < 0 || currentIdx >= allRows.length - 1;
+    nextScanBtn.style.opacity = atLast ? '0.35' : '1';
+    nextScanBtn.style.pointerEvents = atLast ? 'none' : '';
+  }
+
   // Confirm & Next button — change text if this is the last unreviewed
   const nextBtn = document.getElementById('rv-save-next-btn');
   if (nextBtn) {
@@ -2574,7 +2592,7 @@ function reviewFlagIssue() {
   }
   // Update flag button in modal
   const flagBtn = document.getElementById('rv-flag-btn');
-  if (flagBtn) { flagBtn.style.background = 'rgba(232,160,32,0.35)'; flagBtn.textContent = '⚠ Flagged'; }
+  if (flagBtn) { flagBtn.style.background = '#E6D3A8'; flagBtn.textContent = '⚠ Flagged'; }
   closeReviewModal();
 }
 
@@ -2652,10 +2670,10 @@ function updateReviewStatus() {
 
   // ── Comparison table helpers ──
   const cmp = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  const YES = (txt) => `<span style="color:#4ADE80;font-weight:600">✓ ${txt}</span>`;
-  const NO  = (txt) => `<span style="color:#9DB5CC">${txt}</span>`;
-  const WARN= (txt) => `<span style="color:#FC8181;font-weight:600">⚠ ${txt}</span>`;
-  const MUTED = (txt) => `<span style="color:#8BAAC0">${txt}</span>`;
+  const YES = (txt) => `<span style="color:#1F9D63;font-weight:600">✓ ${txt}</span>`;
+  const NO  = (txt) => `<span style="color:#5B6B7B">${txt}</span>`;
+  const WARN= (txt) => `<span style="color:#C0362C;font-weight:600">⚠ ${txt}</span>`;
+  const MUTED = (txt) => `<span style="color:#5B6B7B">${txt}</span>`;
 
   // ── Zoho column ──
   const match = contractors.find(c =>
@@ -2665,15 +2683,23 @@ function updateReviewStatus() {
 
   if (match) {
     const typeDesc = rvTypeDesc(match.type);
-    const fundNote = match.fundName ? ` <span style="color:#8BAAC0;font-size:10px">(${escHtml(match.fundName)})</span>` : '';
-    cmp('rv-cmp-zoho-name',   `<span style="color:#fff;font-weight:600">${escHtml(match.name)}</span>`);
-    cmp('rv-cmp-zoho-entity', `${escHtml(typeDesc)} · <strong style="color:#ddd">Type ${match.type}</strong>`);
+    const fundNote = match.fundName ? ` <span style="color:#5B6B7B;font-size:10px">(${escHtml(match.fundName)})</span>` : '';
+    // Surface the exact Xero entity name (the bill "From"). If Zoho has none, flag it —
+    // that's why a bill would fall back to the Team-record name.
+    const xn = (match.xeroName || '').trim();
+    const xeroNote = xn
+      ? (xn !== (match.name || '').trim()
+          ? `<br><span style="color:#5B6B7B;font-size:9px">→ Xero: ${escHtml(xn)}</span>`
+          : '')
+      : `<br><span style="color:#B45309;font-size:9px">⚠ no Xero entity name in Zoho — bill will use this name</span>`;
+    cmp('rv-cmp-zoho-name',   `<span style="color:#1B2733;font-weight:600">${escHtml(match.name)}</span>${xeroNote}`);
+    cmp('rv-cmp-zoho-entity', `${escHtml(typeDesc)} · <strong style="color:#1B2733">Type ${match.type}</strong>`);
     cmp('rv-cmp-zoho-gst',    match.gst ? YES('Registered') : NO('Not registered'));
-    cmp('rv-cmp-zoho-super',  match.superEligible ? YES('Withheld') + fundNote : NO('Not required'));
+    cmp('rv-cmp-zoho-super',  match.superEligible ? YES('Deducted') + fundNote : NO('Not required'));
     cmp('rv-cmp-zoho-abn',    match.abn ? MUTED(match.abn) : MUTED('—'));
   } else if (nameVal) {
     const zohoSearchURL = `https://crm.zoho.com/crm/org657079535/search?searchword=${encodeURIComponent(nameVal)}&isRelevance=false`;
-    const notFound = `${WARN('Not in Zoho')} <a href="${zohoSearchURL}" target="_blank" style="color:#93c5fd;font-size:10px;text-decoration:none;margin-left:4px">🔍 Search</a>`;
+    const notFound = `${WARN('Not in Zoho')} <a href="${zohoSearchURL}" target="_blank" style="color:#2F6FB3;font-size:10px;text-decoration:none;margin-left:4px">🔍 Search</a>`;
     cmp('rv-cmp-zoho-name',   notFound);
     cmp('rv-cmp-zoho-entity', MUTED('—'));
     cmp('rv-cmp-zoho-gst',    MUTED('—'));
@@ -2689,7 +2715,7 @@ function updateReviewStatus() {
     const r = abrCache[abnVal];
     const entityDesc = rvAbrEntityDesc(r);
     const icon = r.isCompany ? '🏢 ' : '👤 ';
-    cmp('rv-cmp-abr-name',   `<span style="color:#fff;font-weight:600">${icon}${escHtml(r.entityName || '—')}</span>`);
+    cmp('rv-cmp-abr-name',   `<span style="color:#1B2733;font-weight:600">${icon}${escHtml(r.entityName || '—')}</span>`);
     cmp('rv-cmp-abr-entity', MUTED(escHtml(entityDesc)));
     cmp('rv-cmp-abr-gst',    r.isGST ? YES('Registered') : NO('Not registered'));
     cmp('rv-cmp-abr-super',  !r.isCompany ? YES('Eligible (individual)') : NO('Not required'));
@@ -2701,6 +2727,18 @@ function updateReviewStatus() {
     ['rv-cmp-abr-name','rv-cmp-abr-entity','rv-cmp-abr-gst','rv-cmp-abr-super','rv-cmp-abr-abn'].forEach(id => cmp(id, MUTED('—')));
   }
 
+  // Mirror the super-relevant identity bits into the Step 5 (Super) hover panel,
+  // reusing the values just computed for the main comparison table.
+  const supBody = document.getElementById('rv-super-idcheck-body');
+  if (supBody) {
+    const gh = id => document.getElementById(id)?.innerHTML || '—';
+    supBody.innerHTML =
+      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Entity</span><span>${gh('rv-cmp-abr-entity')}</span></div>` +
+      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">GST</span><span>${gh('rv-cmp-abr-gst')}</span></div>` +
+      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Super · Zoho</span><span>${gh('rv-cmp-zoho-super')}</span></div>` +
+      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Super · ABR</span><span>${gh('rv-cmp-abr-super')}</span></div>`;
+  }
+
   // ── Booking links (right-side date panel) ──
   const bookLinkEl = document.getElementById('rv-booking-link');
   if (bookLinkEl) {
@@ -2709,7 +2747,7 @@ function updateReviewStatus() {
     const abnVal2  = (document.getElementById('rv-abn')?.value||'').replace(/\s/g,'');
     const PAY_VIEW = 'https://crm.zoho.com/crm/org657079535/tab/Potentials/custom-view/2877869000001220059/list';
     const payViewBtn = `<a href="${PAY_VIEW}" target="_blank"
-      style="display:inline-block;background:rgba(255,165,0,0.12);color:#FBD38D;border:1px solid rgba(255,165,0,0.25);border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">📋 Pay Entertainer view</a>`;
+      style="display:inline-block;background:#FBF1DE;color:#8A5B12;border:1px solid #E6D3A8;border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">📋 Pay Entertainer view</a>`;
 
     // Resolve matched contractor
     const zohoMatch = contractors.find(c =>
@@ -2718,7 +2756,7 @@ function updateReviewStatus() {
     );
     const teamBtn = zohoMatch?.zohoId
       ? `<a href="https://crm.zoho.com/crm/org657079535/tab/CustomModule3/${zohoMatch.zohoId}" target="_blank"
-          style="display:inline-block;background:rgba(96,165,250,0.1);color:#93c5fd;border:1px solid rgba(96,165,250,0.25);border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">👤 Team record in Zoho</a>`
+          style="display:inline-block;background:rgba(96,165,250,0.1);color:#2F6FB3;border:1px solid #BBD6F2;border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">👤 Team record in Zoho</a>`
       : '';
 
     let html = '';
@@ -2746,13 +2784,13 @@ function updateReviewStatus() {
             : '—';
           const daysLabel = m.daysDiff < 9999 ? `${Math.round(m.daysDiff)}d` : '';
           const paidDot = m.entertainer.paid
-            ? '<span style="color:#FC8181;font-weight:700" title="Already paid in Zoho">●</span>'
-            : '<span style="color:#4ADE80;font-weight:700" title="Not yet marked paid in Zoho">●</span>';
+            ? '<span style="color:#C0362C;font-weight:700" title="Already paid in Zoho">●</span>'
+            : '<span style="color:#1F9D63;font-weight:700" title="Not yet marked paid in Zoho">●</span>';
           const cost = m.entertainer.cost != null ? `$${m.entertainer.cost.toLocaleString()}` : '—';
           let isChecked = autoSelect(m.booking.id);
           if (!storedSel && !autoDefaultDone && !m.entertainer.paid) { isChecked = true; autoDefaultDone = true; }
           const cbId = 'rvcb-' + m.booking.id;
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);${m.entertainer.paid?'opacity:0.75':''}">
+          return `<tr style="border-bottom:1px solid #F0F3F6;${m.entertainer.paid?'opacity:0.75':''}">
             <td style="padding:3px 4px;width:22px;vertical-align:middle">
               <input type="checkbox" class="rv-booking-cb" id="${cbId}"
                 onchange="rvBookingSelectionChanged(true)"
@@ -2762,49 +2800,49 @@ function updateReviewStatus() {
                 data-name="${escHtml(m.booking.bookingName||'')}"
                 data-paid="${m.entertainer.paid ? '1' : ''}"
                 ${isChecked ? 'checked' : ''}
-                style="accent-color:#4ADE80;cursor:pointer;width:13px;height:13px">
+                style="accent-color:#1F9D63;cursor:pointer;width:13px;height:13px">
             </td>
             <td style="padding:3px 4px;white-space:nowrap;text-align:center">${paidDot}</td>
-            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0">${evtDate}</td>
+            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#5B6B7B">${evtDate}</td>
             <td style="padding:3px 4px;font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-              <a href="${url}" target="_blank" style="color:#93c5fd;text-decoration:none" title="${escHtml(m.booking.bookingName||'')}">${escHtml(m.booking.bookingName||'—')}</a>
+              <a href="${url}" target="_blank" style="color:#2F6FB3;text-decoration:none" title="${escHtml(m.booking.bookingName||'')}">${escHtml(m.booking.bookingName||'—')}</a>
             </td>
-            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0;text-align:right">${cost}</td>
-            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#8BAAC0;text-align:right">${daysLabel}</td>
+            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#5B6B7B;text-align:right">${cost}</td>
+            <td style="padding:3px 4px;white-space:nowrap;font-size:10px;color:#5B6B7B;text-align:right">${daysLabel}</td>
           </tr>`;
         };
         const sectionRow = (label, color) =>
-          `<tr><td colspan="6" style="padding:5px 6px;background:rgba(255,255,255,0.05);font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:${color}">${label}</td></tr>`;
-        const thStyle = 'padding:4px 4px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#8BAAC0;border-bottom:1px solid rgba(255,255,255,0.12)';
+          `<tr><td colspan="6" style="padding:5px 6px;background:#F2F5F8;font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:${color}">${label}</td></tr>`;
+        const thStyle = 'padding:4px 4px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#5B6B7B;border-bottom:1px solid #E4E8EC';
         const thead = `<thead><tr>
             <th style="${thStyle};width:22px"></th>
             <th style="${thStyle};text-align:center">Paid?</th>
             <th style="${thStyle};text-align:left">Event date</th>
             <th style="${thStyle};text-align:left">Booking</th>
-            <th style="${thStyle};text-align:right">Cost<br><span id="rv-cost-tally" style="font-weight:700;font-size:10px;color:#86EFAC">—</span></th>
+            <th style="${thStyle};text-align:right">Cost<br><span id="rv-cost-tally" style="font-weight:700;font-size:10px;color:#1F9D63">—</span></th>
             <th style="${thStyle};text-align:right">Near</th>
           </tr></thead>`;
         let body = '';
         if (unpaidList.length)
-          body += sectionRow('🟢 Unpaid — select the booking(s) this invoice covers', '#86EFAC')
+          body += sectionRow('🟢 Unpaid — select the booking(s) this invoice covers', '#1F9D63')
                 + unpaidList.slice(0,15).map(renderRow).join('');
         if (paidList.length)
-          body += sectionRow('🔴 Already paid (history — watch for double-invoicing)', '#FCA5A5')
+          body += sectionRow('🔴 Already paid (history — watch for double-invoicing)', '#B91C1C')
                 + paidList.slice(0,8).map(renderRow).join('');
-        if (!body) body = '<tr><td colspan="6" style="padding:6px;color:#8BAAC0;font-size:10px">No bookings found.</td></tr>';
+        if (!body) body = '<tr><td colspan="6" style="padding:6px;color:#5B6B7B;font-size:10px">No bookings found.</td></tr>';
         const extraUnpaid = Math.max(0, unpaidList.length - 15);
         const extraPaid   = Math.max(0, paidList.length - 8);
         const remaining = (extraUnpaid || extraPaid)
-          ? `<div style="font-size:10px;color:#8BAAC0;padding:3px 5px">${extraUnpaid?`+ ${extraUnpaid} more unpaid `:''}${extraPaid?`· ${extraPaid} more paid`:''} — see Pay Entertainer view</div>` : '';
-        const totalBar = `<div id="rv-booking-total-bar" style="display:flex;align-items:center;gap:6px;padding:4px 7px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;margin-top:3px;flex-wrap:wrap"></div>`;
-        html = `<div style="overflow-y:auto;max-height:260px;border:1px solid rgba(255,255,255,0.1);border-radius:5px;background:rgba(0,0,0,0.2)"><table style="width:100%;border-collapse:collapse">${thead}<tbody>${body}</tbody></table></div>${remaining}${totalBar}`;
+          ? `<div style="font-size:10px;color:#5B6B7B;padding:3px 5px">${extraUnpaid?`+ ${extraUnpaid} more unpaid `:''}${extraPaid?`· ${extraPaid} more paid`:''} — see Pay Entertainer view</div>` : '';
+        const totalBar = `<div id="rv-booking-total-bar" style="display:flex;align-items:center;gap:6px;padding:4px 7px;background:#F2F5F8;border:1px solid #FFFFFF;border-radius:5px;margin-top:3px;flex-wrap:wrap"></div>`;
+        html = `<div style="overflow-y:auto;max-height:260px;border:1px solid #FFFFFF;border-radius:5px;background:#F7F9FB"><table style="width:100%;border-collapse:collapse">${thead}<tbody>${body}</tbody></table></div>${remaining}${totalBar}`;
       } else {
         // Matched contractor but no bookings in cache window
-        html = `<div style="font-size:11px;color:#8BAAC0">No bookings in cache (cache covers ~12 months). Check Zoho directly.</div>`;
+        html = `<div style="font-size:11px;color:#5B6B7B">No bookings in cache (cache covers ~12 months). Check Zoho directly.</div>`;
       }
     } else if (!bookings.length) {
       // No Zoho booking data loaded this session — the table can't be built.
-      html = `<div style="font-size:11px;color:#FBD38D;background:rgba(246,173,85,0.10);border:1px solid rgba(246,173,85,0.4);border-radius:6px;padding:8px 10px;line-height:1.5">
+      html = `<div style="font-size:11px;color:#8A5B12;background:#FBF1DE;border:1px solid #E6D3A8;border-radius:6px;padding:8px 10px;line-height:1.5">
         ⚠ <strong>No Zoho bookings loaded this session.</strong> Go to <strong>Step 1</strong> and hit <strong>↻ Refresh from Zoho</strong> — the booking(s) for this contractor will then appear here to tick.</div>`;
     } else if (nameVal) {
       // ── Fuzzy fallback when contractor not matched ──
@@ -2814,20 +2852,20 @@ function updateReviewStatus() {
         const matchLinks = allMatches.slice(0, 3).map((m, i) => {
           const url = `https://crm.zoho.com/crm/org657079535/tab/Potentials/${m.booking.id}`;
           const evtDate = m.booking.eventDate ? new Date(m.booking.eventDate+'T12:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : '';
-          const paidLabel = m.entertainer.paid ? ' · <span style="color:#FC8181">paid</span>' : '';
-          const costLabel = m.costMatch === true ? ' · <span style="color:#4ADE80">cost ✓</span>' : '';
-          const accent = i===0 ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.04)';
-          const border = i===0 ? 'rgba(52,211,153,0.25)' : 'rgba(255,255,255,0.08)';
-          const col = i===0 ? '#34D399' : '#8BAAC0';
+          const paidLabel = m.entertainer.paid ? ' · <span style="color:#C0362C">paid</span>' : '';
+          const costLabel = m.costMatch === true ? ' · <span style="color:#1F9D63">cost ✓</span>' : '';
+          const accent = i===0 ? 'rgba(52,211,153,0.1)' : '#F4F6F8';
+          const border = i===0 ? '#BCE3CE' : '#F0F3F6';
+          const col = i===0 ? '#1F9D63' : '#5B6B7B';
           return `<a href="${url}" target="_blank" style="display:block;background:${accent};color:${col};border:1px solid ${border};border-radius:5px;padding:3px 8px;font-size:11px;text-decoration:none;margin-bottom:2px">
-            📅 ${escHtml(m.booking.bookingName||'')} <span style="font-size:10px;color:#8BAAC0">${evtDate}${paidLabel}${costLabel}</span></a>`;
+            📅 ${escHtml(m.booking.bookingName||'')} <span style="font-size:10px;color:#5B6B7B">${evtDate}${paidLabel}${costLabel}</span></a>`;
         }).join('');
-        const warn = '<div style="font-size:10px;color:#FBD38D;margin-bottom:3px">⚠ Fuzzy match — contractor not linked in Zoho</div>';
+        const warn = '<div style="font-size:10px;color:#8A5B12;margin-bottom:3px">⚠ Fuzzy match — contractor not linked in Zoho</div>';
         html = warn + matchLinks;
       } else {
         const searchUrl = `https://crm.zoho.com/crm/org657079535/search?searchword=${encodeURIComponent(nameVal)}&isRelevance=false`;
         html = `<a href="${searchUrl}" target="_blank"
-          style="display:inline-block;background:rgba(255,255,255,0.06);color:#8BAAC0;border:1px solid rgba(255,255,255,0.1);border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">🔍 Search "${escHtml(nameVal)}" in Zoho</a>`;
+          style="display:inline-block;background:#F0F3F6;color:#5B6B7B;border:1px solid #FFFFFF;border-radius:5px;padding:3px 9px;font-size:11px;text-decoration:none">🔍 Search "${escHtml(nameVal)}" in Zoho</a>`;
       }
     }
     // Always show utility buttons
@@ -2842,7 +2880,7 @@ function reviewOpenABR() {
   const abn = (document.getElementById('rv-abn')?.value || '').replace(/\s/g, '');
   if (abn.length !== 11 || !/^\d{11}$/.test(abn)) {
     const el = document.getElementById('rv-cmp-abr-abn');
-    if (el) el.innerHTML = '<span style="color:#FC8181">Enter a valid 11-digit ABN first</span>';
+    if (el) el.innerHTML = '<span style="color:#C0362C">Enter a valid 11-digit ABN first</span>';
     return;
   }
   // Open the ABR public record in a new browser tab
@@ -2859,7 +2897,7 @@ function rvHighlightMissing() {
     const el = document.getElementById(id);
     if (!el) return;
     const empty = !(el.value || '').trim();
-    el.style.borderColor = empty ? '#FC8181' : '#5778A6';
+    el.style.borderColor = empty ? '#C0362C' : '#CBD5E0';
     el.style.boxShadow  = empty ? '0 0 0 2px rgba(252,129,129,0.30)' : '';
   });
   rvUpdateRail();
@@ -2907,26 +2945,43 @@ function rvUpdateTotalBreakdown() {
 
 function rvUpdateServiceFee() {
   rvUpdateTotalBreakdown();
-  const total = parseFloat(document.getElementById('rv-total')?.value || '0') || 0;
-  const parking = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
-  const accommodation = parseFloat(document.getElementById('rv-exp-accommodation')?.value || '0') || 0;
-  const travel = parseFloat(document.getElementById('rv-exp-travel')?.value || '0') || 0;
-  const other = parseFloat(document.getElementById('rv-exp-other')?.value || '0') || 0;
-  const expTotal = parking + accommodation + travel + other;
-  const serviceFee = total - expTotal;
-  // Super base = total minus the pure reimbursements (parking, accom, OTHER). Travel stays in.
+  const num = id => parseFloat(document.getElementById(id)?.value || '0') || 0;
+  const total = num('rv-total');
+  const parking = num('rv-exp-parking');
+  const accommodation = num('rv-exp-accommodation');
+  const other = num('rv-exp-other');
+  const travel = num('rv-exp-travel'); // legacy field (removed from UI) — always 0
+  const reimbTotal = parking + accommodation + other + travel;
+  // Super base = total minus the pure reimbursements (parking, accom, other). Travel stays in.
   const superBase = total - parking - accommodation - other;
-  const el = document.getElementById('rv-service-fee-display');
-  if (!el) return;
-  if (expTotal > 0) {
-    const color = serviceFee >= 0 ? '#4ADE80' : '#F87171';
-    const superNote = travel > 0
-      ? `super on <strong>$${superBase.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> (service + travel)`
-      : `super on <strong>$${superBase.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> (service fee)`;
-    el.innerHTML = `Service: <span style="color:${color};font-weight:700">$${serviceFee.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span> <span style="color:#8BAAC0;font-size:10px">${superNote}</span>`;
-  } else {
-    el.innerHTML = '';
+  const money = n => '$' + (n || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // ── Build reimbursement line items inside the Total card so pricing assembles live ──
+  const reimbEl = document.getElementById('rv-bd-reimb');
+  if (reimbEl) {
+    const line = (lbl, amt) => amt > 0
+      ? `<div style="display:flex;justify-content:space-between;color:#5B6B7B"><span>— ${lbl} <span style="color:#7A8896;font-size:9px">no super</span></span><span style="color:#1B2733">${money(amt)}</span></div>`
+      : '';
+    const lines = line('Parking', parking) + line('Accommodation', accommodation) + line('Other', other);
+    reimbEl.innerHTML = reimbTotal > 0
+      ? lines + `<div style="display:flex;justify-content:space-between;color:#1F9D63;font-weight:600"><span>Super base (service)</span><span>${money(superBase)}</span></div>`
+      : '';
   }
+
+  // ── Parking over $25 → proof-of-receipt + flag-the-producer prompt ──
+  const pWarn = document.getElementById('rv-parking-warn');
+  if (pWarn) {
+    if (parking > 25) {
+      pWarn.style.display = 'block';
+      pWarn.innerHTML = `⚠ <strong>Parking ${money(parking)} is over $25.</strong> Ask the contractor for a proof-of-receipt, and flag the producer to on-invoice the client.`;
+    } else {
+      pWarn.style.display = 'none';
+    }
+  }
+
+  // Legacy inline service-fee text now lives in the Total card (rv-bd-reimb)
+  const el = document.getElementById('rv-service-fee-display');
+  if (el) el.innerHTML = '';
 }
 
 // ── Duo / group super panel (Review modal) ────────────────────────────────────
@@ -2996,11 +3051,11 @@ async function reviewRunABR() {
   if (clean.length !== 11 || !/^\d{11}$/.test(clean)) return;
   // Show loading state in ABN cell of comparison table
   const abrAbnCell = document.getElementById('rv-cmp-abr-abn');
-  if (abrAbnCell) abrAbnCell.innerHTML = '<span style="color:#9DB5CC"><span class="spinner"></span> Looking up…</span>';
+  if (abrAbnCell) abrAbnCell.innerHTML = '<span style="color:#5B6B7B"><span class="spinner"></span> Looking up…</span>';
   const r = await lookupABN(clean);
   updateReviewStatus();
   if (!r && abrAbnCell) {
-    abrAbnCell.innerHTML = '<span style="color:#FC8181">⚠ Lookup failed</span>';
+    abrAbnCell.innerHTML = '<span style="color:#C0362C">⚠ Lookup failed</span>';
   }
 }
 
@@ -3057,12 +3112,12 @@ function rvBookingSelectionChanged(userInitiated) {
   // Running tally under the COST column header — sums the cost of every ticked booking.
   const tallyEl = document.getElementById('rv-cost-tally');
   if (tallyEl) {
-    if (!checked.length) { tallyEl.textContent = '—'; tallyEl.style.color = '#86EFAC'; }
+    if (!checked.length) { tallyEl.textContent = '—'; tallyEl.style.color = '#1F9D63'; }
     else {
       tallyEl.textContent = '$' + selectedTotal.toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
       // green if it matches the invoice total, amber if it differs
       const match = invoiceTotal > 0 && Math.abs(selectedTotal - invoiceTotal) <= 1;
-      tallyEl.style.color = match ? '#86EFAC' : '#FBD38D';
+      tallyEl.style.color = match ? '#1F9D63' : '#8A5B12';
     }
   }
 
@@ -3078,13 +3133,13 @@ function rvBookingSelectionChanged(userInitiated) {
 
   const diff = Math.abs(selectedTotal - invoiceTotal);
   const match = diff <= 1 && invoiceTotal > 0;
-  const matchColor = match ? '#4ADE80' : '#FBD38D';
+  const matchColor = match ? '#1F9D63' : '#8A5B12';
   const matchIcon  = match ? '✓ matches invoice' : `≠ $${diff.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})} difference`;
 
   bar.style.display = 'flex';
   bar.innerHTML = `
-    <span style="color:#8BAAC0;font-size:10px">${checked.length} booking${checked.length>1?'s':''} selected:</span>
-    <span style="color:#fff;font-size:11px;font-weight:600">$${selectedTotal.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+    <span style="color:#5B6B7B;font-size:10px">${checked.length} booking${checked.length>1?'s':''} selected:</span>
+    <span style="color:#1B2733;font-size:11px;font-weight:600">$${selectedTotal.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
     <span style="color:${matchColor};font-size:10px;font-weight:600;margin-left:4px">${matchIcon}</span>
   `;
 }
@@ -3103,12 +3158,12 @@ function rvRenderExtraPerfDates(checked) {
     const bname = cb.dataset.name || '';
     const readable = dateVal ? fmtReadableDOW(dateVal) : '';
     return `<div style="flex:0 0 200px;max-width:240px">
-      <div style="color:#8BAAC0;font-size:9px;margin-bottom:2px;font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(bname)}">EVENT DATE ${i + 2}${bname ? ` · <span style="color:#93c5fd;font-weight:500">${escHtml(bname)}</span>` : ''}</div>
+      <div style="color:#5B6B7B;font-size:9px;margin-bottom:2px;font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(bname)}">EVENT DATE ${i + 2}${bname ? ` · <span style="color:#2F6FB3;font-weight:500">${escHtml(bname)}</span>` : ''}</div>
       <input type="date" value="${dateVal}" data-extra-bid="${bid}"
         onchange="rvExtraPerfDateChanged('${bid}', this.value); this.nextElementSibling.textContent=fmtReadableDOW(this.value)"
         onclick="try{this.showPicker()}catch(e){}"
-        style="font-size:12px;padding:6px 9px;width:100%;border:1px solid #3A5068;border-radius:5px;background:#243652;color:#fff;outline:none;color-scheme:dark;cursor:pointer">
-      <div style="font-size:11px;color:#9DB5CC;font-weight:600;margin-top:2px">${readable}</div>
+        style="font-size:12px;padding:6px 9px;width:100%;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none;color-scheme:dark;cursor:pointer">
+      <div style="font-size:11px;color:#5B6B7B;font-weight:600;margin-top:2px">${readable}</div>
     </div>`;
   }).join('');
 }
@@ -3135,8 +3190,8 @@ function rvFlagTotalVsBooking(invoiceTotal, selectedTotal, numChecked) {
       warn.title = `This invoice is billed for more than the matched Zoho booking value ($${selectedTotal.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}). Confirm the higher amount is correct before paying.`;
     }
   } else {
-    card.style.borderColor = 'rgba(39,174,96,0.45)';
-    card.style.background   = 'rgba(39,174,96,0.08)';
+    card.style.borderColor = '#9FD9BA';
+    card.style.background   = '#EAF7EF';
     if (warn) warn.style.display = 'none';
   }
 }
