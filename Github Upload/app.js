@@ -360,7 +360,8 @@ async function refreshFromZoho() {
     EMBEDDED_BOOKINGS = book;
     EMBEDDED_BOOKINGS_META = { generated: stamp, recordCount: book.length };
     initEmbeddedData();
-    showBanner(`✓ Refreshed live from Zoho — ${contractors.length} contractors · ${bookings.length} bookings (Confirmed · −6/+2 months · still-unpaid only), as of ${stamp}`, 'success');
+    const withXero = contractors.filter(c => c.xeroName && String(c.xeroName).trim()).length;
+    showBanner(`✓ Refreshed live from Zoho — ${contractors.length} contractors (${withXero} with a Xero entity name) · ${bookings.length} bookings (Confirmed · −6/+2 months · still-unpaid only), as of ${stamp}`, 'success');
   } catch (e) {
     console.error('Zoho refresh failed', e);
     alert('Zoho refresh failed:\n' + e.message + '\n\nCheck the URL in ⚙ Settings, and that the proxy is deployed and authorised.');
@@ -400,6 +401,9 @@ function handleContractorsJsonFile(input) {
         fundName:      r.fundName  || '',
         fundUSI:       r.fundUSI   || '',
         memberNumber:  r.memberNumber || '',
+        superPercentage: r.superPercentage ?? null,
+        xeroName:      r.xeroName || '',
+        variableLineup: r.variableLineup === true,
         zohoId:        r.id || '',
       })).filter(c => c.name && c.name !== 'TBC' && !c.name.startsWith('TEST ') && !c.name.startsWith('Nathan Op'));
 
@@ -2922,8 +2926,9 @@ function rvUpdateRail() {
     const node = document.getElementById('rv-rail-' + i);
     if (!node) continue;
     node.classList.remove('rv-rail-node--done', 'rv-rail-node--active');
-    if (done[i]) { node.classList.add('rv-rail-node--done'); node.innerHTML = '✓'; }
-    else { node.innerHTML = String(i); if (i === active) node.classList.add('rv-rail-node--active'); }
+    node.innerHTML = String(i);
+    if (done[i]) node.classList.add('rv-rail-node--done');
+    else if (i === active) node.classList.add('rv-rail-node--active');
   }
 }
 
