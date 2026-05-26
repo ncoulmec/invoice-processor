@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523j">
+<link rel="stylesheet" href="styles.css?v=20260523p">
 </head>
 <body>
 
@@ -395,6 +395,9 @@
               </thead>
               <tbody id="gmail-staging-tbody"></tbody>
             </table>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px">
+              <button onclick="gmailImportSelected()" id="gmail-import-btn-bottom" style="background:#27AE60;color:#fff;border:none;border-radius:5px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer">📥 Import Selected PDFs</button>
+            </div>
             <div style="font-size:11px;color:#888;margin-top:8px">📋 After import, emails are labeled <em>"Invoice Fetched"</em> in Gmail. Your team should manually move emails to "Last Invoice Processed" as usual. Emails are never marked as read.</div>
           </div>
         </div>
@@ -423,6 +426,7 @@
               <div id="gmail-rev-subject" style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Subject</div>
               <div id="gmail-rev-meta" style="font-size:11px;color:#A9B7CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">From · date</div>
             </div>
+            <span id="gmail-rev-progress" style="font-size:13px;font-weight:700;background:rgba(255,255,255,0.16);padding:4px 12px;border-radius:12px;white-space:nowrap"></span>
             <span id="gmail-rev-status" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:11px;white-space:nowrap"></span>
             <button onclick="gmailCloseReview()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:4px;padding:5px 11px;cursor:pointer;font-size:12px">✕ Close</button>
           </div>
@@ -998,6 +1002,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523j"></script>
+<script src="app.js?v=20260523p"></script>
 </body>
 </html>

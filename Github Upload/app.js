@@ -678,15 +678,16 @@ function getBookingMatchForRow(name, total, date, linkedBookings) {
       const fullBooking = bookings.find(b => b.id === lb.bookingId);
       if (!fullBooking) continue;
       const ents = fullBooking.entertainers || [];
-      // 1. Cost match (most reliable — cost is stored from the exact checkbox selected)
-      let ent = lb.cost > 0 ? ents.find(e => Math.abs((e.cost || 0) - lb.cost) < 0.01) : null;
-      // 2. Single entertainer — unambiguous
-      if (!ent && ents.length === 1) ent = ents[0];
-      // 3. First-name match
-      if (!ent) {
-        const first = (name || '').toLowerCase().split(' ')[0];
-        if (first) ent = ents.find(e => (e.name || '').toLowerCase().includes(first));
-      }
+      // Identify the correct entertainer SLOT in this booking. Prefer the performer whose NAME
+      // matches so we read THEIR paid flag — not a same-cost co-performer's. (Matching by cost
+      // first caused false 'already paid' flags in multi-performer bookings with equal slot costs.)
+      const first = (name || '').toLowerCase().split(' ').filter(Boolean)[0] || '';
+      const nameHit = e => first.length >= 3 && (e.name || '').toLowerCase().includes(first);
+      const costHit = e => lb.cost > 0 && Math.abs((e.cost || 0) - lb.cost) < 0.01;
+      let ent = ents.find(e => nameHit(e) && costHit(e))   // best: name + cost
+             || ents.find(nameHit)                          // then the correctly-named performer
+             || (lb.cost > 0 ? ents.find(costHit) : null)   // then cost only
+             || (ents.length === 1 ? ents[0] : null);       // then the sole entertainer
       if (ent) {
         return {
           booking: fullBooking,
@@ -2234,19 +2235,38 @@ function openReviewModal(id) {
     reviewRunABR(); // async — updates ABR panel in background
   }
 
-  // Load PDF — or show placeholder for manual-entry rows
+  // Load PDF — validate the blob first. Drag/drop & Gmail PDFs are in-browser blob URLs that DON'T
+  // survive a Chrome page-refresh; the session restores field data but not the PDF, so a stale URL
+  // would otherwise render a confusing "file moved/edited/deleted" page. Fail gracefully instead.
   const noPdfMsg = document.getElementById('rv-no-pdf-msg');
   const uploadWidget = document.getElementById('rv-pdf-upload-widget');
-  if (url) {
-    g('rv-pdf-frame').style.display = '';
-    g('rv-pdf-frame').src = url + '#navpanes=0&zoom=page-width';
+  const pdfFrame = g('rv-pdf-frame');
+  const rvShowNoPdf = (title, body) => {
+    if (pdfFrame) { pdfFrame.style.display = 'none'; pdfFrame.src = ''; }
+    if (noPdfMsg) {
+      noPdfMsg.style.display = 'flex';
+      noPdfMsg.innerHTML =
+        '<div style="font-size:46px;opacity:.35">📄</div>' +
+        '<div style="font-size:14px;font-weight:600;color:#2F6FB3">' + title + '</div>' +
+        '<div style="font-size:12px;max-width:360px;line-height:1.6;color:#5B6B7B">' + body + '</div>';
+    }
+    if (uploadWidget) uploadWidget.style.display = 'flex';
+  };
+  const rvShowPdf = (u) => {
+    if (pdfFrame) { pdfFrame.style.display = ''; pdfFrame.src = u + '#navpanes=0&zoom=page-width'; }
     if (noPdfMsg) noPdfMsg.style.display = 'none';
     if (uploadWidget) uploadWidget.style.display = 'none';
+  };
+  if (url) {
+    fetch(url).then(r => { if (!r.ok) throw 0; rvShowPdf(url); }).catch(() => {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+      delete invoiceFileData['id_' + id];
+      rvShowNoPdf('PDF preview cleared by a page refresh',
+        'Your invoice data is safe — only the preview was lost. PDF previews can\'t survive a browser refresh; drag &amp; drop or upload the PDF again below to view it here.');
+    });
   } else {
-    g('rv-pdf-frame').style.display = 'none';
-    g('rv-pdf-frame').src = '';
-    if (noPdfMsg) noPdfMsg.style.display = 'flex';
-    if (uploadWidget) uploadWidget.style.display = 'flex';
+    rvShowNoPdf('No PDF to preview',
+      'This invoice was entered without a readable PDF. Fill in the fields on the left, or upload a PDF below to view it alongside.');
   }
 
   // Show modal
@@ -2686,7 +2706,10 @@ function updateReviewStatus() {
   );
 
   if (match) {
-    const typeDesc = rvTypeDesc(match.type);
+    const isPartnership = /partner/i.test(match.structure || '');
+    const typeDesc = isPartnership
+      ? ('Partnership' + (match.gst ? ' — GST registered' : ' — no GST'))
+      : rvTypeDesc(match.type);
     const fundNote = match.fundName ? ` <span style="color:#5B6B7B;font-size:10px">(${escHtml(match.fundName)})</span>` : '';
     // Surface the exact Xero entity name (the bill "From"). If Zoho has none, flag it —
     // that's why a bill would fall back to the Team-record name.
@@ -2912,13 +2935,27 @@ function rvHighlightMissing() {
 // Steps 4/5 become reachable once a total is present (reimbursements optional; super has a default).
 function rvUpdateRail() {
   const val = id => (document.getElementById(id)?.value || '').trim();
-  const bookingChosen = !!document.querySelector('.rv-booking-cb:checked') || !!val('rv-perfdate');
+  const num = id => parseFloat(document.getElementById(id)?.value || '0') || 0;
+  const name = val('rv-name');
+  const abn  = val('rv-abn').replace(/\s/g, '');
+  // Step 1 — contractor identified: matched in Zoho by name/ABN, or a valid 11-digit ABN (ABR-derived)
+  const matched = !!(name && (
+    (typeof contractors !== 'undefined' && contractors.some(c =>
+      (c.name || '').toLowerCase() === name.toLowerCase() ||
+      (abn.length === 11 && c.abn && String(c.abn).replace(/\s/g, '') === abn)))
+    || abn.length === 11));
+  // Step 2 — a booking is ticked AND its value matches the invoice total (same rule as the
+  // on-screen "matches invoice" badge). An over/under-quote leaves it OPEN as a problem flag.
+  const checkedCbs = Array.from(document.querySelectorAll('.rv-booking-cb:checked'));
+  const bookingTotal = checkedCbs.reduce((s, cb) => s + (parseFloat(cb.dataset.cost) || 0), 0);
+  const total = num('rv-total');
+  const bookingMatched = checkedCbs.length > 0 && Math.abs(bookingTotal - total) <= 1;
   const done = {
-    1: !!val('rv-name'),
-    2: bookingChosen,
-    3: !!val('rv-inv') && !!val('rv-total'),
-    4: !!val('rv-total'),
-    5: !!val('rv-total')
+    1: matched,
+    2: bookingMatched,
+    3: !!val('rv-inv') && total > 0,
+    4: total > 0,   // reimbursements optional — complete once the total is in
+    5: total > 0    // super has a sensible default — complete once the total is in
   };
   let active = 0;
   for (let i = 1; i <= 5; i++) { if (!done[i]) { active = i; break; } }
@@ -3090,7 +3127,7 @@ function rvBookingSelectionChanged(userInitiated) {
   const perfEl = document.getElementById('rv-perfdate');
   if (perfEl && checked.length >= 1) {
     const firstDate = checked[0].dataset.date || '';
-    if (firstDate && (!perfEl.value || userInitiated)) {
+    if (firstDate && (!perfEl.value || userInitiated || invoicePerfGuess['id_' + reviewModalRowId])) {
       perfEl.value = firstDate;
       updatePerfDateDOW();
       rvClearPerfGuess(); // a date the user pinned to a chosen booking is no longer a guess
@@ -3490,11 +3527,18 @@ function copyRawText() {
 }
 
 function updateProcessCount() {
-  const pdfRows   = document.querySelectorAll('#pdf-tbody tr[id]').length;
-  const apRows    = document.querySelectorAll('#ap-review-tbody tr[id]').length;
-  const manualRows = document.querySelectorAll('#manual-tbody tr[id]').length;
+  // Count only rows that actually hold an invoice (a name or a total) — this skips the
+  // always-present blank manual-entry starter row, which otherwise inflated the count by 1.
+  const hasData = tr => {
+    const id = tr.id.replace('row-', '');
+    const n = (document.getElementById('name-'  + id)?.value || '').trim();
+    const t = (document.getElementById('total-' + id)?.value || '').trim();
+    return !!(n || t);
+  };
+  const pdfRows    = Array.from(document.querySelectorAll('#pdf-tbody tr[id]')).filter(hasData).length;
+  const apRows     = Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')).filter(hasData).length;
+  const manualRows = Array.from(document.querySelectorAll('#manual-tbody tr[id]')).filter(hasData).length;
   const total = pdfRows + apRows + manualRows;
-  const eventOnly = pdfRows + manualRows;
   document.getElementById('process-count').textContent = total
     ? `${total} invoice${total!==1?'s':''} ready to process${apRows ? ` (incl. ${apRows} AP)` : ''}` : '';
   const btn = document.getElementById('process-btn');
@@ -4458,9 +4502,29 @@ function exportXeroCSV() {
     // invoice — kept this way per the requested clean two-bill split (no in-bill deduction line).
     const grossFee = a.unitAmount + a.super;   // ex-GST service fee (B) / full service fee (A)
     const feeAmount = isGSTContractor
-      ? (grossFee - superAmt / 1.1).toFixed(2)
-      : (grossFee - superAmt).toFixed(2);
-    rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, feeDesc, 1, feeAmount, acctCode, taxType));
+      ? (grossFee - superAmt / 1.1)
+      : (grossFee - superAmt);
+    // One fee line per EVENT DATE when an invoice covers multiple bookings — split by each
+    // booking's cost, with the LAST line absorbing rounding so the lines always sum to the net
+    // fee (bill total unchanged). Same billRef → Xero keeps them on ONE bill. Single-date invoices
+    // are unchanged (one line, original description).
+    const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
+    if (feeLBs.length > 1) {
+      const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
+      let allocated = 0;
+      feeLBs.forEach((lb, i) => {
+        const last = i === feeLBs.length - 1;
+        const amt = last ? (feeAmount - allocated) : Math.round(feeAmount * (lb.cost / totalCost) * 100) / 100;
+        allocated += amt;
+        const dr = formatDateReadable(lb.eventDate) || dateReadable;
+        const lineDesc = `${cName} | Event: ${dr}`
+          + (p.invoiceNumber ? ` | Inv: ${p.invoiceNumber}` : '')
+          + (i === 0 ? superNote : '');
+        rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, lineDesc, 1, amt.toFixed(2), acctCode, taxType));
+      });
+    } else {
+      rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
+    }
 
     // Lines 2+ — expense splits (parking / accommodation / travel). Same billRef so Xero keeps
     // them on the one bill. Travel uses the sub-contractor account (direct cost of sale).
@@ -5004,7 +5068,7 @@ function buildEventReference(p) {
     const fmt = formatDateDotShort(p.perfDate || p.date);
     if (fmt) dates.push(fmt);
   }
-  return dates.length ? `Event(s): ${dates.join(' ')}` : '';
+  return dates.length ? `Event(s): ${dates.join(', ')}` : '';
 }
 
 function formatDateReadable(d) {
@@ -5667,17 +5731,26 @@ function gmailUpdateSelectAll() {
   const allSelected = allImportable.length > 0 && allImportable.every(i => i.selected);
   const cb = document.getElementById('gmail-select-all');
   if (cb) cb.checked = allSelected;
+  gmailUpdateImportCount();
+}
+
+// Live ticked-count → shown on BOTH Import buttons (top & bottom of the list)
+function gmailUpdateImportCount() {
+  const n = gmailStagingItems.filter(i => i.selected && i.type === 'attachment').length;
+  const label = n ? `📥 Import ${n} Selected PDF${n !== 1 ? 's' : ''}` : '📥 Import Selected PDFs';
+  ['gmail-import-btn', 'gmail-import-btn-bottom'].forEach(id => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.textContent = label;
+    b.disabled = (n === 0);
+    b.style.opacity = n ? '' : '0.5';
+    b.style.cursor = n ? 'pointer' : 'not-allowed';
+  });
 }
 
 function gmailToggleAll(checked) {
-  gmailStagingItems.forEach((item, idx) => {
-    if (item.type === 'attachment') {
-      item.selected = checked;
-      const row = document.getElementById('gmail-staging-tbody').rows[idx];
-      const cb = row?.querySelector('input[type="checkbox"]');
-      if (cb) cb.checked = checked;
-    }
-  });
+  gmailStagingItems.forEach(item => { if (item.type === 'attachment') item.selected = checked; });
+  gmailRenderStaging();
 }
 
 async function gmailImportSelected() {
@@ -6028,6 +6101,7 @@ function gmailReviewUpdateButtons() {
   else if (item.selected) { st.textContent = '✓ Will be imported';   st.style.background = '#166534'; st.style.color = '#fff'; }
   else                    { st.textContent = '✗ Excluded';           st.style.background = '#7F1D1D'; st.style.color = '#fff'; }
   g('gmail-rev-counter').textContent = `${gmailReviewIdx + 1} of ${gmailStagingItems.length}`;
+  const gp = g('gmail-rev-progress'); if (gp) gp.textContent = `Reviewing ${gmailReviewIdx + 1} of ${gmailStagingItems.length}`;
 }
 
 function gmailReviewSetInclude(include) {
