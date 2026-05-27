@@ -1710,6 +1710,10 @@ function parseInvoiceText(text, filename) {
   const parkingM = text.match(new RegExp('\\bparking(?:[ \\t]+(?:expense|fee|cost|reimbursement))?[ \\t]*[:=\\-]?[ \\t]*\\$[ \\t]*' + expNum, 'i'))
                  || text.match(new RegExp('\\$[ \\t]*' + expNum + '[ \\t]+parking\\b', 'i'));
   if (parkingM) detectedExpenses.parking = expVal(parkingM);
+  // Sense-check: parking is almost always $5–$100. A larger value is nearly always a mis-grab of an
+  // adjacent line amount (e.g. a $300 fee printed next to the word "Parking"), so drop it — better to
+  // leave parking blank for manual entry than carry a wrong reimbursement onto the bill.
+  if (detectedExpenses.parking > 100) detectedExpenses.parking = 0;
 
   // Accommodation: "Accom = $200", "accommodation: $200", "hotel $200", "$200 accommodation"
   const accomM = text.match(new RegExp('\\b(?:accommodation|accom|hotel|motel|lodging)(?:[ \\t]+(?:expense|fee|cost))?[ \\t]*[:=\\-]?[ \\t]*\\$[ \\t]*' + expNum, 'i'))
@@ -2995,7 +2999,10 @@ function rvUpdateServiceFee() {
   const travel = num('rv-exp-travel'); // legacy field (removed from UI) — always 0
   const reimbTotal = parking + accommodation + other + travel;
   // Super base = total minus the pure reimbursements (parking, accom, other). Travel stays in.
-  const superBase = total - parking - accommodation - other;
+  const gstOn = !!document.getElementById('rv-gst')?.checked;
+  const superBaseRaw = total - parking - accommodation - other;
+  // When GST applies, super is assessed on the ex-GST service amount — reflect that in the display.
+  const superBase = gstOn ? superBaseRaw / 1.1 : superBaseRaw;
   const money = n => '$' + (n || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // ── Build reimbursement line items inside the Total card so pricing assembles live ──
@@ -3532,8 +3539,8 @@ function updateProcessCount() {
   const hasData = tr => {
     const id = tr.id.replace('row-', '');
     const n = (document.getElementById('name-'  + id)?.value || '').trim();
-    const t = (document.getElementById('total-' + id)?.value || '').trim();
-    return !!(n || t);
+    const t = parseFloat(document.getElementById('total-' + id)?.value || '0') || 0;
+    return !!(n || t > 0);
   };
   const pdfRows    = Array.from(document.querySelectorAll('#pdf-tbody tr[id]')).filter(hasData).length;
   const apRows     = Array.from(document.querySelectorAll('#ap-review-tbody tr[id]')).filter(hasData).length;
@@ -3698,11 +3705,13 @@ function calculateAmounts(total, type, rate) {
     return { cash, super: super_, gst: 0, unitAmount: cash, taxAmount: 0 };
   }
   if (type === 'B') {
-    // GST-inclusive total: total = (exGST × 1.1); super = exGST × pct%; cash = exGST × (1−pct%) + GST
+    // GST-registered, super-inclusive: total = exGST × 1.1. The ex-GST fee is treated as
+    // INCLUSIVE of super, so super = exGST × pct/(100+pct) and ex-GST cash = exGST − super
+    // (i.e. exGST ÷ 1.12 at the 12% rate). GST is then added back on top. Matches Type A.
     const exGST = r(total / 1.1);
     const gst = r(total - exGST);
-    const super_ = r(exGST * pct / 100);
-    const cashExGST = r(exGST * (1 - pct / 100));
+    const super_ = r(exGST * pct / (100 + pct));
+    const cashExGST = r(exGST - super_);
     const cash = r(cashExGST + gst);
     return { cash, super: super_, gst, unitAmount: cashExGST, taxAmount: gst };
   }
@@ -4490,7 +4499,7 @@ function exportXeroCSV() {
     // Description shows the super math: "$X Total Assessable - $Y superannuation (12%) …"
     const assessable = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
     const superNote = superAmt > 0
-      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to ${CLEARINGHOUSE_NAME} on your behalf`
+      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to your super fund on your behalf`
       : '';
     const feeDesc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
       .filter(Boolean).join(' | ') + superNote;
