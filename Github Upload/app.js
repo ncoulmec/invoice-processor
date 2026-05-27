@@ -4499,7 +4499,7 @@ function exportXeroCSV() {
     // Description shows the super math: "$X Total Assessable - $Y superannuation (12%) …"
     const assessable = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
     const superNote = superAmt > 0
-      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to your super fund on your behalf`
+      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (${p.superRate || 12}%) deducted and remitted to your super fund on your behalf`
       : '';
     const feeDesc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
       .filter(Boolean).join(' | ') + superNote;
