@@ -332,6 +332,12 @@ function initEmbeddedData() {
   // Restore the saved Zoho proxy URL into the Settings field (no default — must be pasted once)
   const zp = document.getElementById('zoho-proxy-url');
   if (zp) zp.value = localStorage.getItem('zohoProxyUrl') || '';
+
+  // Restore Xero push proxy URL + access key (Step 3 button uses these)
+  const xpu = document.getElementById('xero-proxy-url');
+  if (xpu) xpu.value = localStorage.getItem('xeroProxyUrl') || '';
+  const xak = document.getElementById('xero-access-key');
+  if (xak) xak.value = localStorage.getItem('xeroAccessKey') || '';
 }
 
 // ── Live "Refresh from Zoho" — calls the proxy (Apps Script) which holds the Zoho login,
@@ -4702,6 +4708,373 @@ function exportXeroCSV() {
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_Contractor_${today()}.csv`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PUSH TO XERO — live API push of contractor bills via the Apps Script proxy.
+// ══════════════════════════════════════════════════════════════════════════════
+// Mirrors exportXeroCSV's data shape but emits Xero JSON Invoice objects:
+//   - One Invoice per contractor bill (event contractor or AP supplier).
+//   - LineItems[] groups all rows that the CSV path would emit under one bill.
+//   - Each Invoice can optionally carry an _attachment {filename, base64} which
+//     the proxy strips off and PUTs to /Invoices/{id}/Attachments/{filename}.
+// All bills are pushed as DRAFT — Nathan still reviews + approves in Xero.
+//
+// ── Xero AU tax type codes (these are the API codes, not the display names):
+//      INPUT          = "GST on Expenses"        (Type B/D contractors + AP-with-GST)
+//      EXEMPTEXPENSES = "GST Free Expenses"      (Type A/C contractors + AP-no-GST)
+//      BASEXCLUDED    = "BAS Excluded"           (used for the test push only)
+function xeroTaxType_(typeCode) {
+  return ['B','D'].includes(typeCode) ? 'INPUT' : 'EXEMPTEXPENSES';
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => {
+      const v = r.result || '';
+      const i = v.indexOf(',');
+      resolve(i >= 0 ? v.slice(i + 1) : v);
+    };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Build the JSON Invoice array Xero expects. Parallel to exportXeroCSV's row
+// construction so the two exports stay in lockstep on tax types, account codes,
+// super-deduction maths, multi-event splitting, expense lines, etc.
+function buildXeroInvoicesData() {
+  const out = [];
+  if (!Array.isArray(processed)) return out;
+  const todayISO = () => new Date().toISOString().split('T')[0];
+  const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+
+  // ── Event contractor bills ─────────────────────────────────────────────────
+  processed.filter(p => p && p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid).forEach(p => {
+    const a = p.amounts || {};
+    const c = p.contractor || {};
+    const cName = c.name || p.name || '(Unknown)';
+    const billContact = c.xeroName || cName;
+    const invNum = p.invoiceNumber || autoInvNum(p);
+    const dateXero = resolveDate(p);
+    const dateReadable = formatDateReadable(p.perfDate || p.date) || '';
+    const typeCode = p.type || 'A';
+    const acctCode = ACCOUNT_CODES[typeCode];
+    const taxType = xeroTaxType_(typeCode);
+    const eventRef = buildEventReference(p);
+    const isGSTContractor = ['B','D'].includes(typeCode);
+
+    const willWithholdSuper = p.withholdSuper && superDeductionsEnabled();
+    const superAmt = willWithholdSuper
+      ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
+          ? calculateAmounts(p.superBase, p.type, p.superRate).super
+          : (a.super || 0))
+      : 0;
+
+    const assessable = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
+    const superNote = superAmt > 0
+      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to your super fund on your behalf`
+      : '';
+
+    const grossFee = (a.unitAmount || 0) + (a.super || 0);
+    const feeAmount = isGSTContractor
+      ? (grossFee - superAmt / 1.1)
+      : (grossFee - superAmt);
+
+    const lineItems = [];
+
+    // Fee — split per event date when multi-event, otherwise single line
+    const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
+    if (feeLBs.length > 1) {
+      const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
+      let allocated = 0;
+      feeLBs.forEach((lb, i) => {
+        const last = i === feeLBs.length - 1;
+        const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * (lb.cost / totalCost));
+        allocated += amt;
+        const dr = formatDateReadable(lb.eventDate) || dateReadable;
+        const desc = `${cName} | Event: ${dr}`
+          + (p.invoiceNumber ? ` | Inv: ${p.invoiceNumber}` : '')
+          + (i === 0 ? superNote : '');
+        lineItems.push({
+          Description: desc,
+          Quantity: 1,
+          UnitAmount: amt,
+          AccountCode: acctCode,
+          TaxType: taxType
+        });
+      });
+    } else {
+      const desc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
+        .filter(Boolean).join(' | ') + superNote;
+      lineItems.push({
+        Description: desc,
+        Quantity: 1,
+        UnitAmount: r2(feeAmount),
+        AccountCode: acctCode,
+        TaxType: taxType
+      });
+    }
+
+    // Expense lines — parking (449), accommodation (493-C), travel + other (acctCode)
+    if (p.expenses) {
+      const expTaxType = isGSTContractor ? 'INPUT' : 'EXEMPTEXPENSES';
+      const items = [
+        { label: 'Parking',           amount: p.expenses.parking       || 0, account: '449'   },
+        { label: 'Accommodation',     amount: p.expenses.accommodation || 0, account: '493-C' },
+        { label: 'Travel',            amount: p.expenses.travel        || 0, account: acctCode },
+        { label: 'Other (no super)',  amount: p.expenses.other         || 0, account: acctCode },
+      ];
+      items.filter(x => x.amount > 0).forEach(x => {
+        const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
+        lineItems.push({
+          Description: `${x.label} - ${cName} | Inv: ${invNum}`,
+          Quantity: 1,
+          UnitAmount: r2(exGSTAmt),
+          AccountCode: x.account,
+          TaxType: expTaxType
+        });
+      });
+    }
+
+    out.push({
+      Type: 'ACCPAY',
+      Status: 'DRAFT',
+      Contact: { Name: billContact },
+      Date: dateXero,
+      DueDate: dateXero,
+      InvoiceNumber: invNum,
+      Reference: eventRef,
+      LineAmountTypes: 'Exclusive',
+      LineItems: lineItems,
+      _rowId: p.rowId,
+      _contactName: billContact
+    });
+  });
+
+  // ── AP supplier bills (simpler, no super, account code 310) ────────────────
+  processed.filter(p => p && p.invoiceType === 'ap' && !p.alreadyPaid).forEach(p => {
+    const invNum = p.invoiceNumber || autoInvNum(p);
+    const dateXero = resolveDate(p);
+    const dateReadable = formatDateReadable(p.date) || '';
+    const supplierName = p.name || '(Unknown Supplier)';
+    const apTaxType = p.hasGST ? 'INPUT' : 'EXEMPTEXPENSES';
+    const apAcctCode = '310';
+    const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
+    const apAmount = p.hasGST ? ((p.total || 0) / 1.1) : (p.total || 0);
+    out.push({
+      Type: 'ACCPAY',
+      Status: 'DRAFT',
+      Contact: { Name: supplierName },
+      Date: dateXero,
+      DueDate: dateXero,
+      InvoiceNumber: invNum,
+      LineAmountTypes: 'Exclusive',
+      LineItems: [{
+        Description: apDesc,
+        Quantity: 1,
+        UnitAmount: r2(apAmount),
+        AccountCode: apAcctCode,
+        TaxType: apTaxType
+      }],
+      _rowId: p.rowId,
+      _contactName: supplierName
+    });
+  });
+
+  return out;
+}
+
+// Main orchestrator — wired to the "↗ Push to Xero" button.
+async function pushToXero() {
+  if (!Array.isArray(processed) || !processed.length) {
+    showBanner('Nothing to push — process some invoices first.', 'warn');
+    return;
+  }
+  const proxyUrl = (localStorage.getItem('xeroProxyUrl') || '').trim();
+  if (!proxyUrl) {
+    showBanner('Open ⚙ Settings and paste your Xero Push URL first.', 'warn');
+    return;
+  }
+  const accessKey = (localStorage.getItem('xeroAccessKey') || '').trim();
+  if (!accessKey) {
+    showBanner('Open ⚙ Settings and paste your Xero Access Key first.', 'warn');
+    return;
+  }
+
+  const invoices = buildXeroInvoicesData();
+  if (!invoices.length) {
+    showBanner('No bills to push — every row is excluded (already paid, unmatched, etc.).', 'warn');
+    return;
+  }
+
+  // Confirm before live push
+  const apCount = invoices.filter(i => i.Contact.Name && processed.find(p => p.rowId === i._rowId && p.invoiceType === 'ap')).length;
+  const contractorCount = invoices.length - apCount;
+  const msg =
+    `Push ${invoices.length} draft bill${invoices.length>1?'s':''} to Xero?
+
+` +
+    `  • ${contractorCount} contractor bill${contractorCount!==1?'s':''}
+` +
+    `  • ${apCount} supplier bill${apCount!==1?'s':''}
+
+` +
+    `Bills appear in Xero → Bills to pay → Drafts. Nothing is approved or paid until you do that manually in Xero.
+
+` +
+    `Each PDF will be attached to its bill where available.`;
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('push-xero-btn');
+  const originalBtn = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Preparing PDFs…'; }
+  showBanner(`Preparing ${invoices.length} bill${invoices.length>1?'s':''} for Xero…`, 'info');
+
+  // Fetch PDFs as base64 and attach. Skip silently if a PDF isn't available.
+  let attachedCount = 0;
+  for (const inv of invoices) {
+    const rowId = inv._rowId;
+    const pdfUrl = rowId && (typeof invoiceFileData !== 'undefined') && invoiceFileData['id_' + rowId];
+    if (pdfUrl) {
+      try {
+        const blob = await (await fetch(pdfUrl)).blob();
+        const base64 = await blobToBase64(blob);
+        const cleanName = String(inv._contactName || 'Invoice').replace(/[^a-zA-Z0-9 \-_.]/g, '_');
+        const cleanInv  = String(inv.InvoiceNumber || 'Bill').replace(/[^a-zA-Z0-9 \-_.]/g, '_');
+        inv._attachment = { filename: `${cleanName} - ${cleanInv}.pdf`, base64 };
+        attachedCount++;
+      } catch (e) { /* PDF unavailable — skip silently, bill still pushes */ }
+    }
+  }
+
+  if (btn) btn.innerHTML = `⏳ Pushing ${invoices.length} bill${invoices.length>1?'s':''}…`;
+
+  try {
+    const url = `${proxyUrl}?action=createBills&key=${encodeURIComponent(accessKey)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invoices })
+    });
+    const data = await res.json().catch(() => ({ httpStatus: res.status, response: { raw: 'non-JSON response' } }));
+    showXeroResultPanel(data, invoices.length, attachedCount);
+  } catch (err) {
+    showBanner('Push to Xero failed: ' + (err && err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = originalBtn || '↗ Push to Xero'; }
+  }
+}
+
+function showXeroResultPanel(data, requestedCount, attachedCount) {
+  const overlay = document.getElementById('xero-result-overlay');
+  const titleEl = document.getElementById('xero-result-title');
+  const bodyEl  = document.getElementById('xero-result-body');
+  if (!overlay || !titleEl || !bodyEl) {
+    // Fallback if modal isn't in the DOM (older cached HTML)
+    console.warn('Xero result modal not found — falling back to alert');
+    alert('Xero push complete. See console for details.');
+    console.log(data);
+    return;
+  }
+
+  const httpStatus = data && data.httpStatus;
+  const r = data && data.response;
+  const httpOk = httpStatus >= 200 && httpStatus < 300;
+
+  let successCount = 0;
+  let failures = [];
+
+  if (httpOk && r && Array.isArray(r.Invoices)) {
+    r.Invoices.forEach(inv => {
+      const hasErr = inv.HasErrors || (Array.isArray(inv.ValidationErrors) && inv.ValidationErrors.length);
+      if (hasErr) {
+        failures.push({
+          contact: (inv.Contact && inv.Contact.Name) || '(unknown contact)',
+          invoiceNumber: inv.InvoiceNumber || '',
+          errors: (inv.ValidationErrors || []).map(e => e.Message).filter(Boolean).join('; ') || 'unknown error'
+        });
+      } else if (inv.InvoiceID) {
+        successCount++;
+      }
+    });
+  }
+
+  // Attachment outcomes (proxy returns data.attachments[])
+  const attachReports = Array.isArray(data && data.attachments) ? data.attachments : [];
+  const attachOk   = attachReports.filter(a => a.ok).length;
+  const attachFail = attachReports.filter(a => !a.ok).length;
+
+  const allOk = httpOk && successCount === requestedCount && !failures.length;
+  const allFail = successCount === 0;
+  const titleColor = allOk ? '#1A7F37' : (allFail ? '#C0362C' : '#B7791F');
+  const titleText = allOk
+    ? `✓ ${successCount} bill${successCount!==1?'s':''} pushed to Xero`
+    : (allFail
+        ? `✕ Push failed — 0 of ${requestedCount} bills created`
+        : `⚠ ${successCount} of ${requestedCount} bills pushed — ${failures.length} failed`);
+  titleEl.style.color = titleColor;
+  titleEl.textContent = titleText;
+
+  const summaryRows = [
+    `Requested: <strong>${requestedCount}</strong> bill${requestedCount!==1?'s':''}`,
+    `Created in Xero: <strong>${successCount}</strong>`,
+    failures.length ? `Failed: <strong style="color:#C0362C">${failures.length}</strong>` : null,
+    attachReports.length ? `PDFs attached: <strong>${attachOk}</strong>${attachFail ? ` <span style="color:#C0362C">(${attachFail} failed)</span>` : ''}` : null,
+    `HTTP status: <strong>${httpStatus || '—'}</strong>`
+  ].filter(Boolean).map(t => `<div style="margin:3px 0">${t}</div>`).join('');
+
+  const failuresHtml = failures.length ? `
+    <div style="margin-top:14px;padding:12px 14px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px">
+      <div style="font-weight:600;color:#C0362C;margin-bottom:6px">${failures.length} bill${failures.length>1?'s':''} could not be created in Xero:</div>
+      <ul style="margin:0;padding-left:20px;font-size:12px;color:#7F1D1D;line-height:1.6">
+        ${failures.map(f => `<li><strong>${escHtml(f.contact)}</strong>${f.invoiceNumber ? ' · '+escHtml(f.invoiceNumber) : ''} — ${escHtml(f.errors)}</li>`).join('')}
+      </ul>
+      <div style="margin-top:8px;font-size:11px;color:#7F1D1D">Tip: fix the underlying data in the Review modal (e.g. missing fee, bad account code) and push again. The bills that already succeeded are already in Xero — don't push them twice or you'll get duplicates.</div>
+    </div>` : '';
+
+  const attachFailHtml = attachFail ? `
+    <div style="margin-top:10px;padding:10px 14px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:8px;font-size:12px;color:#7A5A12">
+      ⚠ ${attachFail} PDF${attachFail!==1?'s':''} couldn't be attached. The bill itself was created — you can drag the PDF onto it manually in Xero.
+    </div>` : '';
+
+  const nextStepHtml = successCount > 0 ? `
+    <div style="margin-top:14px;padding:12px 14px;background:#F0F9FF;border:1px solid #BFDBFE;border-radius:8px;font-size:13px;color:#1E40AF">
+      <div style="font-weight:600;margin-bottom:4px">Next step</div>
+      Open Xero → <strong>Business → Bills to pay → Drafts</strong>. Review each bill, attach any PDFs that didn't auto-attach, then click <strong>Approve</strong> to move them into Awaiting Payment.
+    </div>` : '';
+
+  const httpErrorHtml = !httpOk ? `
+    <div style="margin-top:14px;padding:12px 14px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px">
+      <div style="font-weight:600;color:#C0362C;margin-bottom:6px">Proxy / Xero rejected the request (HTTP ${httpStatus || '?'})</div>
+      <div style="font-size:12px;color:#7F1D1D">Most common causes: expired access key, scope mismatch (re-authorise after adding accounting.attachments), tenant disconnected, or bad payload. Raw response below.</div>
+    </div>` : '';
+
+  const rawHtml = r ? `
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;color:#5B6B7B;font-size:12px;padding:4px 0">Raw Xero response (debug)</summary>
+      <pre style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:10px;font-size:11px;overflow:auto;max-height:240px;white-space:pre-wrap;word-break:break-word">${escHtml(JSON.stringify(r, null, 2))}</pre>
+    </details>` : '';
+
+  bodyEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;font-size:13px;color:#1B2733;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px">
+      ${summaryRows}
+    </div>
+    ${nextStepHtml}
+    ${httpErrorHtml}
+    ${failuresHtml}
+    ${attachFailHtml}
+    ${rawHtml}
+  `;
+
+  overlay.style.display = 'flex';
+}
+
+function closeXeroResult() {
+  const overlay = document.getElementById('xero-result-overlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

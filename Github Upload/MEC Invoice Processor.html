@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523t">
+<link rel="stylesheet" href="styles.css?v=20260523u">
 </head>
 <body>
 
@@ -111,6 +111,23 @@
                title="The Apps Script / proxy deploy URL that returns fresh bookings + contractors from Zoho">
       </div>
       <div style="font-size:11px;color:#888;margin-top:6px;">Paste the deploy URL of your Zoho refresh proxy. The header <strong>🔄 Refresh from Zoho</strong> button uses it to pull live, scoped bookings (Confirmed · −6/+2 months · still-unpaid only) plus the full contractor list — no file uploads.</div>
+    </div>
+    <div style="border-top:1px solid #E0E7EE;margin-top:14px;padding-top:14px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;">↗ Xero Push URL</span>
+        <input type="text" id="xero-proxy-url" placeholder="https://script.google.com/macros/s/…/exec"
+               style="flex:1;min-width:340px;font-size:13px;"
+               oninput="localStorage.setItem('xeroProxyUrl', this.value.trim())"
+               title="The Apps Script deploy URL of your Xero Push proxy">
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:9px;">
+        <span style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;">🔑 Xero Access Key</span>
+        <input type="password" id="xero-access-key" placeholder="(shared secret from proxy CONFIG.ACCESS_KEY)"
+               style="flex:1;min-width:340px;font-size:13px;"
+               oninput="localStorage.setItem('xeroAccessKey', this.value.trim())"
+               title="The ACCESS_KEY value in your Xero proxy's CONFIG block. The proxy rejects requests without it.">
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:6px;">Paste the deploy URL of your Xero Push proxy plus its shared <code>ACCESS_KEY</code>. The <strong>↗ Push to Xero</strong> button in Step 3 uses these to create draft bills directly in Xero (and attach each PDF) — no manual CSV import.</div>
     </div>
   </div>
 
@@ -559,6 +576,7 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Contractor Bills CSV</button>
             <button class="btn btn-secondary" onclick="downloadInvoicesZip()">⬇ Invoice PDFs (ZIP)</button>
+            <button id="push-xero-btn" onclick="pushToXero()" title="Create the contractor bills directly in Xero as DRAFTs (with PDFs attached) via the Apps Script proxy. Skips the manual CSV+ZIP import." style="background:#1D7A8C;color:#fff;border:1px solid #1D7A8C;padding:8px 14px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↗ Push to Xero</button>
           </div>
           <div style="display:flex;gap:16px;margin-top:9px">
             <span id="xero-preview-count" style="font-size:11px;color:#94A3B8"></span>
@@ -992,6 +1010,22 @@
   </div><!-- /right panel -->
 </div>
 
+
+<!-- Push to Xero — result modal -->
+<div id="xero-result-overlay" onclick="if(event.target===this)closeXeroResult()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:850;align-items:flex-start;justify-content:center;padding:30px 20px;overflow:auto">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:720px;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.4);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #E2E8F0;background:#F8FAFC">
+      <span id="xero-result-title" style="font-size:14px;font-weight:600;color:#1B2733">Pushed to Xero</span>
+      <button onclick="closeXeroResult()" style="background:transparent;border:0;color:#5B6B7B;font-size:18px;cursor:pointer;padding:4px 8px">✕</button>
+    </div>
+    <div id="xero-result-body" style="padding:16px 18px;font-size:13px;color:#1B2733;overflow:auto;flex:1"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #E2E8F0;background:#F8FAFC">
+      <button onclick="closeXeroResult()" style="background:#fff;border:1px solid #CBD5E0;color:#1B2733;padding:7px 14px;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Extracted Fields / Raw Text Modal -->
 <div id="raw-text-overlay" onclick="if(event.target===this)closeRawText()"
      style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:800;align-items:flex-start;justify-content:center;padding:20px;overflow:auto">
@@ -1030,6 +1064,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523t"></script>
+<script src="app.js?v=20260523u"></script>
 </body>
 </html>
