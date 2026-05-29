@@ -4852,7 +4852,21 @@ function buildResultsView() {
             : `<span class="s2-tip"
                  style="margin-left:6px;font-size:10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-weight:700;vertical-align:middle;white-space:nowrap;cursor:help">⚠ Warning<span class="s2-tip-box"><strong>Possibly already paid</strong>Our records show this invoice may already have been paid in Zoho. Check the booking before paying it again.</span></span>`)
         : '';
-      const showSuperCell = showsSuper(p);
+      // ROW-LEVEL super/cash/gst — computed directly from p to avoid any cross-scope closure
+      // weirdness that might come from the helper functions. The math here MUST match the
+      // dashboard widget; if it doesn't, the console.warn below will tell us.
+      const rowSuperOn = superOn;
+      let rowSuperVal = 0;
+      if (p.withholdSuper && rowSuperOn && (a.super || 0) > 0) {
+        if (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)) {
+          const baseEx = ['B','D'].includes(typeCode) ? (p.superBase / 1.1) : p.superBase;
+          const r = p.superRate || 12;
+          rowSuperVal = Math.round(baseEx * r / (100 + r) * 100) / 100;
+        } else {
+          rowSuperVal = a.super || 0;
+        }
+      }
+      const showSuperCell = rowSuperVal > 0;
       // Clickable name → re-open the Review modal for a final sense-check (cross-check the PDF
       // + fields) without going back to Enter Invoice Data.
       const nameCell = p.rowId
@@ -4867,18 +4881,36 @@ function buildResultsView() {
       // Full-bill maths (fixes the scope bug where parking/accom/travel were excluded
       // from Cash to Performer and from GST Credit). superRow = super actually withheld;
       // rowCash = invoice total − super; rowGst = full GST on bill (B/D only).
-      const rowSuper = superFor(p);
-      const rowCash  = cashFor(p);
-      const rowGst   = gstFor(p);
+      // Use the inline values above instead of the helper functions — guarantees consistency.
+      const rowSuper = rowSuperVal;
+      const rowCash  = Math.round(((p.total || 0) - rowSuperVal) * 100) / 100;
+      const rowGst   = ['B','D'].includes(typeCode)
+        ? Math.round(((p.total || 0) - (p.total || 0) / 1.1) * 100) / 100
+        : Math.round((((p.expenses?.parking||0) + (p.expenses?.accommodation||0))
+                     - ((p.expenses?.parking||0) + (p.expenses?.accommodation||0)) / 1.1) * 100) / 100;
       const rowGstCell = rowGst > 0 ? `<span class="badge badge-ok">$${fmt(rowGst)}</span>` : '—';
+      // Diagnostic: if dashboard sums say super > 0 for this row but rowSuperVal is 0, log it.
+      // Helps debug the "dashboard says $283.93, rows show $0" symptom.
+      if (showsSuper(p) && rowSuperVal === 0) {
+        console.warn('[buildResultsView] row super mismatch', {
+          id: p.id, name: p.contractor?.name || p.name,
+          withholdSuper: p.withholdSuper, superOn, amountsSuper: a.super,
+          superBase: p.superBase, serviceFee: p.serviceFee, total: p.total,
+          typeCode, superRate: p.superRate,
+        });
+      }
       // Small × button to remove this row from the current pay run (does NOT delete the
       // underlying invoice from Step 2 — re-processing brings it back. Use this to drop a
       // stale/duplicate row, or one that's been paid outside the pay run.)
-      const removeBtn = `<button onclick="event.stopPropagation();removeContractorRow('${p.id}')"
-        title="Remove from this pay run"
-        style="margin-left:8px;background:transparent;border:1px solid #E2E8F0;color:#94A3B8;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;line-height:1;padding:0;vertical-align:middle"
-        onmouseover="this.style.background='#FEF2F2';this.style.color='#C53030';this.style.borderColor='#FEB2B2'"
-        onmouseout="this.style.background='transparent';this.style.color='#94A3B8';this.style.borderColor='#E2E8F0'">✕</button>`;
+      // Defensive: stringify p.id so 0 doesn't become "" via falsy coercion in template.
+      const pidStr = (p.id !== undefined && p.id !== null) ? String(p.id) : '';
+      const removeBtn = pidStr
+        ? `<button type="button" onclick="event.stopPropagation();removeContractorRow('${pidStr}');return false;"
+            title="Remove from this pay run"
+            style="background:transparent;border:1px solid #E2E8F0;color:#94A3B8;width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;padding:0;vertical-align:middle;font-weight:600"
+            onmouseover="this.style.background='#FEF2F2';this.style.color='#C53030';this.style.borderColor='#FEB2B2'"
+            onmouseout="this.style.background='transparent';this.style.color='#94A3B8';this.style.borderColor='#E2E8F0'">✕</button>`
+        : '<span style="color:#CBD5E0">—</span>';
       return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default">
         <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
