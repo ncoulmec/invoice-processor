@@ -4842,6 +4842,60 @@ function xeroReference(name, invNum) {
   return invNum ? `${initials}-${invNum}` : initials;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Xero bill DESCRIPTION builders — shared between exportXeroCSV and buildXeroInvoicesData.
+// ══════════════════════════════════════════════════════════════════════════════
+// Produces multi-line, step-by-step math descriptions so the performer (reading their
+// Xero remittance) can follow every calculation: invoice → GST split → super divide →
+// what they receive net. Designed to pre-empt "wait, how did you get $X?" questions.
+function buildXeroFeeDescription_(opts) {
+  // opts: { invNum, dateReadable, perfFeeIncGST, isGST, superAmt, superRate, superBaseExGST? }
+  //   superBaseExGST: ex-GST base on which super was calculated (defaults to perfFee/1.1 for
+  //   GST contractors, perfFee for non-GST). Pass explicitly for duo-override cases.
+  const fix = n => (Math.round((n||0)*100)/100).toFixed(2);
+  const head = `Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''} · Performance fee`;
+  const lines = [head];
+
+  const perfFee  = opts.perfFeeIncGST || 0;
+  const rate     = opts.superRate || 12;
+  const divisor  = (100 + rate) / 100;     // 1.12 at 12%
+  const superAmt = opts.superAmt || 0;
+
+  // Performance fee breakdown
+  if (opts.isGST) {
+    const ex  = perfFee / 1.1;
+    const gst = perfFee - ex;
+    lines.push(`Performance fee: $${fix(perfFee)} (inc GST)`);
+    lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
+  } else {
+    lines.push(`Performance fee: $${fix(perfFee)}`);
+  }
+
+  // Super math (explicit ÷ 1.12 and subtraction)
+  if (superAmt > 0) {
+    const baseForSuper = opts.superBaseExGST != null
+      ? opts.superBaseExGST
+      : (opts.isGST ? (perfFee / 1.1) : perfFee);
+    const exSuper = baseForSuper - superAmt;
+    const baseLabel = opts.isGST ? ' ex-GST' : '';
+    lines.push('');
+    lines.push(`${rate}% super on $${fix(baseForSuper)}${baseLabel}:`);
+    lines.push(`  $${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super portion)`);
+    lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → paid to your super fund`);
+
+    const netInc = perfFee - superAmt;
+    lines.push('');
+    lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
+    lines.push(`  = $${fix(perfFee)} (invoice) − $${fix(superAmt)} (super)`);
+  }
+
+  return lines.join('\n');
+}
+
+function buildXeroExpenseDescription_(opts) {
+  return `${opts.label} · Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
+}
+
 function exportXeroCSV() {
   // Xero Bills import template — 25 columns
   // Columns: *ContactName, EmailAddress, POAddressLine1-4, POCity, PORegion, POPostalCode,
@@ -4910,13 +4964,14 @@ function exportXeroCSV() {
                      || formatDateReadable(p.perfDate || p.date) || dateXero;
     const billRef = `Event Date(s): ${eventDates} | ${invNum}`;
 
-    // Description shows the super math: "$X Total Assessable - $Y superannuation (12%) …"
-    const assessable = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
-    const superNote = superAmt > 0
-      ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (${p.superRate || 12}%) deducted and remitted to your super fund on your behalf`
-      : '';
-    const feeDesc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
-      .filter(Boolean).join(' | ') + superNote;
+    // Multi-line description — step-by-step math (perf fee → GST split → super ÷ → net)
+    const perfFeeIncGST_csv = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
+    const assessableInc_csv = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
+    const superBaseExGST_csv = isGSTContractor ? (assessableInc_csv / 1.1) : assessableInc_csv;
+    const feeDesc = buildXeroFeeDescription_({
+      invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_csv, isGST: isGSTContractor,
+      superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_csv
+    });
 
     // Bill 1 pays the contractor NET as a single fee line — NO negative super line on the bill.
     // Super is its own separate bill (Bill 2 → clearing house). For GST contractors the fee line
@@ -4940,9 +4995,14 @@ function exportXeroCSV() {
         const amt = last ? (feeAmount - allocated) : Math.round(feeAmount * (lb.cost / totalCost) * 100) / 100;
         allocated += amt;
         const dr = formatDateReadable(lb.eventDate) || dateReadable;
-        const lineDesc = `${cName} | Event: ${dr}`
-          + (p.invoiceNumber ? ` | Inv: ${p.invoiceNumber}` : '')
-          + (i === 0 ? superNote : '');
+        // First line carries the full perf-fee/super breakdown; subsequent dates just label the event.
+        const lineDesc = (i === 0)
+          ? buildXeroFeeDescription_({
+              invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_csv,
+              isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
+              superBaseExGST: superBaseExGST_csv
+            })
+          : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
         rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, lineDesc, 1, amt.toFixed(2), acctCode, taxType));
       });
     } else {
@@ -4952,19 +5012,20 @@ function exportXeroCSV() {
     // Lines 2+ — expense splits (parking / accommodation / travel). Same billRef so Xero keeps
     // them on the one bill. Travel uses the sub-contractor account (direct cost of sale).
     if (p.expenses) {
-      const expTaxType = isGSTContractor ? 'GST on Expenses' : 'GST Free Expenses';
+      // Parking + Accommodation: always GST-inclusive (vendor is GST-registered) — MEC claims GST
+      // even when the contractor isn't GST-registered. Travel + Other: follow contractor status.
       const expItems = [
-        { label: 'Parking',             amount: p.expenses.parking       || 0, account: '449'    },
-        { label: 'Accommodation',       amount: p.expenses.accommodation || 0, account: '493-C'  },
-        { label: 'Travel',              amount: p.expenses.travel        || 0, account: acctCode },
-        // "Other" = a subcontractor direct cost of the performance (same account as the fee/travel),
-        // just with NO super deducted on it.
-        { label: 'Other (no super)',    amount: p.expenses.other         || 0, account: acctCode },
+        { label: 'Parking',          amount: p.expenses.parking       || 0, account: '449',    alwaysGST: true  },
+        { label: 'Accommodation',    amount: p.expenses.accommodation || 0, account: '493-C',  alwaysGST: true  },
+        { label: 'Travel',           amount: p.expenses.travel        || 0, account: acctCode, alwaysGST: false },
+        { label: 'Other (no super)', amount: p.expenses.other         || 0, account: acctCode, alwaysGST: false },
       ];
       expItems.filter(x => x.amount > 0).forEach(x => {
-        const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
-        const expDesc  = `${x.label} - ${cName} | Inv: ${invNum}`;
-        rows.push(mkRow(billContact, billRef, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, expTaxType));
+        const itemHasGST = x.alwaysGST || isGSTContractor;
+        const itemTaxType = itemHasGST ? 'GST on Expenses' : 'GST Free Expenses';
+        const exGSTAmt = itemHasGST ? (x.amount / 1.1) : x.amount;
+        const expDesc = buildXeroExpenseDescription_({ label: x.label, invNum, dateReadable });
+        rows.push(mkRow(billContact, billRef, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, itemTaxType));
       });
     }
   });
@@ -5083,6 +5144,8 @@ function buildXeroInvoicesData() {
       const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
       let allocated = 0;
       const perfFeeIncGST_pushMulti = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
+      const assessableInc_pushM = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
+      const superBaseExGST_pushM = isGSTContractor ? (assessableInc_pushM / 1.1) : assessableInc_pushM;
       feeLBs.forEach((lb, i) => {
         const last = i === feeLBs.length - 1;
         const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * (lb.cost / totalCost));
@@ -5091,8 +5154,9 @@ function buildXeroInvoicesData() {
         // First line carries the full perf-fee/super breakdown; subsequent dates just label the event.
         const desc = (i === 0)
           ? buildXeroFeeDescription_({
-              invNum: invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_pushMulti,
-              isGST: isGSTContractor, superAmt: superAmt, superRate: p.superRate || 12
+              invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_pushMulti,
+              isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
+              superBaseExGST: superBaseExGST_pushM
             })
           : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
         lineItems.push({
@@ -5104,8 +5168,13 @@ function buildXeroInvoicesData() {
         });
       });
     } else {
-      const desc = [cName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable]
-        .filter(Boolean).join(' | ') + superNote;
+      const perfFeeIncGST_push = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
+      const assessableInc_push = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
+      const superBaseExGST_push = isGSTContractor ? (assessableInc_push / 1.1) : assessableInc_push;
+      const desc = buildXeroFeeDescription_({
+        invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_push, isGST: isGSTContractor,
+        superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_push
+      });
       lineItems.push({
         Description: desc,
         Quantity: 1,
@@ -5117,21 +5186,24 @@ function buildXeroInvoicesData() {
 
     // Expense lines — parking (449), accommodation (493-C), travel + other (acctCode)
     if (p.expenses) {
-      const expTaxType = isGSTContractor ? 'INPUT' : 'EXEMPTEXPENSES';
+      // Parking + Accom: always GST-inclusive (vendor is GST-registered). Travel + Other follow contractor.
       const items = [
-        { label: 'Parking',           amount: p.expenses.parking       || 0, account: '449'   },
-        { label: 'Accommodation',     amount: p.expenses.accommodation || 0, account: '493-C' },
-        { label: 'Travel',            amount: p.expenses.travel        || 0, account: acctCode },
-        { label: 'Other (no super)',  amount: p.expenses.other         || 0, account: acctCode },
+        { label: 'Parking',           amount: p.expenses.parking       || 0, account: '449',    alwaysGST: true  },
+        { label: 'Accommodation',     amount: p.expenses.accommodation || 0, account: '493-C',  alwaysGST: true  },
+        { label: 'Travel',            amount: p.expenses.travel        || 0, account: acctCode, alwaysGST: false },
+        { label: 'Other (no super)',  amount: p.expenses.other         || 0, account: acctCode, alwaysGST: false },
       ];
       items.filter(x => x.amount > 0).forEach(x => {
-        const exGSTAmt = isGSTContractor ? (x.amount / 1.1) : x.amount;
+        const itemHasGST = x.alwaysGST || isGSTContractor;
+        const itemTaxType = itemHasGST ? 'INPUT' : 'EXEMPTEXPENSES';
+        const exGSTAmt = itemHasGST ? (x.amount / 1.1) : x.amount;
+        const expDesc = buildXeroExpenseDescription_({ label: x.label, invNum, dateReadable });
         lineItems.push({
-          Description: `${x.label} - ${cName} | Inv: ${invNum}`,
+          Description: expDesc,
           Quantity: 1,
           UnitAmount: r2(exGSTAmt),
           AccountCode: x.account,
-          TaxType: expTaxType
+          TaxType: itemTaxType
         });
       });
     }
