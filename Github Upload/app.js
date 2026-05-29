@@ -4303,76 +4303,109 @@ function buildBreakdownHtml(p) {
   const accom   = exp.accommodation || 0;
   const travel  = exp.travel || 0;
   const other   = exp.other || 0;
-  const expTotal = parking + accom + travel + other;
-  const servicePortion = total - expTotal;
+  // Reimbursements = parking + accom + other. Travel is NOT a reimbursement here — it sits
+  // with the performance fee because super applies to it (super on time-based work, regardless
+  // of whether the time was at venue or in-transit).
+  const reimbTotal = parking + accom + other;
+  // Performance fee = invoice total − reimbursements (inc GST for Type B/D, ex GST for A/C)
+  const perfFeeIncGST = total - reimbTotal;
+  const perfFeeExGST  = isGST ? r2(perfFeeIncGST / 1.1) : perfFeeIncGST;
+  const perfFeeGST    = isGST ? r2(perfFeeIncGST - perfFeeExGST) : 0;
+  // Super is calculated on perf-fee ex-GST as a SUPER-INCLUSIVE base — super = ex-GST × 12/112
   const superOn = (typeof superDeductionsEnabled === 'function') ? superDeductionsEnabled() : true;
-  const willWithholdSuper = p.withholdSuper && superOn && (a.super||0) > 0;
-  // Super is computed on the assessable base (= service fee + travel, ex-GST for B/D).
-  // exportXeroCSV uses calculateAmounts(p.superBase, p.type).super when superBase differs from
-  // serviceFee; we mirror the resulting amount here so the popover matches the Xero bill.
-  const superAmt = willWithholdSuper
-    ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
-        ? (typeof calculateAmounts === 'function' ? calculateAmounts(p.superBase, p.type, p.superRate).super : (a.super||0))
-        : (a.super||0))
-    : 0;
-  const fullCash = r2(total - superAmt);
-  const fullGst  = isGST ? r2(total - total / 1.1) : 0;
-  const gstOn    = amt => isGST ? r2(amt - amt / 1.1) : 0;
-  const acctFor  = (typeof ACCOUNT_CODES !== 'undefined') ? ACCOUNT_CODES : {};
-  const fundName = (p.contractor && p.contractor.fundName) || '—';
   const superRate = p.superRate || 12;
+  const willWithholdSuper = p.withholdSuper && superOn && (a.super || 0) > 0;
+  const superAmt = willWithholdSuper ? r2(perfFeeExGST * superRate / (100 + superRate)) : 0;
+  const cashToPerformer = r2(total - superAmt);
+  // GST claim — full GST on the bill (B/D only). Per-line breakdown for transparency.
+  const totalExGST = isGST ? r2(total / 1.1) : total;
+  const totalGST   = isGST ? r2(total - totalExGST) : 0;
+  const gstOn      = amt => isGST ? r2(amt - amt / 1.1) : 0;
+  const acct  = (typeof ACCOUNT_CODES !== 'undefined') ? ACCOUNT_CODES : {};
+  const acctServ = acct[typeCode] || '301';
+  const fundName = (p.contractor && p.contractor.fundName) || '—';
   const typeLabel = { A:'Individual, no GST', B:'Individual + GST', C:'Company, no GST', D:'Company + GST' }[typeCode] || typeCode;
 
-  const expRow = (label, amt, acct) => amt > 0
-    ? `<tr><td style="padding-left:14px;color:#5B6B7B">— ${label}</td><td style="text-align:right">${$(amt)}</td><td style="text-align:right;color:#5B6B7B;font-size:11px;padding-left:8px">${acct}</td></tr>`
-    : '';
-  const expSection = expTotal > 0 ? `
-    ${expRow('Parking',       parking, '449')}
-    ${expRow('Accommodation', accom,   '493-C')}
-    ${expRow('Travel',        travel,  acctFor[typeCode]||'301')}
-    ${expRow('Other',         other,   acctFor[typeCode]||'301')}
-    <tr style="border-top:1px dashed #CBD5E0"><td>Service portion ${isGST?'(inc GST)':''}</td><td style="text-align:right;font-weight:600">${$(servicePortion)}</td><td></td></tr>` : '';
-
-  const superSection = superAmt > 0 ? `
-    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">Super deduction</div>
+  // ── Section: REIMBURSEMENTS ───────────────────────────────────────────────
+  const reimbRow = (label, amt, acctCode) => amt > 0 ? `
+    <tr><td style="padding-left:14px;color:#5B6B7B">— ${label}</td><td style="text-align:right;color:#5B6B7B;font-size:11px;padding-left:12px">→ ${acctCode}</td><td style="text-align:right">${$(amt)}</td></tr>` : '';
+  const reimbSection = reimbTotal > 0 ? `
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Reimbursements <span style="font-weight:400;color:#94A3B8;font-size:11px">(no super, paid back to performer)</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>Assessable base ${isGST?'(ex-GST)':''}</td><td style="text-align:right">${$(p.superBase || servicePortion)}</td></tr>
-      <tr><td>Super @ ${superRate}%</td><td style="text-align:right;color:#1F9D63;font-weight:600">−${$(superAmt)}</td></tr>
-      <tr><td style="font-size:11px;color:#5B6B7B">→ to fund</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${escHtml(fundName)}</td></tr>
+      ${reimbRow('Parking',       parking, '449')}
+      ${reimbRow('Accommodation', accom,   '493-C')}
+      ${reimbRow('Other',         other,   acctServ)}
+      <tr style="border-top:1px dashed #CBD5E0"><td>Total reimbursements</td><td></td><td style="text-align:right;font-weight:600">${$(reimbTotal)}</td></tr>
     </table>` : '';
 
-  const gstSection = isGST ? `
-    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">GST claim (MEC)</div>
+  // ── Section: PERFORMANCE FEE ─────────────────────────────────────────────
+  const perfFeeSection = `
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Performance fee <span style="font-weight:400;color:#94A3B8;font-size:11px">(super applies to this)</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>GST on full invoice</td><td style="text-align:right;color:#1F9D63;font-weight:600">${$(fullGst)}</td></tr>
+      <tr><td>Invoice total</td><td style="text-align:right">${$(total)}</td></tr>
+      ${reimbTotal > 0 ? `<tr><td>− Reimbursements</td><td style="text-align:right;color:#5B6B7B">−${$(reimbTotal)}</td></tr>` : ''}
+      ${reimbTotal > 0 ? `<tr style="border-top:1px dashed #CBD5E0"><td><strong>Performance fee ${isGST?'(inc GST)':''}</strong></td><td style="text-align:right;font-weight:600">${$(perfFeeIncGST)}</td></tr>` : ''}
+      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">ex-GST</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeExGST)}</td></tr>` : ''}
+      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">GST on perf fee</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeGST)}</td></tr>` : ''}
+    </table>`;
+
+  // ── Section: SUPER DEDUCTION ─────────────────────────────────────────────
+  const superSection = superAmt > 0 ? `
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Super deduction</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>Performance fee ex-GST</td><td style="text-align:right">${$(perfFeeExGST)}</td></tr>
+      <tr><td>× ${superRate}% (super-inclusive)</td><td style="text-align:right;color:#5B6B7B;font-size:11px">× ${superRate}/${100+superRate}</td></tr>
+      <tr style="border-top:1px dashed #CBD5E0"><td><strong>Super amount</strong></td><td style="text-align:right;font-weight:700;color:#1F9D63">${$(superAmt)}</td></tr>
+      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-top:2px">→ paid to <strong style="color:#1B2733">${escHtml(fundName)}</strong></td></tr>
+    </table>` : '';
+
+  // ── Section: WHERE THE MONEY GOES (two-box cash split) ───────────────────
+  const moneySplitSection = `
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 6px;font-size:12px">Where the ${$(total)} goes</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="background:#EBF8F0;border:1px solid #9AE6B4;border-radius:8px;padding:9px 11px">
+        <div style="font-size:10px;color:#1F9D63;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Performer</div>
+        <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(cashToPerformer)}</div>
+      </div>
+      ${superAmt > 0 ? `
+      <div style="background:#EBF4FF;border:1px solid #A3BFFA;border-radius:8px;padding:9px 11px">
+        <div style="font-size:10px;color:#3B5AB8;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Super fund</div>
+        <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(superAmt)}</div>
+      </div>` : `
+      <div style="background:#F7FAFC;border:1px dashed #CBD5E0;border-radius:8px;padding:9px 11px;color:#94A3B8">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase">No super</div>
+        <div style="font-size:13px;margin-top:2px">withheld this run</div>
+      </div>`}
+    </div>`;
+
+  // ── Section: GST CLAIM ───────────────────────────────────────────────────
+  const gstSection = isGST ? `
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">GST claim (MEC)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>GST on full invoice</td><td style="text-align:right;color:#1F9D63;font-weight:700">${$(totalGST)}</td></tr>
+      <tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on performance fee</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(perfFeeGST)}</td></tr>
       ${parking > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on parking</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(parking))}</td></tr>` : ''}
       ${accom > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on accommodation</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(accom))}</td></tr>` : ''}
-      ${travel > 0  ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on travel</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(travel))}</td></tr>` : ''}
       ${other > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on other</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(other))}</td></tr>` : ''}
-      <tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on service portion</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(servicePortion))}</td></tr>
     </table>` : '';
 
   return `
-    <div style="border-bottom:1px solid #E2E8F0;padding-bottom:8px;margin-bottom:10px">
+    <div style="border-bottom:1px solid #E2E8F0;padding-bottom:8px;margin-bottom:6px">
       <div style="font-weight:700;font-size:13px;color:#1B2733">${escHtml((p.contractor && p.contractor.name) || p.name || '—')}</div>
       <div style="font-size:11px;color:#5B6B7B;margin-top:2px">Inv ${escHtml(p.invoiceNumber||'—')} · Type ${typeCode} — ${typeLabel}</div>
     </div>
 
-    <div style="font-weight:600;color:#1B2733;margin-bottom:4px">Invoice breakdown</div>
+    <div style="font-weight:600;color:#1B2733;margin:6px 0 4px;font-size:12px">Invoice</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>Invoice total ${isGST?'(inc GST)':''}</td><td style="text-align:right;font-weight:600">${$(total)}</td><td></td></tr>
-      ${expSection}
+      <tr><td>Invoice total ${isGST?'(inc GST)':''}</td><td style="text-align:right;font-weight:700">${$(total)}</td></tr>
+      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">Subtotal (ex-GST)</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(totalExGST)}</td></tr>` : ''}
+      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">GST (10%)</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(totalGST)}</td></tr>` : ''}
     </table>
 
+    ${reimbSection}
+    ${perfFeeSection}
     ${superSection}
-
-    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">Cash to performer</div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>Invoice total</td><td style="text-align:right">${$(total)}</td></tr>
-      ${superAmt > 0 ? `<tr><td>Less super</td><td style="text-align:right;color:#1F9D63">−${$(superAmt)}</td></tr>` : ''}
-      <tr style="border-top:1px solid #CBD5E0;font-weight:700"><td>Net cash</td><td style="text-align:right;color:#1B2733">${$(fullCash)}</td></tr>
-    </table>
-
+    ${moneySplitSection}
     ${gstSection}
   `;
 }
@@ -4392,11 +4425,15 @@ function buildResultsView() {
   // Super uses the assessable-base recompute (matches what exportXeroCSV emits) — if a
   // performer has parking/accom/other excluded, super applies only to the service portion.
   const r2 = n => Math.round((n||0)*100)/100;
+  // Super = performance-fee-ex-GST × rate/(100+rate). p.superBase is INC-GST for B/D.
   const superFor = p => {
     if (!showsSuper(p)) return 0;
-    return (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
-      ? calculateAmounts(p.superBase, p.type, p.superRate).super
-      : (p.amounts?.super || 0);
+    if (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)) {
+      const baseEx = ['B','D'].includes(p.type) ? (p.superBase / 1.1) : p.superBase;
+      const rate = p.superRate || 12;
+      return Math.round(baseEx * rate / (100 + rate) * 100) / 100;
+    }
+    return p.amounts?.super || 0;
   };
   const totalSuper = r2(superRows.reduce((sum,p) => sum + superFor(p), 0));
   // Cash to performer = FULL invoice − super (parking + accom + travel + other all pay to
@@ -4618,8 +4655,16 @@ function buildResultsView() {
       const rowCash  = cashFor(p);
       const rowGst   = gstFor(p);
       const rowGstCell = rowGst > 0 ? `<span class="badge badge-ok">$${fmt(rowGst)}</span>` : '—';
+      // Small × button to remove this row from the current pay run (does NOT delete the
+      // underlying invoice from Step 2 — re-processing brings it back. Use this to drop a
+      // stale/duplicate row, or one that's been paid outside the pay run.)
+      const removeBtn = `<button onclick="event.stopPropagation();removeContractorRow('${p.id}')"
+        title="Remove from this pay run"
+        style="margin-left:8px;background:transparent;border:1px solid #E2E8F0;color:#94A3B8;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;line-height:1;padding:0;vertical-align:middle"
+        onmouseover="this.style.background='#FEF2F2';this.style.color='#C53030';this.style.borderColor='#FEB2B2'"
+        onmouseout="this.style.background='transparent';this.style.color='#94A3B8';this.style.borderColor='#E2E8F0'">✕</button>`;
       return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default">
-        <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
+        <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}${removeBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
         <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
@@ -5550,6 +5595,19 @@ function exportSAFFCSV() {
 // ══════════════════════════════════════════════════════════════════════════════
 // Override paid exclusion — force-include a Zoho-marked-paid row in exports
 // ══════════════════════════════════════════════════════════════════════════════
+// Drop a row from the current pay run. Doesn't touch Step 2's invoice data, so re-running
+// Process Invoices will bring it back — this is purely a "exclude from this run" knob.
+function removeContractorRow(rowId) {
+  const p = processed.find(x => String(x.id) === String(rowId));
+  if (!p) { console.warn('removeContractorRow: row not found', rowId); return; }
+  const name = (p.contractor && p.contractor.name) || p.name || 'this invoice';
+  const ok = confirm(`Remove ${name} (Inv ${p.invoiceNumber || '—'}) from this pay run?\n\nThe invoice data isn't deleted — re-clicking "Process Invoices" will bring it back. This just drops it from the current Step 3 view + exports.`);
+  if (!ok) return;
+  processed = processed.filter(x => String(x.id) !== String(rowId));
+  buildResultsView();
+  if (typeof showBanner === 'function') showBanner(`Removed ${name} from this pay run.`, 'info');
+}
+
 function overridePaidExclusion(id) {
   const p = processed.find(x => x.id === id);
   if (!p) return;
