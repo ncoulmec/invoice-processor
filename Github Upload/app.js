@@ -2134,7 +2134,12 @@ function alignReviewRail() {
 let _railAlignTimer = null;
 function scheduleRailAlign() {
   if (_railAlignTimer) clearTimeout(_railAlignTimer);
-  _railAlignTimer = setTimeout(alignReviewRail, 50);
+  // Two passes: 50ms (catches most cases) + 250ms (covers slow reflow from images / fonts /
+  // PDF load). Cheap to run, robust to timing variation.
+  _railAlignTimer = setTimeout(() => {
+    alignReviewRail();
+    setTimeout(alignReviewRail, 200);
+  }, 50);
 }
 
 window.addEventListener('resize', () => { if (typeof scheduleRailAlign === 'function') scheduleRailAlign(); });
@@ -2677,7 +2682,9 @@ function reviewSearchContractor(query) {
   const q = (query || '').trim().toLowerCase();
   if (q.length < 2) { drop.style.display = 'none'; return; }
   const matches = contractors.filter(c =>
-    c.name.toLowerCase().includes(q) || (c.abn && c.abn.includes(q))
+    c.name.toLowerCase().includes(q) ||
+    (c.xeroName && c.xeroName.toLowerCase().includes(q)) ||
+    (c.abn && c.abn.includes(q))
   ).slice(0, 8);
   if (!matches.length) {
     drop.innerHTML = '<div style="padding:8px;font-size:12px;color:#888">No matches</div>';
@@ -2686,8 +2693,13 @@ function reviewSearchContractor(query) {
   drop.innerHTML = matches.map(c => {
     const tl = `<span class="badge badge-${(c.type||'a').toLowerCase()}" style="font-size:9px;padding:1px 5px;margin-left:4px">${c.type}</span>`;
     const sl = c.superEligible ? '<span style="color:#27AE60;font-size:10px;margin-left:4px">✓ Super</span>' : '';
+    // Surface the xeroName as a secondary line when it differs from the primary name — helps
+    // the user spot that "Pete (Indigo) Mitchell" is the right pick for a "JAZZ TO ROCK" invoice.
+    const xn = c.xeroName && c.xeroName.toLowerCase() !== c.name.toLowerCase()
+      ? `<div style="font-size:10px;color:#94A3B8;margin-top:1px">↗ Xero: ${escHtml(c.xeroName)}</div>`
+      : '';
     return `<div class="contractor-option" onmousedown="reviewSelectContractor('${c.zohoId}')">
-      <span class="opt-name">${escHtml(c.name)}</span>${tl}${sl}
+      <span class="opt-name">${escHtml(c.name)}</span>${tl}${sl}${xn}
       <span class="opt-abn">${c.abn||'—'}</span>
     </div>`;
   }).join('');
@@ -3101,27 +3113,63 @@ function rvUpdateInlineIdentity() {
   const el = document.getElementById('rv-super-identity-inline');
   if (!el) return;
   const name = (document.getElementById('rv-name')?.value || '').trim();
-  const abn  = (document.getElementById('rv-abn')?.value || '').trim();
+  const abn  = (document.getElementById('rv-abn')?.value || '').trim().replace(/\s/g,'');
   const gstOn = !!document.getElementById('rv-gst')?.checked;
-  // Look up the matched contractor for entity-type info (ABR + Zoho cross-check)
-  let entity = '—';
+  // Look up the matched contractor by NAME (Zoho record), and capture the ABR data we have
+  // for the invoice's ABN (which may differ from Zoho's stored ABN — talent-manager case).
+  let zohoRec = null;
   if (name && typeof contractors !== 'undefined' && Array.isArray(contractors)) {
-    const m = contractors.find(c => (c.name||'').toLowerCase() === name.toLowerCase());
-    if (m) {
-      const t = m.type || (gstOn ? 'B' : 'A');
-      entity = ({ A:'Individual Sole Trader (no GST)', B:'Individual Sole Trader (plus GST)',
-                  C:'Partnerships, Companies, or Trusts (no GST)', D:'Partnerships, Companies, or Trusts (plus GST)' })[t] || t;
+    zohoRec = contractors.find(c => (c.name||'').toLowerCase() === name.toLowerCase()) || null;
+  }
+  // ABR data for THIS invoice's ABN, if we've already looked it up
+  let abrData = null;
+  if (typeof abrRowData !== 'undefined' && reviewModalRowId) {
+    abrData = abrRowData['id_' + reviewModalRowId] || null;
+  }
+  // Decide which entity type to surface. Priority:
+  //   1. ABR-derived (truth from the invoice ABN, e.g. "Pty Ltd")
+  //   2. Zoho record's type field
+  //   3. Inferred from GST checkbox
+  let entity = '—';
+  let entitySource = '';
+  if (abrData && abrData.entityType) {
+    const eg = (abrData.entityType || '').toLowerCase();
+    if (eg.includes('individual') || eg.includes('sole')) {
+      entity = gstOn ? 'Individual Sole Trader (plus GST)' : 'Individual Sole Trader (no GST)';
+    } else {
+      entity = gstOn ? 'Partnerships, Companies, or Trusts (plus GST)' : 'Partnerships, Companies, or Trusts (no GST)';
     }
+    entitySource = 'from ABR';
+  } else if (zohoRec) {
+    const t = zohoRec.type || (gstOn ? 'B' : 'A');
+    entity = ({ A:'Individual Sole Trader (no GST)', B:'Individual Sole Trader (plus GST)',
+                C:'Partnerships, Companies, or Trusts (no GST)', D:'Partnerships, Companies, or Trusts (plus GST)' })[t] || t;
+    entitySource = 'from Zoho';
   }
   if (!name && !abn) { el.style.display = 'none'; return; }
+
+  // ABN-mismatch warning — invoice ABN differs from Zoho's stored ABN for this contractor.
+  // Almost always means a talent manager / company is invoicing on the performer's behalf.
+  // The invoice ABN is the source of truth for super eligibility + GST.
+  const zohoAbn = (zohoRec && zohoRec.abn || '').replace(/\s/g,'');
+  const abnsDiffer = abn && zohoAbn && abn !== zohoAbn;
+  const abrIsCompany = abrData && (abrData.entityType || '').toLowerCase().match(/company|trust|partnership|pty/);
+  const warn = (abnsDiffer || abrIsCompany)
+    ? `<div style="margin-top:6px;padding:7px 10px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:5px;color:#7A5A12;font-size:11px;line-height:1.5">
+         ⚠ <strong>Invoice ABN differs from Zoho record${abrIsCompany ? ' — entity is a company/trust' : ''}.</strong>
+         ${abrIsCompany ? `Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to the company, not ' + escHtml(zohoRec.name) + ' personally)' : ''}.` : 'Verify which ABN is correct before approving.'}
+       </div>`
+    : '';
+
   el.style.display = 'block';
   el.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center">
       <span><strong style="color:#1B2733">${escHtml(name) || '—'}</strong></span>
       ${abn ? `<span style="color:#7A8896">ABN ${escHtml(abn)}</span>` : ''}
-      <span style="color:#7A8896">${escHtml(entity)}</span>
+      <span style="color:#7A8896">${escHtml(entity)}${entitySource ? ` <span style="color:#94A3B8;font-size:10px">(${entitySource})</span>` : ''}</span>
       <span style="color:${gstOn ? '#1F9D63' : '#94A3B8'};font-weight:600">${gstOn ? '+ GST' : 'no GST'}</span>
-    </div>`;
+    </div>
+    ${warn}`;
 }
 
 function rvSyncMultiPerfPanel(id) {
@@ -3863,15 +3911,22 @@ function matchContractor(name, abn) {
 
   const needle = name.toLowerCase().trim();
 
-  // Exact name match
-  let found = contractors.find(c => c.name.toLowerCase() === needle);
+  // Exact name match — check both c.name (Zoho name) AND c.xeroName (Xero entity name).
+  // Lets us match invoices billed under an entity name like "JAZZ TO ROCK ENTERTAINMENT PTY"
+  // back to the Zoho record whose primary name is "Pete (Indigo) Mitchell".
+  let found = contractors.find(c =>
+    c.name.toLowerCase() === needle ||
+    (c.xeroName && c.xeroName.toLowerCase() === needle)
+  );
   if (found) return found;
 
   // Contains match (only if needle is ≥ 4 chars and not a stopword)
   if (needle.length >= 4 && !MATCH_STOPWORDS.has(needle)) {
     found = contractors.find(c => {
       const cn = c.name.toLowerCase();
-      return cn.includes(needle) || needle.includes(cn);
+      const xn = (c.xeroName || '').toLowerCase();
+      return cn.includes(needle) || needle.includes(cn)
+          || (xn && (xn.includes(needle) || needle.includes(xn)));
     });
     if (found) return found;
   }
@@ -3883,7 +3938,9 @@ function matchContractor(name, abn) {
     const minHits = Math.min(2, words.length);
     found = contractors.find(c => {
       const cn = c.name.toLowerCase().split(/\s+/);
-      const hits = words.filter(w => cn.some(cw => cw === w && !MATCH_STOPWORDS.has(cw))).length;
+      const xn = (c.xeroName || '').toLowerCase().split(/\s+/);
+      const allWords = cn.concat(xn);
+      const hits = words.filter(w => allWords.some(cw => cw === w && !MATCH_STOPWORDS.has(cw))).length;
       return hits >= minHits;
     });
   }
@@ -5089,10 +5146,10 @@ function exportXeroCSV() {
               fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
             })
           : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
-        rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, lineDesc, 1, amt.toFixed(2), acctCode, taxType));
+        rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), lineDesc, 1, amt.toFixed(2), acctCode, taxType));
       });
     } else {
-      rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
+      rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
     }
 
     // Lines 2+ — expense splits (parking / accommodation / travel). Same billRef so Xero keeps
@@ -5126,7 +5183,7 @@ function exportXeroCSV() {
     const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
-    rows.push(mkRow(supplierName, invNum, '', dateXero, dateXero, apDesc, 1, apAmount, apAcctCode, apTaxType));
+    rows.push(mkRow(supplierName, invNum, '', dateXero, addDaysToXeroCSVDate(dateXero, 7), apDesc, 1, apAmount, apAcctCode, apTaxType));
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_Contractor_${today()}.csv`);
@@ -5313,7 +5370,7 @@ function buildXeroInvoicesData() {
       Status: 'DRAFT',
       Contact: { Name: billContact },
       Date: dateXero,
-      DueDate: dateXero,
+      DueDate: addDaysISO(dateXero, 7),
       InvoiceNumber: billRefPush,
       Reference: eventRef,
       LineAmountTypes: 'Exclusive',
@@ -5341,7 +5398,7 @@ function buildXeroInvoicesData() {
       Status: 'DRAFT',
       Contact: { Name: supplierName },
       Date: dateXero,
-      DueDate: dateXero,
+      DueDate: addDaysISO(dateXero, 7),
       InvoiceNumber: invNum,
       LineAmountTypes: 'Exclusive',
       LineItems: [{
@@ -5854,6 +5911,9 @@ function removeContractorRow(rowId) {
   const name = (p.contractor && p.contractor.name) || p.name || 'this invoice';
   const ok = confirm(`Remove ${name} (Inv ${p.invoiceNumber || '—'}) from this pay run?\n\nThe invoice data isn't deleted — re-clicking "Process Invoices" will bring it back. This just drops it from the current Step 3 view + exports.`);
   if (!ok) return;
+  // Hide the hover popover BEFORE re-rendering — otherwise it persists because the source <tr>'s
+  // mouseleave never fires (the <tr> just disappears from the DOM).
+  if (typeof hideRowBreakdown === 'function') hideRowBreakdown();
   processed = processed.filter(x => String(x.id) !== String(rowId));
   buildResultsView();
   if (typeof showBanner === 'function') showBanner(`Removed ${name} from this pay run.`, 'info');
@@ -6040,6 +6100,27 @@ async function downloadInvoicesZip() {
   a.download = `MEC Invoices ${today()}.zip`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// Add N days to an ISO yyyy-MM-dd date and return the new ISO date (NET 7 / 14 / etc).
+function addDaysISO(isoDate, n) {
+  if (!isoDate) return isoDate;
+  const m = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return isoDate;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  d.setUTCDate(d.getUTCDate() + (n||0));
+  return d.toISOString().split('T')[0];
+}
+// Same idea for Xero CSV format (dd/MM/yyyy)
+function addDaysToXeroCSVDate(xeroDate, n) {
+  if (!xeroDate) return xeroDate;
+  const m = String(xeroDate).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return xeroDate;
+  const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+  d.setUTCDate(d.getUTCDate() + (n||0));
+  const dd = String(d.getUTCDate()).padStart(2,'0');
+  const mm = String(d.getUTCMonth()+1).padStart(2,'0');
+  return `${dd}/${mm}/${d.getUTCFullYear()}`;
 }
 
 function formatDateXero(d) {
@@ -7186,24 +7267,80 @@ function missingSuperFields(c) {
   return miss;
 }
 
-// Per-contractor pre-filled Zoho form link (opens the form populated with their record).
+// Maps contractor record fields → Zoho form URL parameter names.
+// IMPORTANT: these names must match the exact field labels in the Zoho form. Zoho's URL
+// prefill uses the field's display label (e.g. "ABN" stays "ABN", "Full Name" → "Name"
+// depending on field type). If a prefilled value doesn't appear on the form, inspect the
+// form HTML and adjust the right-hand side to match the actual input name= attribute.
+// (You can right-click any form field → Inspect → look at name="..." to get the exact key.)
+const ZOHO_FORM_FIELD_MAP = {
+  name:          'Name',                  // Full name field
+  email:         'Email',                  // Email address
+  phone:         'PhoneNumber',            // Phone (often "PhoneNumber" or "MobileNumber")
+  abn:           'ABN',                    // ABN
+  bsb:           'BSB',                    // BSB
+  accountNumber: 'AccountNumber',          // Bank account number
+  fundName:      'SuperFundName',          // Super fund name
+  fundABN:       'SuperFundABN',           // Super fund ABN
+  fundUSI:       'SuperFundUSI',           // Super fund USI / SPIN
+  memberNumber:  'MemberNumber',           // Super member number
+  tfn:           'TFN',                    // Tax file number
+  address:       'ResidentialAddress',     // Residential address
+  dob:           'DateOfBirth',            // Date of birth
+};
+
+// Build a Zoho form URL with as much pre-fill data as we have. Each contractor field is
+// passed as a URL param using ZOHO_FORM_FIELD_MAP. Works without Zoho's session token —
+// when the link is pasted into any browser, Zoho populates the matching fields.
 function superFormLink(c) {
-  const id = c && (c.zohoId || c.id);
-  return id ? `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(id)}` : SUPER_FORM_URL;
+  if (!c) return SUPER_FORM_URL;
+  const params = new URLSearchParams();
+  // Optional fallback — still passes the CRM entity id, in case Zoho is configured to
+  // also use it for the submission-side link-back.
+  const id = c.zohoId || c.id;
+  if (id) params.set('crm_entity_id', id);
+  // Pre-fill values
+  const setIf = (key, val) => { if (val != null && String(val).trim() !== '') params.set(key, String(val).trim()); };
+  setIf(ZOHO_FORM_FIELD_MAP.name,          c.name);
+  setIf(ZOHO_FORM_FIELD_MAP.email,         c.email);
+  setIf(ZOHO_FORM_FIELD_MAP.phone,         c.phone || c.mobile);
+  setIf(ZOHO_FORM_FIELD_MAP.abn,           c.abn);
+  setIf(ZOHO_FORM_FIELD_MAP.bsb,           c.bsb);
+  setIf(ZOHO_FORM_FIELD_MAP.accountNumber, c.accountNumber || c.accountNo);
+  setIf(ZOHO_FORM_FIELD_MAP.fundName,      c.fundName);
+  setIf(ZOHO_FORM_FIELD_MAP.fundABN,       c.fundABN);
+  setIf(ZOHO_FORM_FIELD_MAP.fundUSI,       c.fundUSI);
+  setIf(ZOHO_FORM_FIELD_MAP.memberNumber,  c.memberNumber);
+  setIf(ZOHO_FORM_FIELD_MAP.tfn,           c.tfn);
+  setIf(ZOHO_FORM_FIELD_MAP.address,       c.address || c.residentialAddress);
+  setIf(ZOHO_FORM_FIELD_MAP.dob,           c.dob);
+  return SUPER_FORM_URL + '?' + params.toString();
+}
+
+// Resolve a contractor object by zohoId or name — needed because the "Copy form link" /
+// "Email form" buttons only have those two pieces of info, not the full record.
+function findContractorRecord_(zohoId, name) {
+  if (typeof contractors === 'undefined' || !Array.isArray(contractors)) return null;
+  let c = null;
+  if (zohoId) c = contractors.find(x => x && (x.zohoId === zohoId || x.id === zohoId));
+  if (!c && name) c = contractors.find(x => x && (x.name||'').toLowerCase() === name.toLowerCase());
+  return c || { zohoId: zohoId, name: name };  // minimal fallback
 }
 
 // Copy a contractor's pre-filled form link to the clipboard.
 function copySuperFormLink(zohoId, name) {
-  const link = `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(zohoId || '')}`;
+  const c = findContractorRecord_(zohoId, name);
+  const link = superFormLink(c);
   navigator.clipboard?.writeText(link).then(
-    () => alert('✓ Copied super-details form link for ' + (name || 'contractor') + '.\n\nSend it to them so they can complete their details.'),
+    () => alert('✓ Copied super-details form link for ' + (name || 'contractor') + '.\n\nSend it to them so they can complete their details. Fields we know already are pre-filled.'),
     () => prompt('Copy this super-details form link:', link)
   );
 }
 
 // Open a pre-addressed chase email to a contractor missing super details.
 function emailSuperForm(email, zohoId, name) {
-  const link = `${SUPER_FORM_URL}?crm_entity_id=${encodeURIComponent(zohoId || '')}`;
+  const c = findContractorRecord_(zohoId, name);
+  const link = superFormLink(c);
   const subj = 'Action needed: your super details for MEC payments';
   const body = `Hi ${name || ''},\n\n`
     + `Before we can pay you, we need your superannuation details on file. Could you take 2 minutes `

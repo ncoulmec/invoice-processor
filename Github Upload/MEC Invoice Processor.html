@@ -575,9 +575,15 @@
           </div>
           <p style="margin:0 0 13px;font-size:13px;color:#5A6B7B;line-height:1.55">One bill per contractor, paid <strong>net</strong> (total minus super), coded 301 / 301-A. Import via <strong>Accounting → Purchases → Import</strong>. The invoice-PDF ZIP holds every PDF renamed <em>Name · Invoice# · Date</em> so you can drag them onto the matching bills.</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <button class="btn btn-primary" onclick="exportXeroCSV()">⬇ Contractor Bills CSV</button>
-            <button class="btn btn-secondary" onclick="downloadInvoicesZip()">⬇ Invoice PDFs (ZIP)</button>
-            <button id="push-xero-btn" onclick="pushToXero()" title="Create the contractor bills directly in Xero as DRAFTs (with PDFs attached) via the Apps Script proxy. Skips the manual CSV+ZIP import." style="background:#1D7A8C;color:#fff;border:1px solid #1D7A8C;padding:8px 14px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↗ Push to Xero</button>
+            <button id="push-xero-btn" onclick="pushToXero()" title="Create the contractor bills directly in Xero as DRAFTs (with PDFs attached) via the Apps Script proxy" style="background:#1D7A8C;color:#fff;border:1px solid #1D7A8C;padding:9px 16px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">↗ Push to Xero</button>
+            <details style="margin-left:4px">
+              <summary style="cursor:pointer;color:#94A3B8;font-size:11px;font-weight:500;padding:6px 0">Legacy / fallback (manual CSV import) ⌄</summary>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;padding:8px 10px;background:#F7FAFC;border:1px dashed #CBD5E0;border-radius:6px">
+                <button onclick="exportXeroCSV()" style="background:#fff;border:1px solid #CBD5E0;color:#5B6B7B;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">⬇ Contractor Bills CSV</button>
+                <button onclick="downloadInvoicesZip()" style="background:#fff;border:1px solid #CBD5E0;color:#5B6B7B;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">⬇ Invoice PDFs (ZIP)</button>
+                <span style="font-size:10px;color:#94A3B8;margin-left:4px">— use if Push to Xero is unavailable</span>
+              </div>
+            </details>
           </div>
           <div style="display:flex;gap:16px;margin-top:9px">
             <span id="xero-preview-count" style="font-size:11px;color:#94A3B8"></span>
