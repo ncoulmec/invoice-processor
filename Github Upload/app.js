@@ -4405,28 +4405,45 @@ function buildBreakdownHtml(p) {
       ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">GST on perf fee</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeGST)}</td></tr>` : ''}
     </table>`;
 
-  // ── Section: SUPER DEDUCTION ─────────────────────────────────────────────
+  // ── Section: SUPER DEDUCTION (simpler math: ÷ 1.12 then split) ──────────
+  const performerPortionExGST = Math.round((perfFeeExGST - superAmt) * 100) / 100;
+  const divisor = (100 + superRate) / 100;  // e.g. 1.12 at 12%
   const superSection = superAmt > 0 ? `
-    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Super deduction</div>
+    <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Super deduction <span style="font-weight:400;color:#94A3B8;font-size:11px">(on perf fee ${isGST?'ex-GST':''} ${$(perfFeeExGST)})</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>Performance fee ex-GST</td><td style="text-align:right">${$(perfFeeExGST)}</td></tr>
-      <tr><td>× ${superRate}% (super-inclusive)</td><td style="text-align:right;color:#5B6B7B;font-size:11px">× ${superRate}/${100+superRate}</td></tr>
-      <tr style="border-top:1px dashed #CBD5E0"><td><strong>Super amount</strong></td><td style="text-align:right;font-weight:700;color:#1F9D63">${$(superAmt)}</td></tr>
-      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-top:2px">→ paid to <strong style="color:#1B2733">${escHtml(fundName)}</strong></td></tr>
+      <tr><td>Performer portion <span style="color:#94A3B8;font-size:11px">(${$(perfFeeExGST)} ÷ ${divisor})</span></td><td style="text-align:right">${$(performerPortionExGST)}</td></tr>
+      <tr><td>Super <span style="color:#94A3B8;font-size:11px">(${superRate}% on top)</span></td><td style="text-align:right;font-weight:700;color:#1F9D63">+${$(superAmt)}</td></tr>
+      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-top:2px">↑ super paid to <strong style="color:#1B2733">${escHtml(fundName)}</strong></td></tr>
+      <tr style="border-top:1px dashed #CBD5E0"><td style="font-size:11px;color:#5B6B7B">Check: ${$(performerPortionExGST)} + ${$(superAmt)}</td><td style="text-align:right;font-size:11px;color:#5B6B7B">= ${$(perfFeeExGST)} ✓</td></tr>
     </table>` : '';
 
-  // ── Section: WHERE THE MONEY GOES (two-box cash split) ───────────────────
+  // ── Section: WHERE THE MONEY GOES (two-box cash split + sub-breakdown) ──
+  const r2x = n => Math.round((n||0)*100)/100;
+  const perfFeeNetIncGST = r2x(perfFeeIncGST - superAmt);
+  const performerLines = [
+    { label: superAmt > 0 ? 'Perf fee (less super)' : 'Performance fee', amt: perfFeeNetIncGST },
+    { label: 'Parking',       amt: parking },
+    { label: 'Accommodation', amt: accom   },
+    { label: 'Travel',        amt: travel  },
+    { label: 'Other',         amt: other   },
+  ].filter(x => x.amt > 0);
+  const performerSubLines = performerLines.length > 1 ? `
+    <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #C6EBD3;font-size:11px;color:#5B6B7B;line-height:1.55">
+      ${performerLines.map(x => `<div style="display:flex;justify-content:space-between"><span>${x.label}</span><span>${$(x.amt)}</span></div>`).join('')}
+    </div>` : '';
   const moneySplitSection = `
     <div style="font-weight:600;color:#1B2733;margin:12px 0 6px;font-size:12px">Where the ${$(total)} goes</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="background:#EBF8F0;border:1px solid #9AE6B4;border-radius:8px;padding:9px 11px">
         <div style="font-size:10px;color:#1F9D63;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Performer</div>
         <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(cashToPerformer)}</div>
+        ${performerSubLines}
       </div>
       ${superAmt > 0 ? `
       <div style="background:#EBF4FF;border:1px solid #A3BFFA;border-radius:8px;padding:9px 11px">
         <div style="font-size:10px;color:#3B5AB8;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Super fund</div>
         <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(superAmt)}</div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #BFD0F5;font-size:11px;color:#5B6B7B">→ ${escHtml(fundName)}</div>
       </div>` : `
       <div style="background:#F7FAFC;border:1px dashed #CBD5E0;border-radius:8px;padding:9px 11px;color:#94A3B8">
         <div style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase">No super</div>
@@ -4435,14 +4452,21 @@ function buildBreakdownHtml(p) {
     </div>`;
 
   // ── Section: GST CLAIM ───────────────────────────────────────────────────
-  const gstSection = isGST ? `
+  // Parking + accom always have GST (vendor is GST-registered). Service/Travel/Other depend on
+  // the contractor's GST status. So even Type A contractors with parking + accom show a GST claim.
+  const gstOnAlways = amt => Math.round((amt - amt / 1.1) * 100) / 100;
+  const fullGstClaim = isGST
+    ? Math.round((total - total / 1.1) * 100) / 100
+    : gstOnAlways(parking + accom);
+  const gstSection = fullGstClaim > 0 ? `
     <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">GST claim (MEC)</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>GST on full invoice</td><td style="text-align:right;color:#1F9D63;font-weight:700">${$(totalGST)}</td></tr>
-      <tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on performance fee</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(perfFeeGST)}</td></tr>
-      ${parking > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on parking</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(parking))}</td></tr>` : ''}
-      ${accom > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on accommodation</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(accom))}</td></tr>` : ''}
-      ${other > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on other</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(other))}</td></tr>` : ''}
+      <tr><td>GST claimable</td><td style="text-align:right;color:#1F9D63;font-weight:700">${$(fullGstClaim)}</td></tr>
+      ${isGST ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on performance fee</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(perfFeeGST)}</td></tr>` : ''}
+      ${parking > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on parking <span style="color:#94A3B8">(always)</span></td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOnAlways(parking))}</td></tr>` : ''}
+      ${accom > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on accommodation <span style="color:#94A3B8">(always)</span></td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOnAlways(accom))}</td></tr>` : ''}
+      ${isGST && travel > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on travel</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(travel))}</td></tr>` : ''}
+      ${isGST && other > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on other</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(other))}</td></tr>` : ''}
     </table>` : '';
 
   return `
