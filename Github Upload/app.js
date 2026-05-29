@@ -4954,9 +4954,13 @@ async function pushToXero() {
 
   try {
     const url = `${proxyUrl}?action=createBills&key=${encodeURIComponent(accessKey)}`;
+    // NOTE: use text/plain (not application/json) to avoid the CORS preflight
+    // OPTIONS request — Apps Script web apps don't answer OPTIONS so the browser
+    // aborts with "Failed to fetch". Apps Script's doPost still reads the body
+    // from e.postData.contents regardless of Content-Type.
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ invoices })
     });
     const data = await res.json().catch(() => ({ httpStatus: res.status, response: { raw: 'non-JSON response' } }));
