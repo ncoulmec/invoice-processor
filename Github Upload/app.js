@@ -4699,16 +4699,19 @@ function buildResultsView() {
         const id = c.zohoId || '';
         const miss = missingSuperFields(c).join(', ');
         const safeName = escHtml(c.name || p.name || '');
+        const zohoUrl = id ? `https://crm.zoho.com/crm/org${ZOHO_ORG}/tab/${ZOHO_MODULE}/${id}` : '';
+        const zohoBtnHtml = id
+          ? `<a href="${zohoUrl}" target="_blank" rel="noopener" style="font-size:11px;background:#FEFCBF;color:#975A16;border:1px solid #F6E05E;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:600;text-decoration:none;display:inline-block">↗ Open in Zoho</a>`
+          : '<span style="font-size:10px;color:#9B2C2C">no Zoho id</span>';
         return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 0;border-top:1px solid #FED7D7">
           <span style="font-weight:600;color:#742A2A">${safeName}</span>
           <span style="font-size:11px;color:#9B2C2C">missing: ${escHtml(miss)}</span>
           <span style="flex:1"></span>
-          <button onclick="copySuperFormLink('${id}','${safeName.replace(/'/g,"\\'")}')" style="font-size:11px;background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:600">📋 Copy form link</button>
-          <button onclick="emailSuperForm('${escHtml(c.email||'')}','${id}','${safeName.replace(/'/g,"\\'")}')" style="font-size:11px;background:#FEFCBF;color:#975A16;border:1px solid #F6E05E;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:600">✉ Email form</button>
+          ${zohoBtnHtml}
         </div>`;
       }).join('');
       gapEl.innerHTML = `<div style="font-weight:700;color:#C53030;margin-bottom:4px">⚠ ${uniq.length} contractor${uniq.length>1?'s':''} can't have super paid yet — details incomplete</div>
-        <div style="font-size:12px;color:#742A2A;margin-bottom:6px">Send each of them their pre-filled super form so the SAFF file won't reject them. They'll still appear in the contractor bills; only their super is held until complete.</div>
+        <div style="font-size:12px;color:#742A2A;margin-bottom:6px">Open each contractor's Zoho profile and trigger the Super Details form workflow from there — Zoho's email template handles the prefill encryption natively. They'll still appear in the contractor bills; only their super is held until complete.</div>
         ${rows}`;
     } else {
       gapEl.classList.add('hidden');
@@ -5620,6 +5623,159 @@ function closeXeroResult() {
 // supplier. Single description line carrying performer / event date(s) / invoice # /
 // invoice total / super % / super $. Coded to 478-C, BAS Excluded. These are paid as a
 // SEPARATE ABA batch from the contractor bills, so they live in their own CSV file.
+// ══════════════════════════════════════════════════════════════════════════════
+// PUSH SUPER BILLS TO XERO — parallel to pushToXero/buildXeroInvoicesData but for
+// the clearing-house bills (account 478-C, BAS Excluded). Honours "Combine into one
+// bill" — when off, one ACCPAY bill per super-eligible invoice; when on, one
+// consolidated bill with a line per contractor.
+// ══════════════════════════════════════════════════════════════════════════════
+function buildXeroSuperInvoicesData() {
+  const out = [];
+  if (!superDeductionsEnabled()) return out;
+  if (!Array.isArray(processed)) return out;
+  const r2 = n => Math.round((n||0) * 100) / 100;
+  const todayISO = () => new Date().toISOString().split('T')[0];
+  const toISO = v => {
+    if (!v) return todayISO();
+    const m = String(v).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) {
+      const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0');
+      const y = m[3].length === 2 ? ('20' + m[3]) : m[3];
+      return `${y}-${mo}-${d}`;
+    }
+    const m2 = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
+    const d2 = new Date(v);
+    return isNaN(d2) ? todayISO() : d2.toISOString().split('T')[0];
+  };
+  const resolveDate = p => toISO(p.date || p.perfDate || todayISO());
+
+  const consolidate = !!document.getElementById('super-consolidate')?.checked;
+  const todayIso = todayISO();
+  const todayReadable = formatDateReadable(todayIso) || todayIso;
+  const conRef = `MEC Super ${todayReadable}`;
+
+  const superRows = processed.filter(p => p && p.matched && p.invoiceType !== 'ap'
+                                       && !p.alreadyPaid && p.withholdSuper)
+                              .map(p => {
+    const superAmt = (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
+      ? calculateAmounts(p.superBase, p.type, p.superRate).super
+      : (p.amounts?.super || 0);
+    if (!(superAmt > 0)) return null;
+    const cName = p.contractor?.name || p.name || '(Unknown)';
+    const invNum = p.invoiceNumber || autoInvNum(p);
+    const eventRef = buildEventReference(p);
+    const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
+                     || formatDateReadable(p.perfDate || p.date) || resolveDate(p);
+    const rate = p.superRate || 12;
+    const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super ${rate}% | $${superAmt.toFixed(2)}`;
+    return { p, cName, invNum, eventDates, rate, superAmt: r2(superAmt), desc, dateXero: resolveDate(p) };
+  }).filter(Boolean);
+
+  if (!superRows.length) return out;
+
+  if (consolidate) {
+    const lineItems = superRows.map(r => ({
+      Description: r.desc,
+      Quantity: 1,
+      UnitAmount: r.superAmt,
+      AccountCode: SUPER_ACCOUNT,
+      TaxType: 'BASEXCLUDED'
+    }));
+    out.push({
+      Type: 'ACCPAY',
+      Status: 'DRAFT',
+      Contact: { Name: CLEARINGHOUSE_NAME },
+      Date: todayIso,
+      DueDate: addDaysISO(todayIso, 7),
+      InvoiceNumber: conRef,
+      Reference: conRef,
+      LineAmountTypes: 'Exclusive',
+      LineItems: lineItems,
+      _isSuperBill: true,
+      _contactName: CLEARINGHOUSE_NAME
+    });
+  } else {
+    superRows.forEach(r => {
+      const billRef = `${r.cName} | Event Date(s): ${r.eventDates} | ${r.invNum} | Super`;
+      out.push({
+        Type: 'ACCPAY',
+        Status: 'DRAFT',
+        Contact: { Name: CLEARINGHOUSE_NAME },
+        Date: r.dateXero,
+        DueDate: addDaysISO(r.dateXero, 7),
+        InvoiceNumber: billRef,
+        Reference: `Event(s): ${r.eventDates}`,
+        LineAmountTypes: 'Exclusive',
+        LineItems: [{
+          Description: r.desc,
+          Quantity: 1,
+          UnitAmount: r.superAmt,
+          AccountCode: SUPER_ACCOUNT,
+          TaxType: 'BASEXCLUDED'
+        }],
+        _isSuperBill: true,
+        _contactName: CLEARINGHOUSE_NAME
+      });
+    });
+  }
+  return out;
+}
+
+async function pushSuperBillsToXero() {
+  if (!superDeductionsEnabled()) {
+    showBanner('Super is OFF for this run. Tick the super toggle first.', 'warn');
+    return;
+  }
+  if (!Array.isArray(processed) || !processed.length) {
+    showBanner('Nothing to push — process invoices first.', 'warn');
+    return;
+  }
+  const proxyUrl = (localStorage.getItem('xeroProxyUrl') || '').trim();
+  const accessKey = (localStorage.getItem('xeroAccessKey') || '').trim();
+  if (!proxyUrl || !accessKey) {
+    showBanner('Open ⚙ Settings and paste your Xero Push URL + Access Key first.', 'warn');
+    return;
+  }
+
+  const invoices = buildXeroSuperInvoicesData();
+  if (!invoices.length) {
+    showBanner('No super-eligible invoices in this run — no super bills to push.', 'info');
+    return;
+  }
+
+  const totalSuper = invoices.reduce((sum, inv) =>
+    sum + (inv.LineItems || []).reduce((s, li) => s + (li.UnitAmount || 0), 0), 0);
+
+  const ok = confirm(
+    `Push ${invoices.length} super bill${invoices.length>1?'s':''} to Xero as DRAFTs?\n\n` +
+    `  • Contact: ${CLEARINGHOUSE_NAME}\n` +
+    `  • Total super: $${totalSuper.toFixed(2)}\n` +
+    `  • Account: ${SUPER_ACCOUNT} (BAS Excluded)\n\n` +
+    `These appear in Xero → Bills to pay → Drafts. Pay as a separate ABA batch from contractor bills.`
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById('push-super-xero-btn');
+  const orig = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Pushing…'; }
+  showBanner(`Pushing ${invoices.length} super bill${invoices.length>1?'s':''} to Xero…`, 'info');
+
+  try {
+    const res = await fetch(`${proxyUrl}?action=createBills&key=${encodeURIComponent(accessKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ invoices })
+    });
+    const data = await res.json().catch(() => ({ httpStatus: res.status, response: { raw: 'non-JSON response' } }));
+    showXeroResultPanel(data, invoices.length, 0);
+  } catch (err) {
+    showBanner('Push Super Bills to Xero failed: ' + (err && err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig || '↗ Push Super Bills to Xero'; }
+  }
+}
+
 function exportSuperBillsCSV() {
   if (!superDeductionsEnabled()) {
     showBanner('Super is currently OFF for this run. Tick “Include super contributions in this pay run” to generate the super bills.', 'warn');

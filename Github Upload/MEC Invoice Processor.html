@@ -605,9 +605,16 @@
             <input type="checkbox" id="super-consolidate" onchange="buildResultsView()" style="margin-top:2px">
             <span><strong>Combine into one bill</strong> — a single bill to the clearing house with one line per contractor. Cleaner if you pay the clearing house in a single payment.</span>
           </label>
-          <div>
-            <button class="btn btn-primary" onclick="exportSuperBillsCSV()">⬇ Super Bills CSV</button>
-            <span id="super-bills-preview-count" style="font-size:11px;color:#94A3B8;margin-left:12px"></span>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button id="push-super-xero-btn" onclick="pushSuperBillsToXero()" title="Create the super bills directly in Xero as DRAFTs via the Apps Script proxy" style="background:#1D7A8C;color:#fff;border:1px solid #1D7A8C;padding:9px 16px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">↗ Push Super Bills to Xero</button>
+            <details style="margin-left:4px">
+              <summary style="cursor:pointer;color:#94A3B8;font-size:11px;font-weight:500;padding:6px 0">Legacy / fallback (manual CSV import) ⌄</summary>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;padding:8px 10px;background:#F7FAFC;border:1px dashed #CBD5E0;border-radius:6px">
+                <button onclick="exportSuperBillsCSV()" style="background:#fff;border:1px solid #CBD5E0;color:#5B6B7B;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">⬇ Super Bills CSV</button>
+                <span style="font-size:10px;color:#94A3B8;margin-left:4px">— use if Push to Xero is unavailable</span>
+              </div>
+            </details>
+            <span id="super-bills-preview-count" style="font-size:11px;color:#94A3B8;margin-left:auto"></span>
           </div>
         </div>
       </div>
