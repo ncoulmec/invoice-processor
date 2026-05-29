@@ -4248,6 +4248,135 @@ function sortResults(criterion) {
   buildResultsView();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Step 3 row hover-breakdown popover — full money breakdown for cross-checking.
+// ══════════════════════════════════════════════════════════════════════════════
+// Triggered by hovering any row in the Event Contractor Invoices table. Shows
+// invoice total → expense lines → service portion → super maths → cash split →
+// GST claim, with the account code each line will be coded to in Xero. Built so
+// the operator can manually verify the calculations match the source PDF.
+function ensureBreakdownPopover() {
+  let pop = document.getElementById('row-breakdown-popover');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'row-breakdown-popover';
+    pop.style.cssText = 'position:fixed;display:none;z-index:1500;background:#fff;border:1px solid #CBD5E0;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,0.18);padding:14px 16px;font-size:12px;line-height:1.55;max-width:380px;color:#1B2733;pointer-events:none';
+    document.body.appendChild(pop);
+  }
+  return pop;
+}
+function showRowBreakdown(event, rowId) {
+  const p = processed.find(x => String(x.id) === String(rowId));
+  if (!p) return;
+  const pop = ensureBreakdownPopover();
+  pop.innerHTML = buildBreakdownHtml(p);
+  pop.style.display = 'block';
+  positionPopover(pop, event);
+}
+function hideRowBreakdown() {
+  const pop = document.getElementById('row-breakdown-popover');
+  if (pop) pop.style.display = 'none';
+}
+function moveRowBreakdown(event) {
+  const pop = document.getElementById('row-breakdown-popover');
+  if (pop && pop.style.display === 'block') positionPopover(pop, event);
+}
+function positionPopover(pop, event) {
+  const margin = 14;
+  pop.style.left = (event.clientX + margin) + 'px';
+  pop.style.top  = (event.clientY + margin) + 'px';
+  requestAnimationFrame(() => {
+    const r = pop.getBoundingClientRect();
+    if (r.right  > window.innerWidth  - 10) pop.style.left = (event.clientX - r.width  - margin) + 'px';
+    if (r.bottom > window.innerHeight - 10) pop.style.top  = (event.clientY - r.height - margin) + 'px';
+  });
+}
+function buildBreakdownHtml(p) {
+  const r2 = n => Math.round((n||0)*100)/100;
+  const $ = n => '$' + (typeof fmt === 'function' ? fmt(n||0) : (n||0).toFixed(2));
+  const a = p.amounts || {};
+  const total = p.total || 0;
+  const typeCode = p.type || 'A';
+  const isGST = ['B','D'].includes(typeCode);
+  const exp = p.expenses || {};
+  const parking = exp.parking || 0;
+  const accom   = exp.accommodation || 0;
+  const travel  = exp.travel || 0;
+  const other   = exp.other || 0;
+  const expTotal = parking + accom + travel + other;
+  const servicePortion = total - expTotal;
+  const superOn = (typeof superDeductionsEnabled === 'function') ? superDeductionsEnabled() : true;
+  const willWithholdSuper = p.withholdSuper && superOn && (a.super||0) > 0;
+  // Super is computed on the assessable base (= service fee + travel, ex-GST for B/D).
+  // exportXeroCSV uses calculateAmounts(p.superBase, p.type).super when superBase differs from
+  // serviceFee; we mirror the resulting amount here so the popover matches the Xero bill.
+  const superAmt = willWithholdSuper
+    ? (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total)
+        ? (typeof calculateAmounts === 'function' ? calculateAmounts(p.superBase, p.type, p.superRate).super : (a.super||0))
+        : (a.super||0))
+    : 0;
+  const fullCash = r2(total - superAmt);
+  const fullGst  = isGST ? r2(total - total / 1.1) : 0;
+  const gstOn    = amt => isGST ? r2(amt - amt / 1.1) : 0;
+  const acctFor  = (typeof ACCOUNT_CODES !== 'undefined') ? ACCOUNT_CODES : {};
+  const fundName = (p.contractor && p.contractor.fundName) || '—';
+  const superRate = p.superRate || 12;
+  const typeLabel = { A:'Individual, no GST', B:'Individual + GST', C:'Company, no GST', D:'Company + GST' }[typeCode] || typeCode;
+
+  const expRow = (label, amt, acct) => amt > 0
+    ? `<tr><td style="padding-left:14px;color:#5B6B7B">— ${label}</td><td style="text-align:right">${$(amt)}</td><td style="text-align:right;color:#5B6B7B;font-size:11px;padding-left:8px">${acct}</td></tr>`
+    : '';
+  const expSection = expTotal > 0 ? `
+    ${expRow('Parking',       parking, '449')}
+    ${expRow('Accommodation', accom,   '493-C')}
+    ${expRow('Travel',        travel,  acctFor[typeCode]||'301')}
+    ${expRow('Other',         other,   acctFor[typeCode]||'301')}
+    <tr style="border-top:1px dashed #CBD5E0"><td>Service portion ${isGST?'(inc GST)':''}</td><td style="text-align:right;font-weight:600">${$(servicePortion)}</td><td></td></tr>` : '';
+
+  const superSection = superAmt > 0 ? `
+    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">Super deduction</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>Assessable base ${isGST?'(ex-GST)':''}</td><td style="text-align:right">${$(p.superBase || servicePortion)}</td></tr>
+      <tr><td>Super @ ${superRate}%</td><td style="text-align:right;color:#1F9D63;font-weight:600">−${$(superAmt)}</td></tr>
+      <tr><td style="font-size:11px;color:#5B6B7B">→ to fund</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${escHtml(fundName)}</td></tr>
+    </table>` : '';
+
+  const gstSection = isGST ? `
+    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">GST claim (MEC)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>GST on full invoice</td><td style="text-align:right;color:#1F9D63;font-weight:600">${$(fullGst)}</td></tr>
+      ${parking > 0 ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on parking</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(parking))}</td></tr>` : ''}
+      ${accom > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on accommodation</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(accom))}</td></tr>` : ''}
+      ${travel > 0  ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on travel</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(travel))}</td></tr>` : ''}
+      ${other > 0   ? `<tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on other</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(other))}</td></tr>` : ''}
+      <tr><td style="padding-left:14px;font-size:11px;color:#5B6B7B">on service portion</td><td style="text-align:right;font-size:11px;color:#5B6B7B">${$(gstOn(servicePortion))}</td></tr>
+    </table>` : '';
+
+  return `
+    <div style="border-bottom:1px solid #E2E8F0;padding-bottom:8px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:13px;color:#1B2733">${escHtml((p.contractor && p.contractor.name) || p.name || '—')}</div>
+      <div style="font-size:11px;color:#5B6B7B;margin-top:2px">Inv ${escHtml(p.invoiceNumber||'—')} · Type ${typeCode} — ${typeLabel}</div>
+    </div>
+
+    <div style="font-weight:600;color:#1B2733;margin-bottom:4px">Invoice breakdown</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>Invoice total ${isGST?'(inc GST)':''}</td><td style="text-align:right;font-weight:600">${$(total)}</td><td></td></tr>
+      ${expSection}
+    </table>
+
+    ${superSection}
+
+    <div style="font-weight:600;color:#1B2733;margin:10px 0 4px">Cash to performer</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr><td>Invoice total</td><td style="text-align:right">${$(total)}</td></tr>
+      ${superAmt > 0 ? `<tr><td>Less super</td><td style="text-align:right;color:#1F9D63">−${$(superAmt)}</td></tr>` : ''}
+      <tr style="border-top:1px solid #CBD5E0;font-weight:700"><td>Net cash</td><td style="text-align:right;color:#1B2733">${$(fullCash)}</td></tr>
+    </table>
+
+    ${gstSection}
+  `;
+}
+
 function buildResultsView() {
   // Split event vs AP invoices
   const eventProcessed = processed.filter(p => p.invoiceType !== 'ap');
@@ -4260,13 +4389,27 @@ function buildResultsView() {
   const superOn = (typeof superDeductionsEnabled === 'function') ? superDeductionsEnabled() : true;
   const showsSuper = p => p.withholdSuper && superOn && (p.amounts?.super||0) > 0;
   const superRows = matched.filter(showsSuper);
-  const totalSuper = superRows.reduce((s,p) => s + (p.amounts?.super||0), 0);
-  // Cash to performer = total when super isn't withheld for this row, else total − super.
-  const cashFor = p => (!showsSuper(p) && (p.amounts?.super||0) > 0) ? (p.total||0) : (p.amounts?.cash||0);
-  const totalCash = matched.reduce((s,p) => s + cashFor(p), 0);
+  // Super uses the assessable-base recompute (matches what exportXeroCSV emits) — if a
+  // performer has parking/accom/other excluded, super applies only to the service portion.
+  const r2 = n => Math.round((n||0)*100)/100;
+  const superFor = p => {
+    if (!showsSuper(p)) return 0;
+    return (p.superBase != null && p.superBase !== (p.serviceFee ?? p.total))
+      ? calculateAmounts(p.superBase, p.type, p.superRate).super
+      : (p.amounts?.super || 0);
+  };
+  const totalSuper = r2(superRows.reduce((sum,p) => sum + superFor(p), 0));
+  // Cash to performer = FULL invoice − super (parking + accom + travel + other all pay to
+  // the performer too, so they belong in this total — they only get excluded from the SUPER
+  // BASE, not from cash). Previously this used p.amounts.cash which is only the service slice.
+  const cashFor = p => r2((p.total||0) - superFor(p));
+  const totalCash = r2(matched.reduce((s,p) => s + cashFor(p), 0));
   // Column totals for the Stage 2 footer row.
-  const totalInvoice = matched.reduce((s,p) => s + (p.total||0), 0);
-  const totalGstCredit = matched.reduce((s,p) => s + (p.amounts?.gst||0), 0);
+  const totalInvoice = r2(matched.reduce((s,p) => s + (p.total||0), 0));
+  // GST claimable = full GST on the bill for B/D contractors (all line items have GST in our
+  // model). p.amounts.gst was only the service-portion GST — same scope bug as cash.
+  const gstFor = p => ['B','D'].includes(p.type) ? r2((p.total||0) - (p.total||0)/1.1) : 0;
+  const totalGstCredit = r2(matched.reduce((s,p) => s + gstFor(p), 0));
 
   // Stats
   document.getElementById('summary-stats').innerHTML = `
@@ -4468,16 +4611,23 @@ function buildResultsView() {
       const superGapWarn = superGap.length
         ? `<span class="s2-tip" style="margin-left:6px;font-size:10px;background:#FFF5F5;color:#C53030;border:1px solid #FEB2B2;border-radius:4px;padding:1px 6px;font-weight:700;cursor:help">⚠ Super details incomplete<span class="s2-tip-box"><strong>Super can't be paid yet</strong>Missing in Zoho: ${escHtml(superGap.join(', '))}. Use the chase buttons in the banner above to send their pre-filled form.</span></span>`
         : '';
-      return `<tr>
+      // Full-bill maths (fixes the scope bug where parking/accom/travel were excluded
+      // from Cash to Performer and from GST Credit). superRow = super actually withheld;
+      // rowCash = invoice total − super; rowGst = full GST on bill (B/D only).
+      const rowSuper = superFor(p);
+      const rowCash  = cashFor(p);
+      const rowGst   = gstFor(p);
+      const rowGstCell = rowGst > 0 ? `<span class="badge badge-ok">$${fmt(rowGst)}</span>` : '—';
+      return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default">
         <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
         <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
         <td>$${fmt(p.total)}</td>
-        <td><strong>$${fmt(!showSuperCell && a.super > 0 ? p.total : a.cash)}</strong></td>
-        <td>${showSuperCell ? `<strong style="color:var(--green)">$${fmt(a.super)}</strong>` : (a.super > 0 ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice">—</span>` : '—')}</td>
+        <td><strong>$${fmt(rowCash)}</strong></td>
+        <td>${showSuperCell ? `<strong style="color:var(--green)">$${fmt(rowSuper)}</strong>` : (a.super > 0 ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice">—</span>` : '—')}</td>
         <td><code style="font-size:11px">${ACCOUNT_CODES[typeCode]||typeCode}</code></td>
-        <td>${gstCell}</td>
+        <td>${rowGstCell}</td>
       </tr>`;
     } catch(rowErr) {
       // Show the row with an error message so we can see what went wrong
@@ -4856,6 +5006,12 @@ function buildXeroInvoicesData() {
       });
     }
 
+    // PDF filename mirrors the Invoice PDFs ZIP convention: "Name - Event 26.05.26 - Inv 1016.pdf"
+    const safeName = s => String(s||'').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g,' ').trim();
+    const evRaw = eventRef.replace(/^Event\(s\):\s*/, '').trim();
+    const evDates = evRaw ? evRaw.split(/\s+/).filter(Boolean) : [];
+    const evLabel = evDates.length ? `${evDates.length > 1 ? 'Events' : 'Event'} ${evDates.join(', ')}` : '';
+    const pdfFilename = safeName(`${cName}${evLabel ? ' - ' + evLabel : ''} - Inv ${invNum}`) + '.pdf';
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',
@@ -4867,7 +5023,8 @@ function buildXeroInvoicesData() {
       LineAmountTypes: 'Exclusive',
       LineItems: lineItems,
       _rowId: p.rowId,
-      _contactName: billContact
+      _contactName: billContact,
+      _pdfFilename: pdfFilename
     });
   });
 
@@ -4881,6 +5038,8 @@ function buildXeroInvoicesData() {
     const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? ((p.total || 0) / 1.1) : (p.total || 0);
+    const apSafeName = s => String(s||'').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g,' ').trim();
+    const apPdfFilename = apSafeName(`${supplierName} - Inv ${invNum}`) + '.pdf';
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',
@@ -4897,7 +5056,8 @@ function buildXeroInvoicesData() {
         TaxType: apTaxType
       }],
       _rowId: p.rowId,
-      _contactName: supplierName
+      _contactName: supplierName,
+      _pdfFilename: apPdfFilename
     });
   });
 
@@ -4959,9 +5119,11 @@ async function pushToXero() {
       try {
         const blob = await (await fetch(pdfUrl)).blob();
         const base64 = await blobToBase64(blob);
-        const cleanName = String(inv._contactName || 'Invoice').replace(/[^a-zA-Z0-9 \-_.]/g, '_');
-        const cleanInv  = String(inv.InvoiceNumber || 'Bill').replace(/[^a-zA-Z0-9 \-_.]/g, '_');
-        inv._attachment = { filename: `${cleanName} - ${cleanInv}.pdf`, base64 };
+        // Filename comes from buildXeroInvoicesData using the same convention as the
+        // Invoice PDFs ZIP — "Name - Event 26.05.26 - Inv 1016.pdf" — so Xero's attachment
+        // list matches what's on your computer when you'd previously downloaded the ZIP.
+        const filename = inv._pdfFilename || `${(inv._contactName||'Invoice').replace(/[^a-zA-Z0-9 \-_.]/g,'_')} - ${(inv.InvoiceNumber||'Bill').replace(/[^a-zA-Z0-9 \-_.]/g,'_')}.pdf`;
+        inv._attachment = { filename, base64 };
         attachedCount++;
       } catch (e) { /* PDF unavailable — skip silently, bill still pushes */ }
     }
