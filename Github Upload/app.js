@@ -4291,6 +4291,62 @@ function positionPopover(pop, event) {
     if (r.bottom > window.innerHeight - 10) pop.style.top  = (event.clientY - r.height - margin) + 'px';
   });
 }
+// Synthetic p from the Review modal's live form inputs — feeds the same breakdown popover
+// the Step 3 table rows use. Lets the operator hover the green Total card and see the full
+// derivation (perf fee → super → cash split → GST claim) without occupying card real estate.
+function rvBuildSyntheticP_() {
+  const num  = id => parseFloat(document.getElementById(id) && document.getElementById(id).value || '0') || 0;
+  const text = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+  const total = num('rv-total');
+  const gstOn = !!(document.getElementById('rv-gst') && document.getElementById('rv-gst').checked);
+  const parking       = num('rv-exp-parking');
+  const accommodation = num('rv-exp-accommodation');
+  const other         = num('rv-exp-other');
+  const expTotal = parking + accommodation + other;
+  // Derive Type from GST checkbox + super decision (NA = company / no super)
+  const naMode  = !!document.querySelector('input[name="rv-super-mode"][value="na"]:checked');
+  const duoMode = !!document.querySelector('input[name="rv-super-mode"][value="duo"]:checked');
+  const isCompany = naMode;
+  const typeCode  = gstOn ? (isCompany ? 'D' : 'B') : (isCompany ? 'C' : 'A');
+  const withholdSuper = !isCompany;
+  // Duo with share override — super applies to the override amount, not the full service portion
+  const shareInput = document.getElementById('rv-share-override');
+  const shareOverride = shareInput && shareInput.value && parseFloat(shareInput.value) > 0 ? parseFloat(shareInput.value) : null;
+  const superBase = (duoMode && shareOverride) ? shareOverride : (total - expTotal);
+  // Best-effort contractor lookup for fund name (read-only — we don't write back)
+  const name = text('rv-name');
+  let ctc = null;
+  if (typeof contractors !== 'undefined' && Array.isArray(contractors) && name) {
+    ctc = contractors.find(c => (c.name || '').toLowerCase() === name.toLowerCase()) || null;
+  }
+  const superRate = (ctc && ctc.superRate) || 12;
+  const fundName  = (ctc && ctc.fundName) || '—';
+  return {
+    id: '__rv_preview__',
+    name: name || '(no name)',
+    invoiceNumber: text('rv-inv'),
+    perfDate: text('rv-perfdate'),
+    date: text('rv-date'),
+    total: total,
+    type: typeCode,
+    serviceFee: total - expTotal,
+    superBase: superBase,
+    expenses: { parking, accommodation, other, travel: 0 },
+    withholdSuper: withholdSuper,
+    superRate: superRate,
+    contractor: { name: name, fundName: fundName, superRate: superRate },
+    amounts: calculateAmounts(total - expTotal, typeCode, superRate)
+  };
+}
+function rvShowBreakdownPopover(event) {
+  const p = rvBuildSyntheticP_();
+  if (!p.total) return;  // nothing meaningful to show with $0
+  const pop = ensureBreakdownPopover();
+  pop.innerHTML = buildBreakdownHtml(p);
+  pop.style.display = 'block';
+  positionPopover(pop, event);
+}
+
 function buildBreakdownHtml(p) {
   const r2 = n => Math.round((n||0)*100)/100;
   const $ = n => '$' + (typeof fmt === 'function' ? fmt(n||0) : (n||0).toFixed(2));
@@ -4828,7 +4884,7 @@ function exportXeroCSV() {
     // import column). Same descriptive flow as the super bill, minus "| Super".
     const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                      || formatDateReadable(p.perfDate || p.date) || dateXero;
-    const billRef = `${cName} | Event Date(s): ${eventDates} | ${invNum}`;
+    const billRef = `Event Date(s): ${eventDates} | ${invNum}`;
 
     // Description shows the super math: "$X Total Assessable - $Y superannuation (12%) …"
     const assessable = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
@@ -5002,14 +5058,19 @@ function buildXeroInvoicesData() {
     if (feeLBs.length > 1) {
       const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
       let allocated = 0;
+      const perfFeeIncGST_pushMulti = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
       feeLBs.forEach((lb, i) => {
         const last = i === feeLBs.length - 1;
         const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * (lb.cost / totalCost));
         allocated += amt;
         const dr = formatDateReadable(lb.eventDate) || dateReadable;
-        const desc = `${cName} | Event: ${dr}`
-          + (p.invoiceNumber ? ` | Inv: ${p.invoiceNumber}` : '')
-          + (i === 0 ? superNote : '');
+        // First line carries the full perf-fee/super breakdown; subsequent dates just label the event.
+        const desc = (i === 0)
+          ? buildXeroFeeDescription_({
+              invNum: invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_pushMulti,
+              isGST: isGSTContractor, superAmt: superAmt, superRate: p.superRate || 12
+            })
+          : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
         lineItems.push({
           Description: desc,
           Quantity: 1,
@@ -5057,13 +5118,19 @@ function buildXeroInvoicesData() {
     const evDates = evRaw ? evRaw.split(/\s+/).filter(Boolean) : [];
     const evLabel = evDates.length ? `${evDates.length > 1 ? 'Events' : 'Event'} ${evDates.join(', ')}` : '';
     const pdfFilename = safeName(`${cName}${evLabel ? ' - ' + evLabel : ''} - Inv ${invNum}`) + '.pdf';
+    // Xero ACCPAY quirk: the UI label "Reference" comes from the API's InvoiceNumber field —
+    // setting InvoiceNumber to the formatted billRef puts "Event Date(s): X | Y" where you expect
+    // to see it. API's Reference field is a secondary, less-prominent field — keep eventRef there.
+    const eventDatesPush = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
+                       || formatDateReadable(p.perfDate || p.date) || dateXero;
+    const billRefPush = `Event Date(s): ${eventDatesPush} | ${invNum}`;
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',
       Contact: { Name: billContact },
       Date: dateXero,
       DueDate: dateXero,
-      InvoiceNumber: invNum,
+      InvoiceNumber: billRefPush,
       Reference: eventRef,
       LineAmountTypes: 'Exclusive',
       LineItems: lineItems,

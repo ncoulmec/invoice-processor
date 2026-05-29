@@ -849,10 +849,10 @@
             </div>
             <div id="rv-perfdate-extra" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
 
-            <div id="rv-total-card" style="background:#EAF7EF;border:1.5px solid #9FD9BA;border-radius:9px;padding:9px 13px;margin-top:10px;display:flex;align-items:center;gap:16px;transition:border-color .15s,background .15s">
+            <div id="rv-total-card" onmouseenter="rvShowBreakdownPopover(event)" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="background:#EAF7EF;border:1.5px solid #9FD9BA;border-radius:9px;padding:9px 13px;margin-top:10px;display:flex;align-items:center;gap:16px;transition:border-color .15s,background .15s;cursor:help">
               <div style="flex:1;min-width:0">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
-                  <span style="color:#5B6B7B;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST)</span>
+                  <span style="color:#5B6B7B;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total (inc. GST) <span style="font-weight:400;color:#94A3B8;text-transform:none;letter-spacing:0;font-size:9px">— hover for full breakdown</span></span>
                   <div id="rv-total-warn" style="display:none;font-size:9px;font-weight:700;color:#B91C1C;background:rgba(197,48,48,0.20);border:1px solid rgba(252,129,129,0.55);border-radius:4px;padding:2px 6px;white-space:nowrap"></div>
                 </div>
                 <div style="font-size:11px;display:flex;flex-direction:column;gap:3px">
@@ -864,7 +864,7 @@
                     </label>
                     <span id="rv-bd-gst" style="color:#1B2733;font-weight:600">—</span>
                   </div>
-                  <div id="rv-bd-reimb" style="display:flex;flex-direction:column;gap:3px"></div>
+                  <div id="rv-bd-reimb" style="display:none"></div>
                   <div style="display:flex;justify-content:space-between;border-top:1px solid #E4E8EC;padding-top:4px;color:#1B2733;font-weight:700"><span>Total</span><span id="rv-bd-total">—</span></div>
                 </div>
               </div>
