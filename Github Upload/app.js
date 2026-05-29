@@ -99,6 +99,7 @@ let abrRowData = {};      // keyed by row id, stores ABR lookup result
 let invoiceGSTData = {};        // keyed by row id, stores hasGST from PDF extraction
 let invoiceSuperData = {};      // keyed by row id, stores superWithhold override
 let invoiceSuperShareData = {}; // keyed by row id, duo/group: this performer's own super-assessable share ($). When set, super is calculated on this amount instead of the full service fee. Payment is unchanged.
+let invoiceSuperModeData  = {}; // keyed by row id, the user-picked super decision per invoice: 'solo' | 'group'.
 let invoicePaidData = {};      // keyed by row id, stores alreadyPaid from PDF extraction
 let invoiceBookingData = {};   // keyed by row id, stores [{bookingId,bookingName,eventDate,cost}] — selected booking matches
 let invoiceExpenseData = {};   // keyed by row id, stores {parking:0, accommodation:0, travel:0, other:0}
@@ -2348,6 +2349,9 @@ function rvValidateBeforeConfirm() {
   const abn   = (document.getElementById('rv-abn')?.value   || '').replace(/\s/g,'');
   if (!name)  missingFields.push({ key:'name',  label:'Contractor name',  targetId:'rv-name',  type:'text',   placeholder:'e.g. James Brown' });
   if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total', type:'number', placeholder:'0.00' });
+  // Mandatory super decision: the user MUST pick Solo or Duo/Group in Step 5.
+  const superMode = document.querySelector('input[name="rv-mp-mode"]:checked')?.value;
+  if (!superMode) missingFields.push({ key:'super', label:'Solo / Duo-group decision (Step 5)', targetId:'rv-mp-solo-row', type:'note', placeholder:'Pick one in Step 5' });
 
   // Already-paid check — driven ONLY by the booking(s) the user TICKED in the Zoho picker
   // (a red dot = paid). Reads the live checkboxes (invoiceBookingData isn't saved until Confirm),
@@ -2497,7 +2501,7 @@ function reviewRemoveInvoice() {
   flaggedRows.delete(String(id));
 
   // Clear every per-invoice data store keyed by this id (mirrors clearAllInvoices).
-  [invoiceGSTData, invoiceExpenseData, invoiceBookingData, invoiceRawText, invoiceSuperShareData,
+  [invoiceGSTData, invoiceExpenseData, invoiceBookingData, invoiceRawText, invoiceSuperShareData, invoiceSuperModeData,
    window.invoiceSuperData, window.invoicePaidData, window.invoiceTypeData].forEach(store => {
     if (store) delete store['id_' + id];
   });
@@ -2758,16 +2762,18 @@ function updateReviewStatus() {
     ['rv-cmp-abr-name','rv-cmp-abr-entity','rv-cmp-abr-gst','rv-cmp-abr-super','rv-cmp-abr-abn'].forEach(id => cmp(id, MUTED('—')));
   }
 
-  // Mirror the super-relevant identity bits into the Step 5 (Super) hover panel,
-  // reusing the values just computed for the main comparison table.
-  const supBody = document.getElementById('rv-super-idcheck-body');
-  if (supBody) {
-    const gh = id => document.getElementById(id)?.innerHTML || '—';
-    supBody.innerHTML =
-      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Entity</span><span>${gh('rv-cmp-abr-entity')}</span></div>` +
-      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">GST</span><span>${gh('rv-cmp-abr-gst')}</span></div>` +
-      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Super · Zoho</span><span>${gh('rv-cmp-zoho-super')}</span></div>` +
-      `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span style="color:#5B6B7B">Super · ABR</span><span>${gh('rv-cmp-abr-super')}</span></div>`;
+  // Mirror Step 1's identity popover into Step 5's hover so both look identical. Clone-and-strip-IDs
+  // keeps the DOM valid (no duplicate IDs) while showing the same full Zoho / ABR table.
+  const stepSrc = document.getElementById('rv-step1-id-pop');
+  const stepDst = document.getElementById('rv-super-id-mirror');
+  if (stepSrc && stepDst) {
+    stepDst.innerHTML = '';
+    Array.from(stepSrc.children).forEach(child => {
+      const c = child.cloneNode(true);
+      if (c.id) c.removeAttribute('id');
+      c.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+      stepDst.appendChild(c);
+    });
   }
 
   // ── Booking links (right-side date panel) ──
@@ -2954,21 +2960,26 @@ function rvUpdateRail() {
   const bookingTotal = checkedCbs.reduce((s, cb) => s + (parseFloat(cb.dataset.cost) || 0), 0);
   const total = num('rv-total');
   const bookingMatched = checkedCbs.length > 0 && Math.abs(bookingTotal - total) <= 1;
-  const done = {
+  // Step 5 — the operator must explicitly pick Solo or Duo/Group; we never auto-decide.
+  const superModePicked = !!document.querySelector('input[name="rv-mp-mode"]:checked');
+  const stepDone = {
     1: matched,
     2: bookingMatched,
     3: !!val('rv-inv') && total > 0,
-    4: total > 0,   // reimbursements optional — complete once the total is in
-    5: total > 0    // super has a sensible default — complete once the total is in
+    4: total > 0,        // reimbursements optional — complete once the total is in
+    5: superModePicked   // mandatory pick — until the radio is set, this stays open
   };
+  // Sequential gating — a step only goes green once ALL prior steps are also green.
+  const cumulative = { 1: stepDone[1] };
+  for (let i = 2; i <= 5; i++) cumulative[i] = cumulative[i-1] && stepDone[i];
   let active = 0;
-  for (let i = 1; i <= 5; i++) { if (!done[i]) { active = i; break; } }
+  for (let i = 1; i <= 5; i++) { if (!cumulative[i]) { active = i; break; } }
   for (let i = 1; i <= 5; i++) {
     const node = document.getElementById('rv-rail-' + i);
     if (!node) continue;
     node.classList.remove('rv-rail-node--done', 'rv-rail-node--active');
     node.innerHTML = String(i);
-    if (done[i]) node.classList.add('rv-rail-node--done');
+    if (cumulative[i]) node.classList.add('rv-rail-node--done');
     else if (i === active) node.classList.add('rv-rail-node--active');
   }
 }
@@ -3035,55 +3046,68 @@ function rvUpdateServiceFee() {
 
 // ── Duo / group super panel (Review modal) ────────────────────────────────────
 // Shows/hides the amber multi-performer prompt for the current invoice and seeds its mode.
+// Mandatory super decision: the user MUST pick 'solo' or 'group' per invoice. The hidden
+// rv-super checkbox is driven by the radio so the rest of the export pipeline keeps working
+// against the same canonical 'withhold super' flag.
 function rvSyncMultiPerfPanel(id) {
-  const panel  = document.getElementById('rv-multiperf');
-  const plain  = document.getElementById('rv-super-plain');
+  const panel = document.getElementById('rv-multiperf');
+  const plain = document.getElementById('rv-super-plain');
   if (!panel) return;
+  if (plain) plain.style.display = 'none';
   const g = el => document.getElementById(el);
+
+  // Advisory hint — multi-performer detection still flags possible duo/group bookings, but the
+  // user still picks. We don't auto-decide.
   const name  = g('rv-name')?.value || '';
   const abn   = (g('rv-abn')?.value || '').replace(/\s/g, '');
   const total = parseFloat(g('rv-total')?.value || '0') || 0;
   const date  = g('rv-date')?.value || g('rv-perfdate')?.value || '';
   const match = matchContractor(name, abn);
   const flag  = multiPerfFlag(id, match, name, total, date);
-
-  if (!flag.level) {
-    panel.style.display = 'none';
-    if (plain) plain.style.display = '';   // restore the normal single "Withhold super?" toggle
-    delete invoiceSuperShareData['id_' + id]; // no longer a multi-performer row → drop any stale share override
-    return;
+  const hint  = g('rv-super-hint');
+  if (hint) {
+    if (flag.level) {
+      hint.style.display = 'block';
+      const reasonEl = g('rv-multiperf-reason');
+      if (reasonEl) reasonEl.textContent = flag.reasons.join('; ') + '.';
+    } else {
+      hint.style.display = 'none';
+    }
   }
 
-  // Flagged → show the panel, hide the plain toggle (the radios become the single control).
-  panel.style.display = 'block';
-  if (plain) plain.style.display = 'none';
-  const reasonEl = g('rv-multiperf-reason');
-  if (reasonEl) {
-    const lead = flag.level === 'ambiguous' ? 'This booking might be a group' : 'This looks like a multi-performer booking';
-    reasonEl.textContent = `${lead} — ${flag.reasons.join('; ')}. Super is OFF by default; confirm how to treat it.`;
+  // Restore the picked mode: stored mode wins; on a previously-reviewed row infer from rv-super
+  // (legacy migration so we don't force a re-pick); brand-new rows leave neither radio picked.
+  const stored = invoiceSuperModeData['id_' + id];
+  let mode = (stored === 'solo' || stored === 'group') ? stored : null;
+  if (!mode && typeof reviewedRows !== 'undefined' && reviewedRows.has(String(id))) {
+    mode = g('rv-super')?.checked ? 'solo' : 'group';
   }
-
-  // Determine the current mode from saved state: share value → 'share'; withhold on → 'solo'; else 'none'.
-  const storedShare = invoiceSuperShareData['id_' + id];
-  const withholdOn  = g('rv-super')?.checked;
-  let mode;
-  if (storedShare != null && storedShare !== '' && parseFloat(storedShare) > 0) mode = 'share';
-  else if (withholdOn) mode = 'solo';
-  else mode = 'none';
-  rvSetMultiPerfMode(mode);
+  if (mode) {
+    rvSetSuperMode(mode, /*persist*/ false);
+  } else {
+    document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => r.checked = false);
+    const unset = g('rv-super-unset'); if (unset) unset.style.display = 'block';
+    if (typeof rvUpdateRail === 'function') rvUpdateRail();
+  }
 }
 
-// Apply a multi-performer mode: 'solo' (super on full) | 'share' (super on entered share) | 'none' (no super).
-// Keeps the hidden "Withhold super?" checkbox (rv-super) in sync — that stays the canonical withhold flag.
-function rvSetMultiPerfMode(mode) {
-  const share   = document.getElementById('rv-mp-share');
+// Apply a super mode. 'solo' → super withheld; 'group' → no super. Drives the canonical rv-super
+// flag and persists the choice so re-opens of the same invoice restore it.
+function rvSetSuperMode(mode, persist) {
+  if (persist === undefined) persist = true;
+  const id = reviewModalRowId;
   const superCb = document.getElementById('rv-super');
   document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => { r.checked = (r.value === mode); });
-  if (mode === 'solo')      { if (superCb) superCb.checked = true;  if (share) share.value = ''; }
-  else if (mode === 'share'){ if (superCb) superCb.checked = true;  }
-  else                      { if (superCb) superCb.checked = false; if (share) share.value = ''; } // 'none'
-  rvUpdateServiceFee();
+  if (mode === 'solo')      { if (superCb) superCb.checked = true; }
+  else if (mode === 'group'){ if (superCb) superCb.checked = false; }
+  if (persist && id != null) invoiceSuperModeData['id_' + id] = mode;
+  const unset = document.getElementById('rv-super-unset'); if (unset) unset.style.display = 'none';
+  if (typeof rvUpdateServiceFee === 'function') rvUpdateServiceFee();
+  if (typeof rvUpdateRail === 'function') rvUpdateRail();
 }
+
+// Backward-compat alias for any legacy callsite that still passes 'share'/'none'.
+function rvSetMultiPerfMode(mode) { rvSetSuperMode(mode === 'solo' ? 'solo' : 'group'); }
 
 let rvABRTimer = null;
 function rvAutoABR(val) {
