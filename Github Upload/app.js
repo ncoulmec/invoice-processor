@@ -2102,6 +2102,43 @@ let reviewModalRowId = null;
 const reviewedRows = new Set();
 const flaggedRows   = new Set();
 
+// Align the progress rail's pill nodes vertically with their corresponding cards.
+// Each .rv-rail-node is absolutely positioned so its centre matches the centre of the matching
+// .rv-card. Phase labels (Match / Enter) sit at the top of each card group. Called on modal
+// open and on resize (debounced).
+function alignReviewRail() {
+  const rail = document.querySelector('.rv-rail');
+  if (!rail) return;
+  const workCol = rail.parentElement && rail.parentElement.querySelector('div[style*="flex:1"]');
+  if (!workCol) return;
+  const cards = workCol.querySelectorAll('.rv-card');
+  const nodes = rail.querySelectorAll('.rv-rail-node');
+  if (!cards.length || !nodes.length || cards.length !== nodes.length) return;
+  rail.style.position = 'relative';
+  rail.style.height = workCol.offsetHeight + 'px';
+  // Hide the connecting lines + phase labels — they don't fit when nodes are absolutely positioned
+  rail.querySelectorAll('.rv-rail-line, .rv-rail-phase').forEach(el => el.style.display = 'none');
+  const railTop = rail.getBoundingClientRect().top;
+  cards.forEach((card, i) => {
+    const node = nodes[i];
+    if (!node) return;
+    const cardRect = card.getBoundingClientRect();
+    const cardCentre = cardRect.top + cardRect.height / 2;
+    const topPx = cardCentre - railTop - (node.offsetHeight / 2);
+    node.style.position = 'absolute';
+    node.style.left = '0';
+    node.style.top = topPx + 'px';
+  });
+}
+
+let _railAlignTimer = null;
+function scheduleRailAlign() {
+  if (_railAlignTimer) clearTimeout(_railAlignTimer);
+  _railAlignTimer = setTimeout(alignReviewRail, 50);
+}
+
+window.addEventListener('resize', () => { if (typeof scheduleRailAlign === 'function') scheduleRailAlign(); });
+
 function openReviewModal(id) {
   const url = invoiceFileData['id_' + id];
   reviewModalRowId = id;
@@ -3048,6 +3085,10 @@ function rvUpdateServiceFee() {
   // Legacy inline service-fee text now lives in the Total card (rv-bd-reimb)
   const el = document.getElementById('rv-service-fee-display');
   if (el) el.innerHTML = '';
+
+  // Refresh Card 5 inline identity strip (saves the user a hover)
+  rvUpdateInlineIdentity();
+  scheduleRailAlign();
 }
 
 // ── Duo / group super panel (Review modal) ────────────────────────────────────
@@ -3055,6 +3096,34 @@ function rvUpdateServiceFee() {
 // Mandatory super decision: the user MUST pick 'solo' or 'group' per invoice. The hidden
 // rv-super checkbox is driven by the radio so the rest of the export pipeline keeps working
 // against the same canonical 'withhold super' flag.
+// Populate the inline identity strip in Card 5 — saves the user from having to hover.
+function rvUpdateInlineIdentity() {
+  const el = document.getElementById('rv-super-identity-inline');
+  if (!el) return;
+  const name = (document.getElementById('rv-name')?.value || '').trim();
+  const abn  = (document.getElementById('rv-abn')?.value || '').trim();
+  const gstOn = !!document.getElementById('rv-gst')?.checked;
+  // Look up the matched contractor for entity-type info (ABR + Zoho cross-check)
+  let entity = '—';
+  if (name && typeof contractors !== 'undefined' && Array.isArray(contractors)) {
+    const m = contractors.find(c => (c.name||'').toLowerCase() === name.toLowerCase());
+    if (m) {
+      const t = m.type || (gstOn ? 'B' : 'A');
+      entity = ({ A:'Individual Sole Trader (no GST)', B:'Individual Sole Trader (plus GST)',
+                  C:'Partnerships, Companies, or Trusts (no GST)', D:'Partnerships, Companies, or Trusts (plus GST)' })[t] || t;
+    }
+  }
+  if (!name && !abn) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center">
+      <span><strong style="color:#1B2733">${escHtml(name) || '—'}</strong></span>
+      ${abn ? `<span style="color:#7A8896">ABN ${escHtml(abn)}</span>` : ''}
+      <span style="color:#7A8896">${escHtml(entity)}</span>
+      <span style="color:${gstOn ? '#1F9D63' : '#94A3B8'};font-weight:600">${gstOn ? '+ GST' : 'no GST'}</span>
+    </div>`;
+}
+
 function rvSyncMultiPerfPanel(id) {
   const panel = document.getElementById('rv-multiperf');
   const plain = document.getElementById('rv-super-plain');
@@ -4380,7 +4449,7 @@ function buildBreakdownHtml(p) {
   const acct  = (typeof ACCOUNT_CODES !== 'undefined') ? ACCOUNT_CODES : {};
   const acctServ = acct[typeCode] || '301';
   const fundName = (p.contractor && p.contractor.fundName) || '—';
-  const typeLabel = { A:'Individual, no GST', B:'Individual + GST', C:'Company, no GST', D:'Company + GST' }[typeCode] || typeCode;
+  const typeLabel = { A:'Individual Sole Trader (no GST)', B:'Individual Sole Trader (plus GST)', C:'Partnerships, Companies, or Trusts (no GST)', D:'Partnerships, Companies, or Trusts (plus GST)' }[typeCode] || typeCode;
 
   // ── Section: REIMBURSEMENTS ───────────────────────────────────────────────
   const reimbRow = (label, amt, acctCode) => amt > 0 ? `
@@ -4401,27 +4470,33 @@ function buildBreakdownHtml(p) {
       <tr><td>Invoice total</td><td style="text-align:right">${$(total)}</td></tr>
       ${reimbTotal > 0 ? `<tr><td>− Reimbursements</td><td style="text-align:right;color:#5B6B7B">−${$(reimbTotal)}</td></tr>` : ''}
       ${reimbTotal > 0 ? `<tr style="border-top:1px dashed #CBD5E0"><td><strong>Performance fee ${isGST?'(inc GST)':''}</strong></td><td style="text-align:right;font-weight:600">${$(perfFeeIncGST)}</td></tr>` : ''}
-      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">ex-GST</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeExGST)}</td></tr>` : ''}
+      ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">ex-GST <span style="color:#2F6FB3;font-weight:600">(super applies to this)</span></td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeExGST)}</td></tr>` : ''}
       ${isGST ? `<tr><td style="padding-left:14px;color:#5B6B7B;font-size:11px">GST on perf fee</td><td style="text-align:right;color:#5B6B7B;font-size:11px">${$(perfFeeGST)}</td></tr>` : ''}
     </table>`;
 
   // ── Section: SUPER DEDUCTION (simpler math: ÷ 1.12 then split) ──────────
-  const performerPortionExGST = Math.round((perfFeeExGST - superAmt) * 100) / 100;
-  const divisor = (100 + superRate) / 100;  // e.g. 1.12 at 12%
+  const performerNetExGST = Math.round((perfFeeExGST - superAmt) * 100) / 100;
+  const divisor = (100 + superRate) / 100;
   const superSection = superAmt > 0 ? `
     <div style="font-weight:600;color:#1B2733;margin:12px 0 4px;font-size:12px">Super deduction <span style="font-weight:400;color:#94A3B8;font-size:11px">(on perf fee ${isGST?'ex-GST':''} ${$(perfFeeExGST)})</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><td>Performer portion <span style="color:#94A3B8;font-size:11px">(${$(perfFeeExGST)} ÷ ${divisor})</span></td><td style="text-align:right">${$(performerPortionExGST)}</td></tr>
-      <tr><td>Super <span style="color:#94A3B8;font-size:11px">(${superRate}% on top)</span></td><td style="text-align:right;font-weight:700;color:#1F9D63">+${$(superAmt)}</td></tr>
-      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-top:2px">↑ super paid to <strong style="color:#1B2733">${escHtml(fundName)}</strong></td></tr>
-      <tr style="border-top:1px dashed #CBD5E0"><td style="font-size:11px;color:#5B6B7B">Check: ${$(performerPortionExGST)} + ${$(superAmt)}</td><td style="text-align:right;font-size:11px;color:#5B6B7B">= ${$(perfFeeExGST)} ✓</td></tr>
+      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-bottom:4px">Of ${$(perfFeeExGST)} ex-GST perf fee:</td></tr>
+      <tr><td style="padding-left:10px">&rarr; Performer&rsquo;s share (ex-GST) <span style="color:#94A3B8;font-size:11px">(${$(perfFeeExGST)} &divide; ${divisor})</span></td><td style="text-align:right">${$(performerNetExGST)}</td></tr>
+      <tr><td style="padding-left:10px">&rarr; Super (the rest)</td><td style="text-align:right;font-weight:700;color:#1F9D63">${$(superAmt)}</td></tr>
+      <tr><td colspan="2" style="font-size:11px;color:#5B6B7B;padding-top:2px">  super paid to <strong style="color:#1B2733">${escHtml(fundName)}</strong></td></tr>
+      <tr style="border-top:1px dashed #CBD5E0"><td style="font-size:11px;color:#5B6B7B">Check: ${$(performerNetExGST)} + ${$(superAmt)}</td><td style="text-align:right;font-size:11px;color:#5B6B7B">= ${$(perfFeeExGST)} &#x2713;</td></tr>
     </table>` : '';
 
   // ── Section: WHERE THE MONEY GOES (two-box cash split + sub-breakdown) ──
   const r2x = n => Math.round((n||0)*100)/100;
   const perfFeeNetIncGST = r2x(perfFeeIncGST - superAmt);
   const performerLines = [
-    { label: superAmt > 0 ? 'Perf fee (less super)' : 'Performance fee', amt: perfFeeNetIncGST },
+    {
+      label: superAmt > 0
+        ? `Perf fee net (inc GST)<span style="color:#94A3B8"> &middot; ${$(perfFeeIncGST)} &minus; ${$(superAmt)} super</span>`
+        : 'Performance fee',
+      amt: perfFeeNetIncGST
+    },
     { label: 'Parking',       amt: parking },
     { label: 'Accommodation', amt: accom   },
     { label: 'Travel',        amt: travel  },
@@ -4683,16 +4758,17 @@ function buildResultsView() {
               <select onchange="setManualType(${p.id}, this.value)"
                 style="font-size:11px;padding:2px 4px;border:1px solid #CBD5E0;border-radius:3px;background:#fff;cursor:pointer">
                 <option value="">A / B / C / D</option>
-                <option value="A">A – Individual, no GST, super</option>
-                <option value="B">B – Individual + GST, super</option>
-                <option value="C">C – Company, no GST</option>
-                <option value="D">D – Company + GST</option>
+                <option value="A">A – Individual Sole Trader (no GST)</option>
+                <option value="B">B – Individual Sole Trader (plus GST)</option>
+                <option value="C">C – Partnerships / Companies / Trusts (no GST)</option>
+                <option value="D">D – Partnerships / Companies / Trusts (plus GST)</option>
               </select>
             </div>
           </div>
         </td>
         <td>$${fmt(p.total)}</td>
         <td colspan="3" style="color:#aaa;font-size:12px">— link or type above →</td>
+        <td style="text-align:center"><button onclick="event.stopPropagation();removeContractorRow('${p.id}')" title="Remove from this pay run" style="background:transparent;border:1px solid #FCA5A5;color:#C53030;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;line-height:1;padding:0">✕</button></td>
       </tr>`;
 
       const a = p.amounts || { cash: p.total||0, super: 0, gst: 0, unitAmount: p.total||0, taxAmount: 0 };
@@ -4744,7 +4820,7 @@ function buildResultsView() {
         onmouseover="this.style.background='#FEF2F2';this.style.color='#C53030';this.style.borderColor='#FEB2B2'"
         onmouseout="this.style.background='transparent';this.style.color='#94A3B8';this.style.borderColor='#E2E8F0'">✕</button>`;
       return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default">
-        <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}${removeBtn}</td>
+        <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
         <td><span class="badge badge-${typeCode.toLowerCase()}">${typeCode}</span></td>
@@ -4753,6 +4829,7 @@ function buildResultsView() {
         <td>${showSuperCell ? `<strong style="color:var(--green)">$${fmt(rowSuper)}</strong>` : (a.super > 0 ? `<span style="color:#aaa;font-size:11px" title="Super not withheld for this invoice">—</span>` : '—')}</td>
         <td><code style="font-size:11px">${ACCOUNT_CODES[typeCode]||typeCode}</code></td>
         <td>${rowGstCell}</td>
+        <td style="text-align:center">${removeBtn}</td>
       </tr>`;
     } catch(rowErr) {
       // Show the row with an error message so we can see what went wrong
@@ -4773,6 +4850,7 @@ function buildResultsView() {
       <td style="color:var(--green)">$${fmt(totalSuper)}</td>
       <td></td>
       <td>${totalGstCredit > 0 ? '$'+fmt(totalGstCredit) : '—'}</td>
+      <td></td>
     </tr>` : '');
 
   // Export counts — exclude already-paid rows
@@ -4881,12 +4959,18 @@ function buildXeroFeeDescription_(opts) {
     lines.push('');
     lines.push(`${rate}% super on $${fix(baseForSuper)}${baseLabel}:`);
     lines.push(`  $${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super portion)`);
-    lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → paid to your super fund`);
+    const fundLabel = opts.fundName && opts.fundName !== '—' ? `paid to ${opts.fundName}` : 'paid to your super fund';
+    lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
 
     const netInc = perfFee - superAmt;
     lines.push('');
     lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
     lines.push(`  = $${fix(perfFee)} (invoice) − $${fix(superAmt)} (super)`);
+    if (opts.isGST) {
+      const netEx = netInc / 1.1;
+      const netGst = netInc - netEx;
+      lines.push(`  In Xero this line shows as $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
+    }
   }
 
   return lines.join('\n');
@@ -4970,7 +5054,8 @@ function exportXeroCSV() {
     const superBaseExGST_csv = isGSTContractor ? (assessableInc_csv / 1.1) : assessableInc_csv;
     const feeDesc = buildXeroFeeDescription_({
       invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_csv, isGST: isGSTContractor,
-      superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_csv
+      superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_csv,
+      fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
     });
 
     // Bill 1 pays the contractor NET as a single fee line — NO negative super line on the bill.
@@ -5000,7 +5085,8 @@ function exportXeroCSV() {
           ? buildXeroFeeDescription_({
               invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_csv,
               isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
-              superBaseExGST: superBaseExGST_csv
+              superBaseExGST: superBaseExGST_csv,
+              fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
             })
           : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
         rows.push(mkRow(billContact, billRef, eventRef, dateXero, dateXero, lineDesc, 1, amt.toFixed(2), acctCode, taxType));
@@ -5156,7 +5242,8 @@ function buildXeroInvoicesData() {
           ? buildXeroFeeDescription_({
               invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_pushMulti,
               isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
-              superBaseExGST: superBaseExGST_pushM
+              superBaseExGST: superBaseExGST_pushM,
+              fundName: (p.contractor && p.contractor.fundName) || null
             })
           : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
         lineItems.push({
@@ -5173,7 +5260,8 @@ function buildXeroInvoicesData() {
       const superBaseExGST_push = isGSTContractor ? (assessableInc_push / 1.1) : assessableInc_push;
       const desc = buildXeroFeeDescription_({
         invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_push, isGST: isGSTContractor,
-        superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_push
+        superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_push,
+        fundName: (p.contractor && p.contractor.fundName) || null
       });
       lineItems.push({
         Description: desc,
