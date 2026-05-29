@@ -3075,19 +3075,49 @@ function rvSyncMultiPerfPanel(id) {
     }
   }
 
+  // Detect a non-individual entity (Zoho structure or type, plus ABR fallback). For these, super
+  // isn't withheld at all, so we auto-pick 'na' instead of prompting the operator for solo/duo.
+  const nonIndividualByZoho = !!(match && (
+    ['C','D'].includes(match.type) ||
+    /pty|company|trust|ltd|corp|partner/i.test(match.structure || '')
+  ));
+  const nonIndividualByABR  = !!(typeof abrCache !== 'undefined' && abrCache[abn] && abrCache[abn].isCompany);
+  const isNonIndividual = nonIndividualByZoho || nonIndividualByABR;
+  // Friendly label for the auto-na banner
+  let entityKind = 'Company / Trust / Partnership';
+  if (match) {
+    if (/partner/i.test(match.structure || '')) entityKind = 'Partnership';
+    else if (/trust/i.test(match.structure || '')) entityKind = 'Trust';
+    else if (/pty|company|ltd|corp/i.test(match.structure || '')) entityKind = 'Company';
+  }
+
   // Restore the picked mode: stored mode wins; on a previously-reviewed row infer from rv-super
-  // (legacy migration so we don't force a re-pick); brand-new rows leave neither radio picked.
+  // (legacy migration); on a non-individual entity auto-pick 'na'; otherwise leave unpicked.
   const stored = invoiceSuperModeData['id_' + id];
-  let mode = (stored === 'solo' || stored === 'group') ? stored : null;
+  let mode = (stored === 'solo' || stored === 'group' || stored === 'na') ? stored : null;
   if (!mode && typeof reviewedRows !== 'undefined' && reviewedRows.has(String(id))) {
     mode = g('rv-super')?.checked ? 'solo' : 'group';
   }
+  if (!mode && isNonIndividual) mode = 'na';
+
+  // Show the auto-na banner only when 'na' applies AND the entity is genuinely non-individual.
+  const autoNaBanner = g('rv-super-auto-na');
+  if (autoNaBanner) {
+    if (mode === 'na' && isNonIndividual) {
+      autoNaBanner.style.display = 'block';
+      const kindEl = g('rv-super-auto-na-kind'); if (kindEl) kindEl.textContent = entityKind;
+    } else {
+      autoNaBanner.style.display = 'none';
+    }
+  }
+
   if (mode) {
     rvSetSuperMode(mode, /*persist*/ false);
   } else {
     document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => r.checked = false);
     const unset = g('rv-super-unset'); if (unset) unset.style.display = 'block';
     if (typeof rvUpdateRail === 'function') rvUpdateRail();
+    if (typeof rvUpdateGroupSection === 'function') rvUpdateGroupSection();
   }
 }
 
@@ -3100,14 +3130,93 @@ function rvSetSuperMode(mode, persist) {
   document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => { r.checked = (r.value === mode); });
   if (mode === 'solo')      { if (superCb) superCb.checked = true; }
   else if (mode === 'group'){ if (superCb) superCb.checked = false; }
+  else if (mode === 'na')   { if (superCb) superCb.checked = false; }
   if (persist && id != null) invoiceSuperModeData['id_' + id] = mode;
   const unset = document.getElementById('rv-super-unset'); if (unset) unset.style.display = 'none';
   if (typeof rvUpdateServiceFee === 'function') rvUpdateServiceFee();
   if (typeof rvUpdateRail === 'function') rvUpdateRail();
+  if (typeof rvUpdateGroupSection === 'function') rvUpdateGroupSection();
 }
 
 // Backward-compat alias for any legacy callsite that still passes 'share'/'none'.
 function rvSetMultiPerfMode(mode) { rvSetSuperMode(mode === 'solo' ? 'solo' : 'group'); }
+
+// ── Step 6 (mockup) — Group breakdown panel. Only visible when 'Duo / group' is picked.
+//    No data feeds the export yet; this is a planning-only UI we can iterate on. ─────────
+function rvUpdateGroupSection() {
+  const card = document.getElementById('rv-card-6-group');
+  if (!card) return;
+  const mode = document.querySelector('input[name="rv-mp-mode"]:checked')?.value;
+  if (mode === 'group') {
+    card.style.display = '';
+    rvGroupSyncRows();
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+function rvGroupSyncRows() {
+  const countEl = document.getElementById('rv-grp-count');
+  if (!countEl) return;
+  const count = Math.max(2, Math.min(12, parseInt(countEl.value || '2', 10) || 2));
+  const container = document.getElementById('rv-grp-rows');
+  if (!container) return;
+  container.innerHTML = '';
+  const inp = 'font-size:11px;padding:4px 6px;width:100%;border:1px solid #CBD5E0;border-radius:4px;background:#FFFFFF;color:#1B2733;outline:none';
+  for (let i = 1; i <= count; i++) {
+    const isLead = i === 1;
+    const row = document.createElement('div');
+    row.className = 'rv-grp-row';
+    row.style.cssText = 'background:#FFFFFF;border:1px solid #E4E8EC;border-radius:6px;padding:8px 10px';
+    const badgeBg = isLead ? '#EAF7EF' : '#EAF2FB';
+    const badgeFg = isLead ? '#1F6E48' : '#2F6FB3';
+    row.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="width:22px;height:22px;border-radius:50%;background:${badgeBg};color:${badgeFg};font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">${i}</span>
+        ${isLead ? '<span style="font-size:10px;font-weight:600;color:#1F6E48;background:#EAF7EF;border:1px solid #BCE3CE;border-radius:20px;padding:1px 7px">Lead</span>' : ''}
+        <div style="flex:1;min-width:130px;position:relative">
+          <input type="text" placeholder="🔍 Search Zoho team…" style="font-size:12px;padding:6px 9px;width:100%;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none">
+        </div>
+        <span class="rv-id-chip" tabindex="-1" style="margin-left:0;font-size:10px">🛈 ID
+          <span class="rv-id-pop" style="width:260px">
+            <div style="font-size:10px;color:#7A8896;line-height:1.5">Pick a Zoho team member above to see their entity / ABN / GST / Xero name here — same identity check as Step 1.</div>
+          </span>
+        </span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <span style="font-size:11px;color:#7A8896;font-weight:600">$</span>
+          <input type="number" placeholder="0.00" step="0.01" min="0" oninput="rvGroupUpdateSum()" style="font-size:12px;padding:6px 8px;width:90px;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none;text-align:right">
+        </div>
+        <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#5B6B7B;white-space:nowrap;cursor:pointer">
+          <input type="checkbox" style="cursor:pointer;accent-color:#1D7A8C">GST
+        </label>
+        <button type="button" onclick="const d=this.closest('.rv-grp-row').querySelector('.rv-grp-detail'); d.style.display=(d.style.display==='block'?'none':'block'); this.textContent=(d.style.display==='block'?'▴ less':'▾ more');" style="background:#F2F5F8;border:1px solid #CBD5E0;color:#5B6B7B;cursor:pointer;border-radius:4px;padding:3px 7px;font-size:10px" title="Expand reimbursements + file upload">▾ more</button>
+      </div>
+      <div class="rv-grp-detail" style="display:none;margin-top:9px;padding-top:9px;border-top:1px dashed #E4E8EC">
+        <div style="font-size:10px;color:#5B6B7B;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px">Reimbursements (no super)</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:10px;color:#5B6B7B">
+          <div><label style="display:block;margin-bottom:2px">🚗 Parking $</label><input type="number" placeholder="0" min="0" step="0.01" style="${inp}"></div>
+          <div><label style="display:block;margin-bottom:2px">🏨 Accom $</label><input type="number" placeholder="0" min="0" step="0.01" style="${inp}"></div>
+          <div><label style="display:block;margin-bottom:2px">📦 Other $</label><input type="number" placeholder="0" min="0" step="0.01" style="${inp}"></div>
+        </div>
+        ${isLead
+          ? '<div style="margin-top:9px;font-size:10px;color:#7A8896;font-style:italic">Lead performer — no separate upload needed (this invoice IS the lead\'s).</div>'
+          : '<div style="margin-top:9px"><label style="font-size:10px;color:#5B6B7B;font-weight:600;display:block;margin-bottom:3px">📎 This performer\'s own invoice (split evidence)</label><input type="file" accept="application/pdf" style="font-size:10px"><div style="font-size:10px;color:#7A8896;margin-top:2px">Required so MEC can split the bills and apply super correctly per performer.</div></div>'}
+      </div>`;
+    container.appendChild(row);
+  }
+  rvGroupUpdateSum();
+}
+
+function rvGroupUpdateSum() {
+  const rows = document.querySelectorAll('#rv-grp-rows .rv-grp-row');
+  let sum = 0;
+  rows.forEach(row => {
+    const rate = row.querySelector('input[type="number"]');
+    sum += parseFloat(rate?.value || '0') || 0;
+  });
+  const out = document.getElementById('rv-grp-sum-display');
+  if (out) out.textContent = '$' + sum.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 let rvABRTimer = null;
 function rvAutoABR(val) {

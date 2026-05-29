@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523r">
+<link rel="stylesheet" href="styles.css?v=20260523t">
 </head>
 <body>
 
@@ -899,6 +899,9 @@
               ⚠ <strong>Possible duo / group booking</strong> — <span id="rv-multiperf-reason"></span> Confirm below; the tool will NOT guess for you.
             </div>
 
+            <div id="rv-super-auto-na" style="display:none;background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:9px;line-height:1.5">
+              ✓ <strong>Super not applicable</strong> — this entity is a <span id="rv-super-auto-na-kind">Company / Trust / Partnership</span>, so super isn't withheld. Override below if needed.
+            </div>
             <div style="font-size:12px;font-weight:600;color:#1B2733;margin-bottom:8px;display:flex;align-items:center;gap:7px">
               Is this person performing solo, or as part of a duo / group?
               <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>How super withholding works</strong>We only withhold super on <strong>solo</strong> performers. If they're part of a duo / group, no super is withheld — the performer splits the fee with their co-performer(s) and any super arrangement is their own.<br><br><strong>Mixed-event invoices:</strong> if one invoice covers multiple events — one solo and another duo / group — ask the performer to split the invoice so each event can be processed correctly. We only withhold super on the solo performance.</span></span>
@@ -915,6 +918,11 @@
                 <span style="font-weight:600;color:#1B2733">👥 Duo / group</span>
                 <span style="color:#5B6B7B;font-size:11px;margin-left:auto">No super withheld</span>
               </label>
+              <label id="rv-mp-na-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
+                <input type="radio" name="rv-mp-mode" value="na" tabindex="13" onchange="rvSetSuperMode('na')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
+                <span style="font-weight:600;color:#1B2733">🏛 Not applicable — entity structure</span>
+                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">Company / Trust / Partnership · no super</span>
+              </label>
             </div>
 
             <div id="rv-super-unset" style="font-size:11px;color:#B45309;margin-top:9px">⚠ Pick one above to complete this invoice.</div>
@@ -925,6 +933,28 @@
             </label>
             <!-- Hidden: legacy share input kept for backward-compat (the new binary UI doesn't use it). -->
             <input type="hidden" id="rv-mp-share">
+          </div>
+          <!-- Card 6 · Group breakdown (Coming-soon mockup — appears only when 'Duo / group' is picked in Step 5) -->
+          <div class="rv-card" id="rv-card-6-group" style="display:none">
+            <div class="rv-card-head">
+              <span class="rv-card-num" style="background:#FBF1DE;color:#8A5B12">6</span>Group breakdown
+              <span style="margin-left:auto;font-size:10px;font-weight:600;color:#8A5B12;background:#FBF1DE;border:1px solid #E6D3A8;border-radius:20px;padding:2px 9px;text-transform:none;letter-spacing:0">🚧 Coming soon · mockup</span>
+            </div>
+            <div style="background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:8px 11px;font-size:11px;line-height:1.5;margin-bottom:10px">
+              <strong>Planning mockup only — not wired into the export yet.</strong> In a future release, group splits will route to per-performer super contributions. For now, the lead performer still receives the full invoice and arranges payment to co-performers; this section lets us preview the per-performer breakdown so we can iterate on the UX.
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <label style="font-size:11px;color:#5B6B7B;font-weight:600">How many performers in this group?</label>
+              <input type="number" id="rv-grp-count" min="2" max="12" value="2"
+                oninput="rvGroupSyncRows()"
+                style="width:60px;font-size:13px;padding:5px 8px;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none;text-align:center">
+              <span style="font-size:11px;color:#7A8896">Includes the lead performer (this invoicer)</span>
+            </div>
+            <div id="rv-grp-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div id="rv-grp-summary" style="margin-top:10px;padding:8px 11px;background:#F2F5F8;border-radius:6px;font-size:11px;color:#5B6B7B;display:flex;justify-content:space-between;align-items:center">
+              <span>Sum of all performer shares</span>
+              <span id="rv-grp-sum-display" style="font-weight:600;color:#1B2733">$0.00</span>
+            </div>
           </div>
         </div><!-- /work column -->
       </div><!-- /rail + work -->
@@ -1000,6 +1030,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523r"></script>
+<script src="app.js?v=20260523t"></script>
 </body>
 </html>
