@@ -4748,7 +4748,24 @@ function buildXeroInvoicesData() {
   const out = [];
   if (!Array.isArray(processed)) return out;
   const todayISO = () => new Date().toISOString().split('T')[0];
-  const resolveDate = p => formatDateXero(p.date || p.perfDate || todayISO());
+  // Xero's JSON API requires ISO yyyy-MM-dd (the CSV import wants dd/MM/yyyy — different beast).
+  // Accept any of: dd/MM/yyyy (CSV form), yyyy-MM-dd (already ISO), or a Date object.
+  const toISO = v => {
+    if (!v) return todayISO();
+    if (v instanceof Date) return v.toISOString().split('T')[0];
+    const m = String(v).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) {
+      const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0');
+      const y = m[3].length === 2 ? ('20' + m[3]) : m[3];
+      return `${y}-${mo}-${d}`;
+    }
+    const m2 = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
+    // Last resort: try Date() parsing
+    const d2 = new Date(v);
+    return isNaN(d2) ? todayISO() : d2.toISOString().split('T')[0];
+  };
+  const resolveDate = p => toISO(p.date || p.perfDate || todayISO());
   const r2 = n => Math.round((n || 0) * 100) / 100;
 
   // ── Event contractor bills ─────────────────────────────────────────────────
