@@ -212,7 +212,19 @@
   .rv-modal-grid > .rv-work-col { display:contents; }
   .rv-modal-grid .rv-rail-phase,
   .rv-modal-grid .rv-rail-line { display:none; }
-  .rv-modal-grid .rv-rail-node { grid-column:1; align-self:center; justify-self:center; }
+  .rv-modal-grid .rv-rail-node { grid-column:1; align-self:center; justify-self:center; position:relative; }
+  /* Vertical dotted line connector below each pill except the last in its phase, guiding
+     the user's eye down to the next step. ::after sits below the pill, ::before is unused. */
+  .rv-modal-grid #rv-rail-1::after,
+  .rv-modal-grid #rv-rail-3::after,
+  .rv-modal-grid #rv-rail-4::after { content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%); width:2px; height:22px; background:repeating-linear-gradient(to bottom, #B7C2D0 0 3px, transparent 3px 6px); }
+  /* Between pills 2 and 3 the phase changes, so use a slightly bigger gap + arrow indicator */
+  .rv-modal-grid #rv-rail-2::after { content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%); width:2px; height:22px; background:repeating-linear-gradient(to bottom, #B7C2D0 0 3px, transparent 3px 6px); }
+  /* Small ↓ chevron at the bottom of each connector to reinforce direction */
+  .rv-modal-grid #rv-rail-1::before,
+  .rv-modal-grid #rv-rail-2::before,
+  .rv-modal-grid #rv-rail-3::before,
+  .rv-modal-grid #rv-rail-4::before { content:"▾"; position:absolute; top:100%; left:50%; transform:translate(-50%, 18px); font-size:10px; color:#94A3B8; line-height:1; }
   .rv-modal-grid .rv-card { grid-column:2; }
   .rv-modal-grid .rv-phase-div { grid-column:1 / -1; }
   /* Row assignments — explicit so the layout is deterministic regardless of DOM order. */

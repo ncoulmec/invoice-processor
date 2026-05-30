@@ -4698,6 +4698,13 @@ function buildResultsView() {
   // ── Super-details completeness gate (only when super withholding is ON) ──
   // Lists every super-eligible contractor in the run whose Zoho record is missing mandatory
   // super/SAFF fields, with one-click "copy form link" / "email" chase actions.
+  // NOTE: ZOHO_ORG + ZOHO_MODULE hoisted up here so the gap-warning chase iteration can
+  // reference them. They used to be declared further down (just before the Results table),
+  // which created a temporal-dead-zone error when ANY contractor was missing super details —
+  // the .map() callback threw "Cannot access 'ZOHO_ORG' before initialization" and the whole
+  // table rebuild (incl. the TOTALS row + per-row super cells) never completed.
+  const ZOHO_ORG = '657079535';
+  const ZOHO_MODULE = 'CustomModule3';
   const gapEl = document.getElementById('super-gap-warn');
   if (gapEl) {
     const incomplete = superDeductionsEnabled()
@@ -4736,9 +4743,7 @@ function buildResultsView() {
     }
   }
 
-  // Results table
-  const ZOHO_ORG = '657079535';
-  const ZOHO_MODULE = 'CustomModule3';
+  // Results table — ZOHO_ORG + ZOHO_MODULE already hoisted above for the gap-warn chase.
   const zohoLink = (id) => id
     ? `<a href="https://crm.zoho.com/crm/org${ZOHO_ORG}/tab/${ZOHO_MODULE}/${id}"
          target="_blank" rel="noopener"
