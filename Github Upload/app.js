@@ -31,7 +31,7 @@ let TAX_TYPES = {
 // account 826-C is retired from this flow (the liability sits in AP/800 automatically).
 // CLEARINGHOUSE_NAME is the Xero supplier + the name shown in the contractor's super note.
 // Update it once a clearing-house provider is chosen (see TODO.md, item 11).
-let CLEARINGHOUSE_NAME = 'Contractor Super Clearinghouse';
+let CLEARINGHOUSE_NAME = 'Australian Super Clearing House';
 let SUPER_ACCOUNT = '478-C';
 // Zoho Forms "Super & Payment Details" form — appending ?crm_entity_id=<TeamRecordId> pre-fills it
 // for that contractor. Used by the completeness gate's "Copy form link / Email" actions.
@@ -2157,9 +2157,24 @@ function openReviewModal(id) {
   g('rv-total').value    = g('total-'+id)?.value    || '';
   g('rv-abn').value      = g('abn-'+id)?.value      || '';
 
-  // GST from stored extraction data (falls back to unchecked)
+  // GST checkbox — three signals, OR them together. PDF extraction sometimes misses GST
+  // (e.g. Jeremy Bennett: extractor failed; Ellie Carragher: company invoice via talent manager).
+  // Tick if ANY of: (a) PDF extraction found GST, (b) matched Zoho contractor has gst=true,
+  // (c) ABR for the invoice ABN says the entity is GST-registered.
   const storedGST = invoiceGSTData['id_' + id];
-  g('rv-gst').checked = storedGST !== undefined ? !!storedGST : false;
+  const abn0check = (g('rv-abn')?.value||'').replace(/\s/g,'');
+  const matchForGST = (typeof contractors !== 'undefined' && Array.isArray(contractors))
+    ? contractors.find(c =>
+        (c.name||'').toLowerCase() === (g('rv-name')?.value||'').toLowerCase() ||
+        (abn0check.length===11 && c.abn && c.abn.replace(/\s/g,'') === abn0check))
+    : null;
+  const abrGSTFlag = abrRowData && abrRowData['id_' + id] && abrRowData['id_' + id].isGST;
+  const gstShouldTick = storedGST === true
+                     || (matchForGST && matchForGST.gst === true)
+                     || abrGSTFlag === true;
+  g('rv-gst').checked = gstShouldTick ? true : (storedGST === false ? false : !!storedGST);
+  // Persist back so downstream code sees the same value
+  invoiceGSTData['id_' + id] = !!g('rv-gst').checked;
 
   // Super checkbox — sync with the Stage 1 "Withhold super?" toggle (the source of truth),
   // then a stored review override, then a sensible default (on unless matched company/partnership).
@@ -3127,17 +3142,21 @@ function rvUpdateInlineIdentity() {
     abrData = abrRowData['id_' + reviewModalRowId] || null;
   }
   // Decide which entity type to surface. Priority:
-  //   1. ABR-derived (truth from the invoice ABN, e.g. "Pty Ltd")
+  //   1. ABR-derived (truth from the invoice ABN, e.g. "Pty Ltd") — uses isCompany flag
   //   2. Zoho record's type field
   //   3. Inferred from GST checkbox
+  // NB: abrData fields are { isCompany, isGST, entityName, entityTypeDesc } — NOT entityType.
+  const zohoAbn0 = (zohoRec && zohoRec.abn || '').replace(/\s/g,'');
+  const abnsDiffer = abn && zohoAbn0 && abn !== zohoAbn0;
   let entity = '—';
   let entitySource = '';
-  if (abrData && abrData.entityType) {
-    const eg = (abrData.entityType || '').toLowerCase();
-    if (eg.includes('individual') || eg.includes('sole')) {
-      entity = gstOn ? 'Individual Sole Trader (plus GST)' : 'Individual Sole Trader (no GST)';
-    } else {
+  if (abrData && (abrData.isCompany === true || abrData.isCompany === false)) {
+    // Prefer ABR when we have a definitive entity classification — especially when ABNs differ
+    // from Zoho (talent-manager case: Ellie's invoice ABN belongs to LJN CREATIVE PTY LTD).
+    if (abrData.isCompany) {
       entity = gstOn ? 'Partnerships, Companies, or Trusts (plus GST)' : 'Partnerships, Companies, or Trusts (no GST)';
+    } else {
+      entity = gstOn ? 'Individual Sole Trader (plus GST)' : 'Individual Sole Trader (no GST)';
     }
     entitySource = 'from ABR';
   } else if (zohoRec) {
@@ -3151,13 +3170,11 @@ function rvUpdateInlineIdentity() {
   // ABN-mismatch warning — invoice ABN differs from Zoho's stored ABN for this contractor.
   // Almost always means a talent manager / company is invoicing on the performer's behalf.
   // The invoice ABN is the source of truth for super eligibility + GST.
-  const zohoAbn = (zohoRec && zohoRec.abn || '').replace(/\s/g,'');
-  const abnsDiffer = abn && zohoAbn && abn !== zohoAbn;
-  const abrIsCompany = abrData && (abrData.entityType || '').toLowerCase().match(/company|trust|partnership|pty/);
+  const abrIsCompany = abrData && abrData.isCompany === true;
   const warn = (abnsDiffer || abrIsCompany)
     ? `<div style="margin-top:6px;padding:7px 10px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:5px;color:#7A5A12;font-size:11px;line-height:1.5">
          ⚠ <strong>Invoice ABN differs from Zoho record${abrIsCompany ? ' — entity is a company/trust' : ''}.</strong>
-         ${abrIsCompany ? `Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to the company, not ' + escHtml(zohoRec.name) + ' personally)' : ''}.` : 'Verify which ABN is correct before approving.'}
+         ${abrIsCompany ? `Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to ' + escHtml((abrData && abrData.entityName) || 'this company') + ', not ' + escHtml(zohoRec.name) + ' personally)' : ''}.` : 'Verify which ABN is correct before approving.'}
        </div>`
     : '';
 
@@ -5700,7 +5717,7 @@ function buildXeroSuperInvoicesData() {
     const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                      || formatDateReadable(p.perfDate || p.date) || resolveDate(p);
     const rate = p.superRate || 12;
-    const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super ${rate}% | $${superAmt.toFixed(2)}`;
+    const desc = `Super ${rate}% on $${(p.total||0).toFixed(2)} | ${cName} | Event Date(s): ${eventDates} | INV-${invNum} | $${superAmt.toFixed(2)}`;
     return { p, cName, invNum, eventDates, rate, superAmt: r2(superAmt), desc, dateXero: resolveDate(p) };
   }).filter(Boolean);
 
@@ -5729,7 +5746,8 @@ function buildXeroSuperInvoicesData() {
     });
   } else {
     superRows.forEach(r => {
-      const billRef = `${r.cName} | Event Date(s): ${r.eventDates} | ${r.invNum} | Super`;
+      // Reference starts with "Super" + uses INV- prefix on the source invoice number.
+      const billRef = `Super | ${r.cName} | Event Date(s): ${r.eventDates} | INV-${r.invNum}`;
       out.push({
         Type: 'ACCPAY',
         Status: 'DRAFT',
@@ -5737,7 +5755,7 @@ function buildXeroSuperInvoicesData() {
         Date: r.dateXero,
         DueDate: addDaysISO(r.dateXero, 7),
         InvoiceNumber: billRef,
-        Reference: `Event(s): ${r.eventDates}`,
+        Reference: `Super · Event(s): ${r.eventDates}`,
         LineAmountTypes: 'Exclusive',
         LineItems: [{
           Description: r.desc,
@@ -5854,13 +5872,13 @@ function exportSuperBillsCSV() {
       // number (Sabrina & Jake both "011") no longer merge into one Xero bill — and there's no
       // initials hack to mangle bracketed aliases like "Jake (Jacob) Fehily" into "J(".
       const rate = p.superRate || 12;
-      const desc = `${cName} | Event Date(s): ${eventDates} | Inv: ${invNum} | Invoice total $${(p.total||0).toFixed(2)} | Super ${rate}% | $${superAmt.toFixed(2)}`;
+      // "Super" prefix + INV- prefix on the source invoice number, per request.
+      const desc = `Super ${rate}% on $${(p.total||0).toFixed(2)} | ${cName} | Event Date(s): ${eventDates} | INV-${invNum} | $${superAmt.toFixed(2)}`;
       if (consolidate) {
-        // Shared invoice number + date → all lines roll into a single Xero bill.
         rows.push(mkRow(CLEARINGHOUSE_NAME, conRef, conRef, dateAll, dateAll,
                         desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       } else {
-        const ref = `${cName} | Event Date(s): ${eventDates} | ${invNum} | Super`;
+        const ref = `Super | ${cName} | Event Date(s): ${eventDates} | INV-${invNum}`;
         rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateXero, dateXero,
                         desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       }

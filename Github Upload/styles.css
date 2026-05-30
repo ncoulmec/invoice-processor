@@ -204,6 +204,32 @@
   .rv-tip:hover .rv-tip-box.rv-tip-box--left { transform:translateY(0); }
   .rv-tip-box.rv-tip-box--left::after { left:9px; right:auto; transform:none; }
   /* ── Review modal v2: progress rail + step cards + identity hover · light theme (2026-05) ── */
+  /* CSS Grid mode (2026-05-30): replaces the previous flex-rail + JS positioning. Pills and
+     cards live in the same grid; explicit grid-row IDs keep pill N aligned to card N regardless
+     of DOM order. display:contents on the wrappers flattens them into the parent grid. */
+  .rv-modal-grid { display:grid; grid-template-columns:28px 1fr; gap:9px 12px; align-items:start; }
+  .rv-modal-grid > .rv-rail { display:contents; }
+  .rv-modal-grid > .rv-work-col { display:contents; }
+  .rv-modal-grid .rv-rail-phase,
+  .rv-modal-grid .rv-rail-line { display:none; }
+  .rv-modal-grid .rv-rail-node { grid-column:1; align-self:center; justify-self:center; }
+  .rv-modal-grid .rv-card { grid-column:2; }
+  .rv-modal-grid .rv-phase-div { grid-column:1 / -1; }
+  /* Row assignments — explicit so the layout is deterministic regardless of DOM order. */
+  .rv-modal-grid #rv-phase-match { grid-row:1; }
+  .rv-modal-grid #rv-rail-1 { grid-row:2; }
+  .rv-modal-grid #rv-card-1 { grid-row:2; }
+  .rv-modal-grid #rv-rail-2 { grid-row:3; }
+  .rv-modal-grid #rv-card-2 { grid-row:3; }
+  .rv-modal-grid #rv-phase-enter { grid-row:4; }
+  .rv-modal-grid #rv-rail-3 { grid-row:5; }
+  .rv-modal-grid #rv-card-3 { grid-row:5; }
+  .rv-modal-grid #rv-rail-4 { grid-row:6; }
+  .rv-modal-grid #rv-card-4 { grid-row:6; }
+  .rv-modal-grid #rv-rail-5 { grid-row:7; }
+  .rv-modal-grid #rv-card-5 { grid-row:7; }
+  .rv-modal-grid #rv-card-6-group { grid-row:8; }
+  /* Legacy flex-rail styles — still used as fallback when the grid class isn't present */
   .rv-rail { display:flex; flex-direction:column; align-items:center; flex:none; width:28px; padding-top:24px; }
   .rv-rail-phase { font-size:8px; color:#7A8896; writing-mode:vertical-rl; transform:rotate(180deg);
                    letter-spacing:.12em; margin:3px 0; text-transform:uppercase; font-weight:700; }
