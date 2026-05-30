@@ -11,7 +11,7 @@
     "C": "GST Free Expenses",
     "D": "GST on Expenses"
   },
-  "clearinghouseName": "Contractor Super Clearinghouse",
+  "clearinghouseName": "Australian Super Clearing House",
   "superAccount": "478-C",
 
   "_comment_multiPerformer": "Duo/group super detection. A flagged invoice defaults to NO super withheld and shows a confirm prompt in the Review modal (Solo / this performer's share / no-super). variableLineupPerformers = performers who flip between solo and duo/group under ONE ABN (matched by name, case-insensitive) — this is the most reliable trigger and also catches the harp->two-harpists case the booking field misses. multiPerformerOfferings / ambiguousOfferings = exact 'What Did They End Up Booking?' values; the code ALSO keyword-matches (duo/trio/quartet/band/pair/group/ensemble/mariachi -> multi; soloist -> solo) so renamed values like 'Strings - Group (2 or more)' are caught automatically without editing this file.",

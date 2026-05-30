@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523B2">
+<link rel="stylesheet" href="styles.css?v=20260523B3">
 </head>
 <body>
 
@@ -284,8 +284,8 @@
           <table id="pdf-table">
             <thead><tr>
               <th>Contractor Name</th><th>Invoice #</th><th>Perf. Date</th>
-              <th>Total (inc GST if applicable)</th><th style="width:140px">ABN</th><th>Matched / ABR</th>
-              <th>Deduct super? <span class="rv-tip" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Deduct super?</strong>Ticked = super (12% default, or the contractor's Zoho rate) is set aside and paid into their fund via the clearing house for this invoice. Defaults ON for sole traders (Type A/B) and OFF for companies/partnerships (Type C/D).<br><br>To exclude an invoice from the run entirely, remove it with the red ✕ button instead.</span></span></th>
+              <th>Total<div style="font-weight:400;font-size:9px;color:#A8B4C0;text-transform:none;letter-spacing:0;margin-top:1px">(inc GST if applicable)</div></th><th style="width:140px">ABN</th><th>Matched / ABR</th>
+              <th>Deduct super? <span class="rv-tip rv-tip--right" style="background:rgba(255,255,255,0.25);color:#fff;vertical-align:middle">?<span class="rv-tip-box" style="color:#e2e8f0"><strong>Deduct super?</strong>Ticked = super (12% default, or the contractor's Zoho rate) is set aside and paid into their fund via the clearing house for this invoice. Defaults ON for sole traders (Type A/B) and OFF for companies/partnerships (Type C/D).<br><br>To exclude an invoice from the run entirely, remove it with the red ✕ button instead.</span></span></th>
               <th></th>
             </tr></thead>
             <tbody id="pdf-tbody"></tbody>
@@ -1080,6 +1080,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523B2"></script>
+<script src="app.js?v=20260523B3"></script>
 </body>
 </html>

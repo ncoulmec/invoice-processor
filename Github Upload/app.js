@@ -4403,7 +4403,7 @@ function ensureBreakdownPopover() {
   if (!pop) {
     pop = document.createElement('div');
     pop.id = 'row-breakdown-popover';
-    pop.style.cssText = 'position:fixed;display:none;z-index:1500;background:#fff;border:1px solid #CBD5E0;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,0.18);padding:14px 16px;font-size:12px;line-height:1.55;max-width:380px;color:#1B2733;pointer-events:none';
+    pop.style.cssText = 'position:fixed;display:none;z-index:1500;background:#fff;border:1px solid #CBD5E0;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,0.18);padding:14px 16px;font-size:12px;line-height:1.55;width:470px;max-width:90vw;color:#1B2733;pointer-events:none';
     document.body.appendChild(pop);
   }
   return pop;
@@ -4566,8 +4566,9 @@ function buildBreakdownHtml(p) {
   const perfFeeNetIncGST = r2x(perfFeeIncGST - superAmt);
   const performerLines = [
     {
+      // Two-line label: "Perf fee net (inc GST)" then below in a dim sub-line: "$X − $Y super".
       label: superAmt > 0
-        ? `Perf fee net (inc GST)<span style="color:#94A3B8"> &middot; ${$(perfFeeIncGST)} &minus; ${$(superAmt)} super</span>`
+        ? `Perf fee net (inc GST)<br><span style="color:#94A3B8;font-size:10px">${$(perfFeeIncGST)} &minus; ${$(superAmt)} super</span>`
         : 'Performance fee',
       amt: perfFeeNetIncGST
     },
@@ -5053,17 +5054,21 @@ function buildXeroFeeDescription_(opts) {
   const divisor  = (100 + rate) / 100;     // 1.12 at 12%
   const superAmt = opts.superAmt || 0;
 
-  // Performance fee breakdown
+  // Performance fee breakdown — label clarifies "inc super" / "(inc GST & super)" when super applies.
+  const incSuperTag = superAmt > 0;
   if (opts.isGST) {
     const ex  = perfFee / 1.1;
     const gst = perfFee - ex;
-    lines.push(`Performance fee: $${fix(perfFee)} (inc GST)`);
+    const headerSuffix = incSuperTag ? '(inc GST & super)' : '(inc GST)';
+    lines.push(`Performance fee: $${fix(perfFee)} ${headerSuffix}`);
     lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
   } else {
-    lines.push(`Performance fee: $${fix(perfFee)}`);
+    const headerSuffix = incSuperTag ? ' inc. super' : '';
+    lines.push(`Performance fee: $${fix(perfFee)}${headerSuffix}`);
   }
 
-  // Super math (explicit ÷ 1.12 and subtraction)
+  // Super math (explicit ÷ 1.12 and subtraction). "of" instead of "on" — "on" implies super
+  // is added on top, but it's actually carved out of the performance fee.
   if (superAmt > 0) {
     const baseForSuper = opts.superBaseExGST != null
       ? opts.superBaseExGST
@@ -5071,7 +5076,7 @@ function buildXeroFeeDescription_(opts) {
     const exSuper = baseForSuper - superAmt;
     const baseLabel = opts.isGST ? ' ex-GST' : '';
     lines.push('');
-    lines.push(`${rate}% super on $${fix(baseForSuper)}${baseLabel}:`);
+    lines.push(`${rate}% super of $${fix(baseForSuper)}${baseLabel}:`);
     lines.push(`  $${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super portion)`);
     const fundLabel = opts.fundName && opts.fundName !== '—' ? `paid to ${opts.fundName}` : 'paid to your super fund';
     lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
@@ -5160,7 +5165,7 @@ function exportXeroCSV() {
     // import column). Same descriptive flow as the super bill, minus "| Super".
     const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                      || formatDateReadable(p.perfDate || p.date) || dateXero;
-    const billRef = `Event Date(s): ${eventDates} | ${invNum}`;
+    const billRef = `Event Date(s): ${eventDates} | INV-${invNum}`;
 
     // Multi-line description — step-by-step math (perf fee → GST split → super ÷ → net)
     const perfFeeIncGST_csv = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
@@ -5421,7 +5426,7 @@ function buildXeroInvoicesData() {
     // to see it. API's Reference field is a secondary, less-prominent field — keep eventRef there.
     const eventDatesPush = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                        || formatDateReadable(p.perfDate || p.date) || dateXero;
-    const billRefPush = `Event Date(s): ${eventDatesPush} | ${invNum}`;
+    const billRefPush = `Event Date(s): ${eventDatesPush} | INV-${invNum}`;
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',

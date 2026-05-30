@@ -203,6 +203,15 @@
   .rv-tip-box.rv-tip-box--left { left:-4px; right:auto; transform:translateY(-4px); }
   .rv-tip:hover .rv-tip-box.rv-tip-box--left { transform:translateY(0); }
   .rv-tip-box.rv-tip-box--left::after { left:9px; right:auto; transform:none; }
+  /* Side-right variant — tooltip box appears TO THE RIGHT of the ? trigger (not below).
+     Used when the trigger sits at the top-right of the table and there's no room below. */
+  .rv-tip.rv-tip--right .rv-tip-box,
+  .rv-tip .rv-tip-box.rv-tip-box--side-right { top:50%; left:calc(100% + 12px); right:auto; transform:translateY(-50%) translateX(-4px); }
+  .rv-tip.rv-tip--right:hover .rv-tip-box,
+  .rv-tip:hover .rv-tip-box.rv-tip-box--side-right { transform:translateY(-50%) translateX(0); }
+  .rv-tip.rv-tip--right .rv-tip-box::after,
+  .rv-tip .rv-tip-box.rv-tip-box--side-right::after { left:auto; right:100%; top:50%; bottom:auto;
+                       transform:translateY(-50%); border:6px solid transparent; border-right-color:#1e3a5f; border-bottom-color:transparent; }
   /* ── Review modal v2: progress rail + step cards + identity hover · light theme (2026-05) ── */
   /* CSS Grid mode (2026-05-30): replaces the previous flex-rail + JS positioning. Pills and
      cards live in the same grid; explicit grid-row IDs keep pill N aligned to card N regardless
