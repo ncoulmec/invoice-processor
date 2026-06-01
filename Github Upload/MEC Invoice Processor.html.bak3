@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523B5">
+<link rel="stylesheet" href="styles.css?v=20260523B3">
 </head>
 <body>
 
@@ -462,19 +462,13 @@
             </div>
           </div>
           <!-- footer: all navigation + decision grouped together -->
-          <div style="display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:#0F1B33;border-top:1px solid #2A3A5C">
-            <div style="font-size:10px;color:#7E8FB0;line-height:1.5;text-align:center">
-              Every invoice is <strong style="color:#86EFAC">ticked by default</strong>. Use <strong style="color:#FCA5A5">Exclude</strong> only to drop one
-              (e.g. a remittance receipt). Hit <strong style="color:#86EFAC">📥 Import N Selected PDFs</strong> at the top of the list when you're done reviewing.
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span id="gmail-rev-counter" style="color:#7E8FB0;font-size:11px;min-width:62px"></span>
-              <div style="flex:1"></div>
-              <button onclick="gmailReviewNav(-1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">← Prev</button>
-              <button id="gmail-rev-exclude" onclick="gmailReviewSetInclude(false)" style="background:#7F1D1D;color:#fff;border:1px solid #B91C1C;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✗ Exclude</button>
-              <button id="gmail-rev-include" onclick="gmailReviewSetInclude(true)" style="background:#166534;color:#fff;border:1px solid #16A34A;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Keep</button>
-              <button onclick="gmailReviewNav(1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">Next →</button>
-            </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0F1B33;border-top:1px solid #2A3A5C">
+            <span id="gmail-rev-counter" style="color:#7E8FB0;font-size:11px;min-width:62px"></span>
+            <div style="flex:1"></div>
+            <button onclick="gmailReviewNav(-1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">← Prev</button>
+            <button id="gmail-rev-exclude" onclick="gmailReviewSetInclude(false)" style="background:#7F1D1D;color:#fff;border:1px solid #B91C1C;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✗ Don't import</button>
+            <button id="gmail-rev-include" onclick="gmailReviewSetInclude(true)" style="background:#166534;color:#fff;border:1px solid #16A34A;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Import this</button>
+            <button onclick="gmailReviewNav(1)" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:8px 13px;font-size:12px;cursor:pointer">Next →</button>
           </div>
         </div>
       </div>
@@ -1086,6 +1080,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523B5"></script>
+<script src="app.js?v=20260523B3"></script>
 </body>
 </html>

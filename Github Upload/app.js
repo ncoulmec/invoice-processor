@@ -5045,9 +5045,12 @@ function buildXeroFeeDescription_(opts) {
   // opts: { invNum, dateReadable, perfFeeIncGST, isGST, superAmt, superRate, superBaseExGST? }
   //   superBaseExGST: ex-GST base on which super was calculated (defaults to perfFee/1.1 for
   //   GST contractors, perfFee for non-GST). Pass explicitly for duo-override cases.
-  const fix = n => (Math.round((n||0)*100)/100).toFixed(2);
-  const head = `Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''} · Performance fee`;
-  const lines = [head];
+  // AU-style number formatter — adds thousands separators ($1,000.00 not $1000.00).
+  const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Header is just "Inv X · Date" — the "Performance fee" label appears on the content line below
+  // so there's no duplication. Blank line between header and content for readability.
+  const head = `Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
+  const lines = [head, ''];
 
   const perfFee  = opts.perfFeeIncGST || 0;
   const rate     = opts.superRate || 12;
@@ -5082,13 +5085,14 @@ function buildXeroFeeDescription_(opts) {
     lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
 
     const netInc = perfFee - superAmt;
+    const invoiceLabel = opts.isGST ? 'invoice inc GST' : 'invoice';
     lines.push('');
     lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
-    lines.push(`  = $${fix(perfFee)} (invoice) − $${fix(superAmt)} (super)`);
+    lines.push(`  $${fix(perfFee)} (${invoiceLabel}) − $${fix(superAmt)} (super) = $${fix(netInc)} net`);
     if (opts.isGST) {
       const netEx = netInc / 1.1;
       const netGst = netInc - netEx;
-      lines.push(`  In Xero this line shows as $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
+      lines.push(`  In Xero: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
     }
   }
 
@@ -5194,20 +5198,34 @@ function exportXeroCSV() {
     if (feeLBs.length > 1) {
       const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
       let allocated = 0;
+      let allocatedSuper = 0;
+      let allocatedPerfFee = 0;
       feeLBs.forEach((lb, i) => {
         const last = i === feeLBs.length - 1;
-        const amt = last ? (feeAmount - allocated) : Math.round(feeAmount * (lb.cost / totalCost) * 100) / 100;
+        const ratio = lb.cost / totalCost;
+        const amt = last ? (feeAmount - allocated) : Math.round(feeAmount * ratio * 100) / 100;
         allocated += amt;
+        // Per-date super math: each event's allocated share gets its own super calc so the
+        // description reads correctly. Last line absorbs rounding so the totals balance.
+        const lineSuperAmt = last
+          ? Math.round((superAmt - allocatedSuper) * 100) / 100
+          : Math.round(superAmt * ratio * 100) / 100;
+        allocatedSuper += lineSuperAmt;
+        const linePerfFeeIncGST = last
+          ? Math.round((perfFeeIncGST_csv - allocatedPerfFee) * 100) / 100
+          : Math.round(perfFeeIncGST_csv * ratio * 100) / 100;
+        allocatedPerfFee += linePerfFeeIncGST;
+        const lineSuperBaseExGST = isGSTContractor ? (linePerfFeeIncGST / 1.1) : linePerfFeeIncGST;
         const dr = formatDateReadable(lb.eventDate) || dateReadable;
-        // First line carries the full perf-fee/super breakdown; subsequent dates just label the event.
-        const lineDesc = (i === 0)
-          ? buildXeroFeeDescription_({
-              invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_csv,
-              isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
-              superBaseExGST: superBaseExGST_csv,
-              fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
-            })
-          : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
+        // Every event line now carries its OWN super math (proportional share). Cleaner than
+        // dumping everything on line 1 and labelling subsequent lines "(this date)".
+        const lineDesc = buildXeroFeeDescription_({
+          invNum, dateReadable: dr, perfFeeIncGST: linePerfFeeIncGST,
+          isGST: isGSTContractor, superAmt: lineSuperAmt,
+          superRate: p.superRate || 12,
+          superBaseExGST: lineSuperBaseExGST,
+          fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
+        });
         rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), lineDesc, 1, amt.toFixed(2), acctCode, taxType));
       });
     } else {
@@ -5348,23 +5366,31 @@ function buildXeroInvoicesData() {
     if (feeLBs.length > 1) {
       const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
       let allocated = 0;
+      let allocatedSuper = 0;
+      let allocatedPerfFee = 0;
       const perfFeeIncGST_pushMulti = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
-      const assessableInc_pushM = (p.superBase != null ? p.superBase : (p.serviceFee ?? p.total)) || 0;
-      const superBaseExGST_pushM = isGSTContractor ? (assessableInc_pushM / 1.1) : assessableInc_pushM;
       feeLBs.forEach((lb, i) => {
         const last = i === feeLBs.length - 1;
-        const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * (lb.cost / totalCost));
+        const ratio = lb.cost / totalCost;
+        const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * ratio);
         allocated += amt;
+        // Per-date proportional allocations — each line shows its own super math.
+        const lineSuperAmt = last ? r2(superAmt - allocatedSuper) : r2(superAmt * ratio);
+        allocatedSuper += lineSuperAmt;
+        const linePerfFeeIncGST = last
+          ? r2(perfFeeIncGST_pushMulti - allocatedPerfFee)
+          : r2(perfFeeIncGST_pushMulti * ratio);
+        allocatedPerfFee += linePerfFeeIncGST;
+        const lineSuperBaseExGST = isGSTContractor ? (linePerfFeeIncGST / 1.1) : linePerfFeeIncGST;
         const dr = formatDateReadable(lb.eventDate) || dateReadable;
-        // First line carries the full perf-fee/super breakdown; subsequent dates just label the event.
-        const desc = (i === 0)
-          ? buildXeroFeeDescription_({
-              invNum, dateReadable: dr, perfFeeIncGST: perfFeeIncGST_pushMulti,
-              isGST: isGSTContractor, superAmt, superRate: p.superRate || 12,
-              superBaseExGST: superBaseExGST_pushM,
-              fundName: (p.contractor && p.contractor.fundName) || null
-            })
-          : `Performance fee (this date) · Event ${dr} · Inv ${invNum}`;
+        // Every event line gets its OWN per-date super math (proportional share of total super).
+        const desc = buildXeroFeeDescription_({
+          invNum, dateReadable: dr, perfFeeIncGST: linePerfFeeIncGST,
+          isGST: isGSTContractor, superAmt: lineSuperAmt,
+          superRate: p.superRate || 12,
+          superBaseExGST: lineSuperBaseExGST,
+          fundName: (p.contractor && p.contractor.fundName) || null
+        });
         lineItems.push({
           Description: desc,
           Quantity: 1,
@@ -6789,8 +6815,21 @@ function gmailBodyText(payload) {
 
 function gmailExtractInvoiceLinks(text) {
   const urls = (text.match(/https?:\/\/[^\s<>"]+/g) || []);
-  return urls.filter(u => {
+  // Strip common trailing junk (HTML entity refs, trailing punctuation)
+  const cleaned = urls.map(u => u.replace(/[,;.)\]>"']+$/, '').replace(/&amp;/g, '&'));
+  // De-dup
+  const uniq = Array.from(new Set(cleaned));
+  return uniq.filter(u => {
     const l = u.toLowerCase();
+    // File-sharing services: most common way performers send invoices via link
+    if (l.includes('drive.google.com/file') || l.includes('docs.google.com/document')
+        || l.includes('1drv.ms') || l.includes('onedrive.live.com')
+        || l.includes('dropbox.com/s/') || l.includes('dropbox.com/scl/')
+        || l.includes('wetransfer.com') || l.includes('we.tl/')
+        || l.includes('icloud.com/iclouddrive') || l.includes('mediafire.com')) return true;
+    // Direct PDF URLs
+    if (l.endsWith('.pdf') || /\.pdf[?#]/.test(l)) return true;
+    // Invoicing platforms + receipt links
     return l.includes('invoice') || l.includes('/inv') || l.includes('xero') ||
            l.includes('freshbooks') || l.includes('wave') || l.includes('billing');
   });
