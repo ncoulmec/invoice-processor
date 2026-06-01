@@ -6735,22 +6735,34 @@ async function gmailScanInbox() {
   try {
     // Search 1: emails with PDF attachments, not yet labeled (due for submission)
     const q1 = `has:attachment filename:pdf -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
-    // Search 2: invoice-subject emails without attachments (likely contain links)
-    const q2 = `(subject:invoice OR subject:"tax invoice") -has:attachment -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
+    // Search 2: subject-keyword emails — covers link-based invoices (Billdu, Stripe-hosted,
+    // Drive shares, etc). Notably we DO NOT exclude attachments here, because many invoicing
+    // platforms (Billdu/Stripe/HubSpot etc) embed inline images for the email design that
+    // Gmail counts as "attachments" without being PDFs — those used to fall through the cracks
+    // (q1 requires filename:pdf, q2 used to exclude has:attachment). The dedupe at the seen-map
+    // stage ensures real PDF emails still get tagged 'attachment' via q1, so no duplicates.
+    const q2 = `(subject:invoice OR subject:"tax invoice" OR subject:bill OR subject:billing OR subject:receipt OR subject:payment OR subject:fee OR subject:fees OR subject:"performance fee") -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
     // Search 3: PDF emails ALREADY labeled "Invoice Fetched" (shown in a separate section so you
     // can see what's been done and re-fetch one for testing).
     const q3 = `has:attachment filename:pdf label:"Invoice Fetched" ${exclusions} ${dateFilter}`;
+    // Search 4: Google-Drive-shared invoices. has:drive catches emails where the sender embedded
+    // a Drive file (this is how Jaaz Tobias / Joel Wheeler and similar contractors send PDFs
+    // when their email client / inbox blocks PDF attachments). No subject filter — we trust the
+    // Drive link as a strong signal. Excludes already-fetched.
+    const q4 = `has:drive -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
 
     statusEl.textContent = 'Searching inbox…';
-    const [r1, r2, r3] = await Promise.all([
+    const [r1, r2, r3, r4] = await Promise.all([
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q1) + '&maxResults=50').then(r => r.json()),
-      gmailAPIFetch('/messages?q=' + encodeURIComponent(q2) + '&maxResults=20').then(r => r.json()),
+      gmailAPIFetch('/messages?q=' + encodeURIComponent(q2) + '&maxResults=30').then(r => r.json()),
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q3) + '&maxResults=50').then(r => r.json()),
+      gmailAPIFetch('/messages?q=' + encodeURIComponent(q4) + '&maxResults=30').then(r => r.json()),
     ]);
 
-    // Deduplicate — attachment emails take priority, then links, then already-fetched
+    // Deduplicate — attachment emails take priority, then drive-link, then subject-link, then already-fetched
     const seen = new Map();
     for (const m of (r1.messages || [])) seen.set(m.id, 'attachment');
+    for (const m of (r4.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'link'); }
     for (const m of (r2.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'link'); }
     for (const m of (r3.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'attachment'); }
 
@@ -6813,8 +6825,15 @@ function gmailBodyText(payload) {
   return fromParts(payload.parts || []);
 }
 
-function gmailExtractInvoiceLinks(text) {
-  const urls = (text.match(/https?:\/\/[^\s<>"]+/g) || []);
+function gmailExtractInvoiceLinks(text, html) {
+  // Extract URLs from BOTH plain text AND href attributes in the HTML. The HTML pass is
+  // essential — Billdu / Stripe / Square emails use <a href="…">View invoice</a> buttons,
+  // and stripping the tags (as gmailBodyText does) throws away the URL itself.
+  const fromText = text ? (text.match(/https?:\/\/[^\s<>"]+/g) || []) : [];
+  const fromHrefs = html
+    ? (Array.from(html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)).map(m => m[1]).filter(u => /^https?:\/\//.test(u)))
+    : [];
+  const urls = fromText.concat(fromHrefs);
   // Strip common trailing junk (HTML entity refs, trailing punctuation)
   const cleaned = urls.map(u => u.replace(/[,;.)\]>"']+$/, '').replace(/&amp;/g, '&'));
   // De-dup
@@ -6830,8 +6849,14 @@ function gmailExtractInvoiceLinks(text) {
     // Direct PDF URLs
     if (l.endsWith('.pdf') || /\.pdf[?#]/.test(l)) return true;
     // Invoicing platforms + receipt links
+    // Includes: Billdu (Jaaz Tobias-Quigley's invoicer), Square Invoices, Stripe-hosted
+    // invoices, QuickBooks, Zoho Invoice, Sage, Xero, FreshBooks, Wave, Rounded, Hnry.
     return l.includes('invoice') || l.includes('/inv') || l.includes('xero') ||
-           l.includes('freshbooks') || l.includes('wave') || l.includes('billing');
+           l.includes('freshbooks') || l.includes('wave') || l.includes('billing') ||
+           l.includes('billdu') || l.includes('square') || l.includes('stripe.com') ||
+           l.includes('quickbooks') || l.includes('zoho') || l.includes('sage') ||
+           l.includes('rounded.com.au') || l.includes('hnry.co') || l.includes('myob') ||
+           l.includes('reckon');
   });
 }
 
@@ -6899,7 +6924,9 @@ function gmailProcessMessage(msg, expectedType) {
   }
 
   const body = gmailBodyText(msg.payload);
-  const links = gmailExtractInvoiceLinks(body);
+  // Pass the raw HTML too — link extractor pulls URLs from <a href> attributes since
+  // the plain-text body throws away the URL when tags are stripped.
+  const links = gmailExtractInvoiceLinks(body, bodyHtml);
   if (links.length > 0) {
     for (const link of links.slice(0, 2)) {
       gmailStagingItems.push({ ...base, type: 'link', filename: 'Invoice link', linkUrl: link, selected: false });
