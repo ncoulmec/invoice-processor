@@ -6733,38 +6733,55 @@ async function gmailScanInbox() {
   const exclusions = '-from:danmurphys.com.au -subject:remittance -subject:"remittance advice" -subject:"This inbox is for pay"';
 
   try {
+    // in:anywhere covers Spam/Trash/Promotions too. Billdu-styled emails (Jaaz Tobias-Quigley's
+    // case) often hit Promotions or Spam, where the default Gmail search wouldn't see them.
+    const allFolders = 'in:anywhere';
     // Search 1: emails with PDF attachments, not yet labeled (due for submission)
-    const q1 = `has:attachment filename:pdf -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
+    const q1 = `has:attachment filename:pdf -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter} ${allFolders}`;
     // Search 2: subject-keyword emails — covers link-based invoices (Billdu, Stripe-hosted,
     // Drive shares, etc). Notably we DO NOT exclude attachments here, because many invoicing
     // platforms (Billdu/Stripe/HubSpot etc) embed inline images for the email design that
     // Gmail counts as "attachments" without being PDFs — those used to fall through the cracks
     // (q1 requires filename:pdf, q2 used to exclude has:attachment). The dedupe at the seen-map
     // stage ensures real PDF emails still get tagged 'attachment' via q1, so no duplicates.
-    const q2 = `(subject:invoice OR subject:"tax invoice" OR subject:bill OR subject:billing OR subject:receipt OR subject:payment OR subject:fee OR subject:fees OR subject:"performance fee") -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
+    const q2 = `(subject:invoice OR subject:"tax invoice" OR subject:bill OR subject:billing OR subject:receipt OR subject:payment OR subject:fee OR subject:fees OR subject:"performance fee") -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter} ${allFolders}`;
     // Search 3: PDF emails ALREADY labeled "Invoice Fetched" (shown in a separate section so you
     // can see what's been done and re-fetch one for testing).
-    const q3 = `has:attachment filename:pdf label:"Invoice Fetched" ${exclusions} ${dateFilter}`;
+    const q3 = `has:attachment filename:pdf label:"Invoice Fetched" ${exclusions} ${dateFilter} ${allFolders}`;
     // Search 4: Google-Drive-shared invoices. has:drive catches emails where the sender embedded
     // a Drive file (this is how Jaaz Tobias / Joel Wheeler and similar contractors send PDFs
     // when their email client / inbox blocks PDF attachments). No subject filter — we trust the
     // Drive link as a strong signal. Excludes already-fetched.
-    const q4 = `has:drive -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter}`;
+    const q4 = `has:drive -label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter} ${allFolders}`;
+    // Search 5: EVERYTHING ELSE in the time window — for the "Other emails" section so the
+    // operator can manually spot anything the heuristics missed (Jaaz/Joel case). Capped at 40.
+    // Excludes obvious noise via the same exclusions list.
+    const q5 = `-label:"Invoice Fetched" -label:"Last Invoice Processed" ${exclusions} ${dateFilter} ${allFolders}`;
 
     statusEl.textContent = 'Searching inbox…';
-    const [r1, r2, r3, r4] = await Promise.all([
+    const [r1, r2, r3, r4, r5] = await Promise.all([
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q1) + '&maxResults=50').then(r => r.json()),
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q2) + '&maxResults=30').then(r => r.json()),
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q3) + '&maxResults=50').then(r => r.json()),
       gmailAPIFetch('/messages?q=' + encodeURIComponent(q4) + '&maxResults=30').then(r => r.json()),
+      gmailAPIFetch('/messages?q=' + encodeURIComponent(q5) + '&maxResults=40').then(r => r.json()),
     ]);
 
-    // Deduplicate — attachment emails take priority, then drive-link, then subject-link, then already-fetched
+    // Diagnostic — log how many each query returned. Helps debug "why isn't Jaaz showing".
+    console.log('[gmailScan] q1 PDF-attach:', (r1.messages||[]).length,
+                ' q2 subject-kw:', (r2.messages||[]).length,
+                ' q3 fetched-PDF:', (r3.messages||[]).length,
+                ' q4 has:drive:', (r4.messages||[]).length,
+                ' q5 other:', (r5.messages||[]).length);
+
+    // Deduplicate — q1 (PDFs) → q4 (drive) → q2 (subject) → q3 (fetched PDFs) → q5 (other)
     const seen = new Map();
     for (const m of (r1.messages || [])) seen.set(m.id, 'attachment');
     for (const m of (r4.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'link'); }
     for (const m of (r2.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'link'); }
     for (const m of (r3.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'attachment'); }
+    // q5 fills in everything else — these become 'other' type for the bottom section.
+    for (const m of (r5.messages || [])) { if (!seen.has(m.id)) seen.set(m.id, 'other'); }
 
     if (seen.size === 0) {
       statusEl.textContent = '✅ No new invoice emails found.';
@@ -6934,8 +6951,10 @@ function gmailProcessMessage(msg, expectedType) {
     return;
   }
 
-  // No PDF, no recognisable link — show for awareness
-  gmailStagingItems.push({ ...base, type: 'unknown', filename: '—', selected: false });
+  // No PDF, no recognisable link. If this email came from q5 (the everything-else search),
+  // tag as 'other' so it lands in the "Other recent emails" section. Otherwise 'unknown'.
+  const type = expectedType === 'other' ? 'other' : 'unknown';
+  gmailStagingItems.push({ ...base, type, filename: '—', selected: false });
 }
 
 function gmailSortStaging(mode) {
@@ -6985,6 +7004,7 @@ function gmailRenderStaging() {
   const supplierCt= gmailStagingItems.filter(i => i.warning === 'supplier').length;
   const linkCt    = gmailStagingItems.filter(i => i.type === 'link').length;
   const unkCt     = gmailStagingItems.filter(i => i.type === 'unknown').length;
+  const otherCt   = gmailStagingItems.filter(i => i.type === 'other').length;
   const fetchedCt = gmailStagingItems.filter(i => i.fetched).length;
   let s = `<strong style="color:#27AE60">📎 ${readyCt} ready to import</strong>`;
   if (fetchedCt) s += ` &nbsp;·&nbsp; <span style="color:#5A7A86">✓ ${fetchedCt} already fetched</span>`;
@@ -6993,18 +7013,26 @@ function gmailRenderStaging() {
   if (supplierCt)s += ` &nbsp;·&nbsp; <span style="color:#9333EA">🍷 ${supplierCt} supplier</span>`;
   if (linkCt)    s += ` &nbsp;·&nbsp; <span style="color:#E8A020">🔗 ${linkCt} link only</span>`;
   if (unkCt)     s += ` &nbsp;·&nbsp; <span style="color:#888">${unkCt} no PDF</span>`;
+  if (otherCt)   s += ` &nbsp;·&nbsp; <span style="color:#5B6B7B">📭 ${otherCt} other (review)</span>`;
   summary.innerHTML = s;
 
   tbody.innerHTML = '';
-  // Render in two stacked sections: due-for-submission first, already-fetched below.
+  // Render in THREE stacked sections: due-for-submission, already-fetched, other.
+  // "Other" is the catch-all for emails q5 returned that didn't match any invoice heuristic —
+  // so the operator can still spot something the tool missed (Jaaz/Joel-style edge cases).
   const anyFetched = gmailStagingItems.some(i => i.fetched);
-  const order = [
-    ...gmailStagingItems.map((it, i) => ({ it, i })).filter(x => !x.it.fetched),
-    ...gmailStagingItems.map((it, i) => ({ it, i })).filter(x => x.it.fetched),
-  ];
-  const sectionDone = { due: false, fetched: false };
+  const anyOther = gmailStagingItems.some(i => i.type === 'other');
+  const sortFn = (a, b) => {
+    if (a.it.fetched !== b.it.fetched) return a.it.fetched ? 1 : -1;
+    const aOther = a.it.type === 'other', bOther = b.it.type === 'other';
+    if (aOther !== bOther) return aOther ? 1 : -1;
+    return 0; // preserve relative order within sections
+  };
+  const order = gmailStagingItems.map((it, i) => ({ it, i })).sort(sortFn);
+  const sectionDone = { due: false, fetched: false, other: false };
   order.forEach(({ it: item, i: idx }) => {
-    if (anyFetched && !item.fetched && !sectionDone.due) {
+    const isOther = item.type === 'other';
+    if (!item.fetched && !isOther && (anyFetched || anyOther) && !sectionDone.due) {
       const dh = document.createElement('tr');
       dh.innerHTML = `<td colspan="10" style="background:#E8F4F7;color:#1D7A8C;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">📥 DUE FOR SUBMISSION</td>`;
       tbody.appendChild(dh);
@@ -7016,10 +7044,16 @@ function gmailRenderStaging() {
       tbody.appendChild(fh);
       sectionDone.fetched = true;
     }
+    if (isOther && !sectionDone.other) {
+      const oh = document.createElement('tr');
+      oh.innerHTML = `<td colspan="10" style="background:#1B2A4A;color:#E2E8F0;font-size:11px;font-weight:700;padding:8px 12px;letter-spacing:.5px">📭 OTHER RECENT EMAILS (not classified as invoices — manually check if anything was missed)</td>`;
+      tbody.appendChild(oh);
+      sectionDone.other = true;
+    }
     const tr = document.createElement('tr');
     if (item.fetched) tr.style.opacity = '0.7';
     const canImport = item.type === 'attachment';
-    const typeIcon = item.type === 'attachment' ? '📎' : item.type === 'link' ? '🔗' : '❓';
+    const typeIcon = item.type === 'attachment' ? '📎' : item.type === 'link' ? '🔗' : item.type === 'other' ? '📭' : '❓';
     const badge = item.warning === 'supplier'
       ? `<span style="color:#9333EA;font-size:11px;font-weight:600" title="Detected as a ${item.supplier || 'supplier'} tax invoice (a purchase, not a contractor performance invoice). Unticked by default — open the row to review and include it if you do want it.">🍷 ${item.supplier || 'Supplier'}</span>`
       : item.warning === 'remittance'
@@ -7030,6 +7064,8 @@ function gmailRenderStaging() {
       ? `<span style="color:#27AE60;font-size:11px;font-weight:600">✓ Ready</span>`
       : item.type === 'link'
       ? `<span style="color:#E8A020;font-size:11px">Link only</span>`
+      : item.type === 'other'
+      ? `<span style="color:#5B6B7B;font-size:11px">Not an invoice?</span>`
       : `<span style="color:#aaa;font-size:11px">No PDF</span>`;
     const fromClean = item.from.replace(/<[^>]+>/g,'').replace(/"/g,'').trim();
     const actionCell = item.type === 'link'
