@@ -5155,13 +5155,19 @@ function buildXeroFeeDescription_(opts) {
     lines.push(`${rate}% super of $${fix(baseForSuper)}${baseLabel}:`);
     lines.push(`  $${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super portion)`);
     const fundLabel = opts.fundName && opts.fundName !== '—' ? `paid to ${opts.fundName}` : 'paid to your super fund';
-    lines.push(`  $${fix(baseForSuper)} − $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
+    // NOTE: Xero strips the Unicode minus character (U+2212) when an invoice transitions from
+    // DRAFT → APPROVED. Math like "$850 − $565 = $84.78" becomes "$850 $565 = $84.78" which is
+    // unreadable. Use the word "less" instead — safe across all states + clearer for performers.
+    lines.push(`  $${fix(baseForSuper)} less $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
 
     const netInc = perfFee - superAmt;
     const invoiceLabel = opts.isGST ? 'invoice inc GST' : 'invoice';
+    // Extra blank lines provide a clear section break before "You receive" so it doesn't blur
+    // into the super math above when read in the Xero bill.
+    lines.push('');
     lines.push('');
     lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
-    lines.push(`  $${fix(perfFee)} (${invoiceLabel}) − $${fix(superAmt)} (super) = $${fix(netInc)} net`);
+    lines.push(`  $${fix(perfFee)} (${invoiceLabel}) less $${fix(superAmt)} (super) = $${fix(netInc)} net`);
     if (opts.isGST) {
       const netEx = netInc / 1.1;
       const netGst = netInc - netEx;
@@ -5201,7 +5207,7 @@ function buildXeroSuperBillDescription_(opts) {
     '',
     `${opts.rate}% super of $${fix(baseEx)} performance fee${baseLabel}:`,
     `  $${fix(baseEx)} ÷ ${divisor.toFixed(2)} = $${fix(performerShare)} (performer's ex-super share)`,
-    `  $${fix(baseEx)} − $${fix(performerShare)} = $${fix(opts.superAmt)} super${opts.fundName && opts.fundName !== '—' ? ' → paid to ' + opts.fundName : ''}`,
+    `  $${fix(baseEx)} less $${fix(performerShare)} = $${fix(opts.superAmt)} super${opts.fundName && opts.fundName !== '—' ? ' → paid to ' + opts.fundName : ''}`,
   ];
   return lines.join('\n');
 }
@@ -5707,6 +5713,33 @@ async function pushToXero() {
       body: JSON.stringify({ invoices })
     });
     const data = await res.json().catch(() => ({ httpStatus: res.status, response: { raw: 'non-JSON response' } }));
+    // Capture the successful pushes so "Send Remittances" knows what to fetch + email.
+    // Map each created Xero invoice back to its source contractor (for email lookup).
+    try {
+      const created = (data && data.response && Array.isArray(data.response.Invoices)) ? data.response.Invoices : [];
+      _lastPushedInvoices = [];
+      _sentRemittances = new Set(); // fresh run — reset session de-dupe
+      created.forEach((inv, idx) => {
+        if (!inv.InvoiceID || inv.InvoiceID === '00000000-0000-0000-0000-000000000000') return;
+        if (inv.HasErrors || (Array.isArray(inv.ValidationErrors) && inv.ValidationErrors.length)) return;
+        const src = invoices[idx] || {};
+        // Look up the contractor's email from processed[] via _rowId on the source invoice.
+        const p = (typeof processed !== 'undefined' && Array.isArray(processed))
+          ? processed.find(x => String(x.rowId) === String(src._rowId) || String(x.id) === String(src._rowId))
+          : null;
+        const recipientEmail = (p && p.contractor && p.contractor.email) || '';
+        _lastPushedInvoices.push({
+          invoiceId: inv.InvoiceID,
+          reference: inv.InvoiceNumber || src.InvoiceNumber || '',
+          invoiceNumber: src.InvoiceNumber || '',
+          contactName: (inv.Contact && inv.Contact.Name) || src._contactName || '',
+          recipientEmail,
+          amount: (inv.AmountDue || inv.Total || 0)
+        });
+      });
+    } catch (mapErr) {
+      console.warn('[pushToXero] could not map pushed invoices for remittance:', mapErr);
+    }
     showXeroResultPanel(data, invoices.length, attachedCount);
   } catch (err) {
     showBanner('Push to Xero failed: ' + (err && err.message || err), 'error');
@@ -5738,10 +5771,22 @@ function showXeroResultPanel(data, requestedCount, attachedCount) {
     r.Invoices.forEach(inv => {
       const hasErr = inv.HasErrors || (Array.isArray(inv.ValidationErrors) && inv.ValidationErrors.length);
       if (hasErr) {
+        const rawErrors = (inv.ValidationErrors || []).map(e => e.Message).filter(Boolean);
+        // Translate the most common Xero error pattern (existing-invoice collision) into
+        // plain English. Xero treats matching InvoiceNumber as an upsert; if the existing
+        // one has been paid, the update is rejected with these two cryptic messages.
+        const collisionDetected = rawErrors.some(m =>
+          /paid invoice line item.*LineItemID/i.test(m) ||
+          /cannot be applied to the invoice because it has payments/i.test(m));
+        const translated = collisionDetected
+          ? [`A bill with this reference already exists in Xero and has been paid (or has credit notes against it), so Xero won't let us overwrite it.`,
+             `Fix: open Xero → Bills to pay → search for the reference below → either delete that old bill (if it shouldn't exist) or change this contractor's invoice number, then push again.`]
+          : rawErrors;
         failures.push({
           contact: (inv.Contact && inv.Contact.Name) || '(unknown contact)',
           invoiceNumber: inv.InvoiceNumber || '',
-          errors: (inv.ValidationErrors || []).map(e => e.Message).filter(Boolean).join('; ') || 'unknown error'
+          errors: translated.join(' '),
+          collision: collisionDetected
         });
       } else if (inv.InvoiceID) {
         successCount++;
@@ -5821,6 +5866,195 @@ function showXeroResultPanel(data, requestedCount, attachedCount) {
 
 function closeXeroResult() {
   const overlay = document.getElementById('xero-result-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SEND REMITTANCES — fetch each bill's CURRENT PDF from Xero (post any edits)
+// and email it to the performer with a branded body. Uses the same Apps Script
+// proxy as Push to Xero (extended with fetchBillPdf + sendRemittance actions).
+// ══════════════════════════════════════════════════════════════════════════════
+// State: track which InvoiceIDs have had remittances sent in this session so we
+// don't double-send accidentally. Cleared on processInvoices.
+let _sentRemittances = new Set();
+
+// Find pushed bills — we only know they were pushed if we kept a record. The
+// pushToXero result modal stores the response; we'll look at successful pushes.
+// For now we scope by: contractor bills in this pay run with a known InvoiceID.
+// (Stored in _lastPushedInvoices below — set inside pushToXero on success.)
+let _lastPushedInvoices = [];
+
+function openSendRemittancesGate() {
+  if (!_lastPushedInvoices.length) {
+    showBanner('Push your bills to Xero first — there\'s nothing to remit yet.', 'warn');
+    return;
+  }
+  const remaining = _lastPushedInvoices.filter(b => !_sentRemittances.has(b.invoiceId));
+  if (!remaining.length) {
+    showBanner('All bills from the last push already had their remittances sent in this session.', 'info');
+    return;
+  }
+  // Reset checkboxes
+  ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].forEach(id => {
+    const cb = document.getElementById(id);
+    if (cb) cb.checked = false;
+  });
+  // Summary line
+  const summary = document.getElementById('remit-gate-summary');
+  if (summary) {
+    const noEmailCount = remaining.filter(b => !b.recipientEmail).length;
+    summary.innerHTML = `
+      <div><strong>${remaining.length} remittance${remaining.length>1?'s':''}</strong> ready to send (from your last push).</div>
+      ${noEmailCount > 0 ? `<div style="margin-top:4px;color:#C0362C">⚠ ${noEmailCount} contractor${noEmailCount>1?'s have':' has'} no email on file in Zoho — those will be skipped. Open the contractor's Zoho profile to add an email and re-run.</div>` : ''}
+    `;
+  }
+  updateRemitGateContinue();
+  document.getElementById('remit-gate-overlay').style.display = 'flex';
+  // Wire checkbox change handlers
+  ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].forEach(id => {
+    const cb = document.getElementById(id);
+    if (cb && !cb._wired) {
+      cb.addEventListener('change', updateRemitGateContinue);
+      cb._wired = true;
+    }
+  });
+}
+
+function updateRemitGateContinue() {
+  const all3 = ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].every(id => document.getElementById(id)?.checked);
+  const btn = document.getElementById('remit-gate-continue-btn');
+  const status = document.getElementById('remit-gate-status');
+  if (btn) {
+    btn.disabled = !all3;
+    btn.style.opacity = all3 ? '1' : '0.4';
+    btn.style.cursor = all3 ? 'pointer' : 'not-allowed';
+  }
+  if (status) status.textContent = all3 ? 'Ready to send' : 'Tick all three to enable Continue';
+}
+
+function closeRemitGate() {
+  const overlay = document.getElementById('remit-gate-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function runSendRemittances() {
+  closeRemitGate();
+  const proxyUrl = (localStorage.getItem('xeroProxyUrl') || '').trim();
+  const accessKey = (localStorage.getItem('xeroAccessKey') || '').trim();
+  if (!proxyUrl || !accessKey) {
+    showBanner('No Xero proxy URL / Access Key in Settings — can\'t send.', 'error');
+    return;
+  }
+
+  const toSend = _lastPushedInvoices.filter(b => !_sentRemittances.has(b.invoiceId) && b.recipientEmail);
+  const noEmail = _lastPushedInvoices.filter(b => !_sentRemittances.has(b.invoiceId) && !b.recipientEmail);
+  if (!toSend.length) {
+    showBanner('No remittances to send (no recipients with emails).', 'warn');
+    return;
+  }
+
+  showBanner(`Sending ${toSend.length} remittance${toSend.length>1?'s':''}…`, 'info');
+  const btn = document.getElementById('send-remittances-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Sending…'; }
+
+  const results = [];
+  for (const bill of toSend) {
+    try {
+      // 1. Fetch current PDF from Xero
+      const pdfRes = await fetch(`${proxyUrl}?action=fetchBillPdf&key=${encodeURIComponent(accessKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ invoiceId: bill.invoiceId })
+      });
+      const pdfData = await pdfRes.json();
+      if (!pdfData.ok) {
+        results.push({ bill, ok: false, stage: 'fetch', error: pdfData.error || 'PDF fetch failed' });
+        continue;
+      }
+      // 2. Compose + send via Gmail
+      const subject = `Remittance Advice — ${bill.reference || 'INV-' + bill.invoiceNumber} — paid ${new Date().toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' })}`;
+      const greeting = (bill.contactName || '').split(/\s+/)[0] || 'there';
+      const bodyText = `Hi ${greeting},\n\nYour remittance for ${bill.reference || 'invoice ' + bill.invoiceNumber} has been processed.\n\nPayment of $${(bill.amount||0).toFixed(2)} was sent to your bank.\n\nFull breakdown is attached as a PDF — it shows the performance fee, any super deducted (and which fund it went to), and any reimbursements.\n\nAny questions, just reply to this email.\n\nThanks,\nMelbourne Entertainment Co`;
+      const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1B2733;line-height:1.6">
+        <p>Hi ${escHtml(greeting)},</p>
+        <p>Your remittance for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> has been processed.</p>
+        <p>Payment of <strong>$${(bill.amount||0).toFixed(2)}</strong> was sent to your bank.</p>
+        <p>The <strong>full breakdown is attached as a PDF</strong> — it shows the performance fee, any super deducted (and which fund it went to), and any reimbursements.</p>
+        <p>Any questions, just reply.</p>
+        <p>Thanks,<br>Melbourne Entertainment Co</p>
+      </div>`;
+      const sendRes = await fetch(`${proxyUrl}?action=sendRemittance&key=${encodeURIComponent(accessKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          to: bill.recipientEmail,
+          subject,
+          bodyText,
+          bodyHtml,
+          pdfBase64: pdfData.pdfBase64,
+          pdfFilename: `Remittance — ${(bill.reference || bill.invoiceNumber || 'bill').replace(/[\\/:*?"<>|]/g,'-')}.pdf`,
+          fromName: 'Melbourne Entertainment Co',
+          replyTo: 'bookings@melbentco.com.au'
+        })
+      });
+      const sendData = await sendRes.json();
+      if (!sendData.ok) {
+        results.push({ bill, ok: false, stage: 'send', error: sendData.error || 'Gmail send failed' });
+        continue;
+      }
+      _sentRemittances.add(bill.invoiceId);
+      results.push({ bill, ok: true });
+    } catch (e) {
+      results.push({ bill, ok: false, stage: 'unknown', error: String(e && e.message || e) });
+    }
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '📧 Send Remittances'; }
+  showRemitResultPanel(results, noEmail);
+}
+
+function showRemitResultPanel(results, skippedNoEmail) {
+  const overlay = document.getElementById('remit-result-overlay');
+  const titleEl = document.getElementById('remit-result-title');
+  const bodyEl = document.getElementById('remit-result-body');
+  if (!overlay || !titleEl || !bodyEl) return;
+  const ok = results.filter(r => r.ok).length;
+  const failed = results.filter(r => !r.ok);
+  const skipped = (skippedNoEmail || []).length;
+  const allOk = failed.length === 0 && skipped === 0;
+  titleEl.textContent = allOk
+    ? `✓ ${ok} remittance${ok!==1?'s':''} sent`
+    : `${ok} sent · ${failed.length} failed${skipped ? ` · ${skipped} skipped (no email)` : ''}`;
+  titleEl.style.color = allOk ? '#1A7F37' : (ok === 0 ? '#C0362C' : '#B7791F');
+
+  const failuresHtml = failed.length ? `
+    <div style="margin-top:14px;padding:12px 14px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px">
+      <div style="font-weight:600;color:#C0362C;margin-bottom:6px">${failed.length} remittance${failed.length>1?'s':''} failed:</div>
+      <ul style="margin:0;padding-left:20px;font-size:12px;color:#7F1D1D;line-height:1.6">
+        ${failed.map(f => `<li><strong>${escHtml(f.bill.contactName||'(unknown)')}</strong> · ${escHtml(f.bill.recipientEmail||'')} — ${escHtml(f.error || 'unknown')} (${f.stage})</li>`).join('')}
+      </ul>
+    </div>` : '';
+  const skippedHtml = skipped > 0 ? `
+    <div style="margin-top:10px;padding:10px 14px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:8px;font-size:12px;color:#7A5A12">
+      ⚠ ${skipped} contractor${skipped>1?'s':''} skipped — no email on file in Zoho. Add their email in Zoho and re-run to include them.
+      <ul style="margin:6px 0 0;padding-left:20px;font-size:11px">
+        ${skippedNoEmail.map(b => `<li>${escHtml(b.contactName||'(unknown)')} · ${escHtml(b.reference||'')}</li>`).join('')}
+      </ul>
+    </div>` : '';
+  bodyEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;font-size:13px;color:#1B2733;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px">
+      <div>Sent: <strong>${ok}</strong></div>
+      <div>Failed: <strong style="color:${failed.length?'#C0362C':'#1B2733'}">${failed.length}</strong></div>
+    </div>
+    ${failuresHtml}
+    ${skippedHtml}
+    <div style="margin-top:12px;font-size:11px;color:#5B6B7B">Already sent in this session: ${_sentRemittances.size} total. Sent remittances aren't re-sent if you click again.</div>
+  `;
+  overlay.style.display = 'flex';
+}
+
+function closeRemitResult() {
+  const overlay = document.getElementById('remit-result-overlay');
   if (overlay) overlay.style.display = 'none';
 }
 
