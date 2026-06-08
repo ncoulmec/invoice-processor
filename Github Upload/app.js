@@ -2157,10 +2157,16 @@ function openReviewModal(id) {
   g('rv-total').value    = g('total-'+id)?.value    || '';
   g('rv-abn').value      = g('abn-'+id)?.value      || '';
 
-  // GST checkbox — three signals, OR them together. PDF extraction sometimes misses GST
-  // (e.g. Jeremy Bennett: extractor failed; Ellie Carragher: company invoice via talent manager).
-  // Tick if ANY of: (a) PDF extraction found GST, (b) matched Zoho contractor has gst=true,
-  // (c) ABR for the invoice ABN says the entity is GST-registered.
+  // GST checkbox — priority-ordered decision, NOT a blanket OR. Order matters:
+  //   1. If there's a matched Zoho contractor → trust their gst flag as truth UNLESS the PDF
+  //      extraction explicitly disagrees (the invoice IS what it is). Catches Jeremy Bennett
+  //      (Zoho says true, extraction missed) → tick. Catches Ian Maddocks (Zoho says false,
+  //      ABR says true) → DON'T tick (Zoho is more curated than ABR for known contractors).
+  //   2. No Zoho match → use extracted hasGST if available.
+  //   3. No Zoho, no extraction → fall back to ABR for the invoice ABN.
+  // Edge case: Zoho says NO but extraction explicitly found GST (Ellie's talent-manager case
+  // where the invoice ABN belongs to a GST-registered company) → tick, and the GST-mismatch
+  // warning fires separately so the operator knows to review.
   const storedGST = invoiceGSTData['id_' + id];
   const abn0check = (g('rv-abn')?.value||'').replace(/\s/g,'');
   const matchForGST = (typeof contractors !== 'undefined' && Array.isArray(contractors))
@@ -2169,12 +2175,35 @@ function openReviewModal(id) {
         (abn0check.length===11 && c.abn && c.abn.replace(/\s/g,'') === abn0check))
     : null;
   const abrGSTFlag = abrRowData && abrRowData['id_' + id] && abrRowData['id_' + id].isGST;
-  const gstShouldTick = storedGST === true
-                     || (matchForGST && matchForGST.gst === true)
-                     || abrGSTFlag === true;
-  g('rv-gst').checked = gstShouldTick ? true : (storedGST === false ? false : !!storedGST);
-  // Persist back so downstream code sees the same value
-  invoiceGSTData['id_' + id] = !!g('rv-gst').checked;
+  let gstShouldTick;
+  let gstSource = '';
+  if (matchForGST) {
+    if (matchForGST.gst === true) {
+      gstShouldTick = true;
+      gstSource = 'from Zoho (registered)';
+    } else if (storedGST === true) {
+      // Zoho says no but the invoice explicitly charges GST — tick anyway. The GST-mismatch
+      // warning fires separately so the operator knows to verify.
+      gstShouldTick = true;
+      gstSource = 'invoice charges GST · Zoho says no — verify';
+    } else {
+      gstShouldTick = false;
+      gstSource = 'from Zoho (not registered)';
+    }
+  } else if (storedGST !== undefined) {
+    gstShouldTick = !!storedGST;
+    gstSource = storedGST ? 'detected on invoice' : 'not detected on invoice';
+  } else if (abrGSTFlag === true) {
+    gstShouldTick = true;
+    gstSource = 'from ABR (registered)';
+  } else {
+    gstShouldTick = false;
+    gstSource = '';
+  }
+  g('rv-gst').checked = gstShouldTick;
+  invoiceGSTData['id_' + id] = gstShouldTick;
+  const srcEl = g('rv-gst-source');
+  if (srcEl) srcEl.textContent = gstSource ? `· auto: ${gstSource}` : '';
 
   // Super checkbox — sync with the Stage 1 "Withhold super?" toggle (the source of truth),
   // then a stored review override, then a sensible default (on unless matched company/partnership).
@@ -3167,14 +3196,19 @@ function rvUpdateInlineIdentity() {
   }
   if (!name && !abn) { el.style.display = 'none'; return; }
 
-  // ABN-mismatch warning — invoice ABN differs from Zoho's stored ABN for this contractor.
-  // Almost always means a talent manager / company is invoicing on the performer's behalf.
-  // The invoice ABN is the source of truth for super eligibility + GST.
+  // ABN-mismatch warning — only fire when there's an ACTUAL discrepancy:
+  //   (a) Invoice ABN ≠ Zoho's stored ABN (Ellie case — talent manager invoicing on behalf), OR
+  //   (b) ABR says company/trust BUT Zoho has them flagged as an individual sole trader (Type A/B).
+  // Previously the warning fired whenever ABR said "company" — false positive for Big Day Little
+  // Booth + Jack & Jess Golden Hour where Zoho ALREADY correctly has them as Type C/D companies.
   const abrIsCompany = abrData && abrData.isCompany === true;
-  const warn = (abnsDiffer || abrIsCompany)
+  const zohoSaysIndividual = zohoRec && (zohoRec.type === 'A' || zohoRec.type === 'B');
+  const realMismatch = abnsDiffer || (abrIsCompany && zohoSaysIndividual);
+  const warn = realMismatch
     ? `<div style="margin-top:6px;padding:7px 10px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:5px;color:#7A5A12;font-size:11px;line-height:1.5">
-         ⚠ <strong>Invoice ABN differs from Zoho record${abrIsCompany ? ' — entity is a company/trust' : ''}.</strong>
-         ${abrIsCompany ? `Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to ' + escHtml((abrData && abrData.entityName) || 'this company') + ', not ' + escHtml(zohoRec.name) + ' personally)' : ''}.` : 'Verify which ABN is correct before approving.'}
+         ⚠ <strong>${abnsDiffer ? 'Invoice ABN differs from Zoho record' : 'ABR says company/trust but Zoho has this as an individual'}${abrIsCompany ? ' — entity is a company/trust' : ''}.</strong>
+         ${abnsDiffer ? `<div style="margin-top:4px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;color:#5B4117">Invoice: <strong>${escHtml(abn)}</strong> · Zoho: <strong>${escHtml(zohoAbn0 || '(none)')}</strong></div>` : ''}
+         ${abrIsCompany ? `<div style="margin-top:4px">Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to ' + escHtml((abrData && abrData.entityName) || 'this company') + ', not ' + escHtml(zohoRec.name) + ' personally)' : ''}.</div>` : '<div style="margin-top:4px">Verify which ABN is correct before approving.</div>'}
        </div>`
     : '';
 
@@ -4426,12 +4460,27 @@ function moveRowBreakdown(event) {
 }
 function positionPopover(pop, event) {
   const margin = 14;
+  // Cap height to fit viewport so a very tall popover (long breakdown + multiple sections)
+  // never extends beyond the screen. Content beyond is hidden, but the top (header + key
+  // sections) is always visible — previously the top was getting chopped when the flip-up
+  // logic pushed the box past viewport top.
+  pop.style.maxHeight = (window.innerHeight - 20) + 'px';
+  pop.style.overflowY = 'hidden';
   pop.style.left = (event.clientX + margin) + 'px';
   pop.style.top  = (event.clientY + margin) + 'px';
   requestAnimationFrame(() => {
     const r = pop.getBoundingClientRect();
-    if (r.right  > window.innerWidth  - 10) pop.style.left = (event.clientX - r.width  - margin) + 'px';
-    if (r.bottom > window.innerHeight - 10) pop.style.top  = (event.clientY - r.height - margin) + 'px';
+    // Horizontal flip
+    if (r.right > window.innerWidth - 10) {
+      pop.style.left = Math.max(10, event.clientX - r.width - margin) + 'px';
+    }
+    // Vertical flip — but clamp top to ≥10 so the popover header never gets chopped off at
+    // the viewport top. With only one row in the table the cursor is near the top, and the
+    // old "flip up" math pushed proposedTop negative.
+    if (r.bottom > window.innerHeight - 10) {
+      const proposedTop = event.clientY - r.height - margin;
+      pop.style.top = Math.max(10, proposedTop) + 'px';
+    }
   });
 }
 // Synthetic p from the Review modal's live form inputs — feeds the same breakdown popover
@@ -6159,6 +6208,23 @@ function removeContractorRow(rowId) {
   processed = processed.filter(x => String(x.id) !== String(rowId));
   buildResultsView();
   if (typeof showBanner === 'function') showBanner(`Removed ${name} from this pay run.`, 'info');
+}
+
+// Clears EVERY row from the current pay run in one click. Useful when batching iterations or
+// starting over without leaving Step 3. Step 2's underlying invoice data is preserved — clicking
+// "Process Invoices" again will bring them all back.
+function removeAllContractorInvoices() {
+  if (!Array.isArray(processed) || !processed.length) {
+    if (typeof showBanner === 'function') showBanner('Nothing to remove — Step 3 is already empty.', 'info');
+    return;
+  }
+  const count = processed.length;
+  const ok = confirm(`Remove ALL ${count} invoice${count > 1 ? 's' : ''} from this pay run?\n\nThe underlying invoice data (Step 2) is preserved — re-clicking "Process Invoices" will bring them back.`);
+  if (!ok) return;
+  if (typeof hideRowBreakdown === 'function') hideRowBreakdown();
+  processed = [];
+  buildResultsView();
+  if (typeof showBanner === 'function') showBanner(`Cleared ${count} invoice${count > 1 ? 's' : ''} from this pay run.`, 'info');
 }
 
 function overridePaidExclusion(id) {

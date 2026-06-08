@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260523C2">
+<link rel="stylesheet" href="styles.css?v=20260523B8">
 </head>
 <body>
 
@@ -883,16 +883,12 @@
                 </div>
                 <div style="font-size:11px;display:flex;flex-direction:column;gap:3px">
                   <div style="display:flex;justify-content:space-between;color:#5B6B7B"><span>Subtotal (ex-GST)</span><span id="rv-bd-subtotal" style="color:#1B2733;font-weight:600">—</span></div>
-                  <!-- GST checkbox row — visually prominent (yellow band) so the operator
-                       deliberately verifies it before continuing. Tabindex still 10 so keyboard
-                       flow lands here at the right moment. -->
-                  <div style="display:flex;justify-content:space-between;align-items:center;background:#FEF9C3;border:1px solid #FDE68A;border-radius:6px;padding:5px 8px;margin:3px -2px">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:700;color:#7A5A12">
-                      <input type="checkbox" id="rv-gst" tabindex="10" onchange="rvUpdateTotalBreakdown(); updateReviewStatus(); rvUpdateInlineIdentity()" style="width:17px;height:17px;cursor:pointer;accent-color:#1D7A8C">
+                  <div style="display:flex;justify-content:space-between;align-items:center;color:#5B6B7B">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+                      <input type="checkbox" id="rv-gst" tabindex="10" onchange="rvUpdateTotalBreakdown(); updateReviewStatus();" style="width:14px;height:14px;cursor:pointer;accent-color:#1D7A8C">
                       <span>+ GST (10%)</span>
-                      <span id="rv-gst-source" style="font-weight:500;color:#94A3B8;font-size:9px;text-transform:none;letter-spacing:0"></span>
                     </label>
-                    <span id="rv-bd-gst" style="color:#7A5A12;font-weight:700">—</span>
+                    <span id="rv-bd-gst" style="color:#1B2733;font-weight:600">—</span>
                   </div>
                   <div id="rv-bd-reimb" style="display:none"></div>
                   <div style="display:flex;justify-content:space-between;border-top:1px solid #E4E8EC;padding-top:4px;color:#1B2733;font-weight:700"><span>Total</span><span id="rv-bd-total">—</span></div>
@@ -1096,6 +1092,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260523C2"></script>
+<script src="app.js?v=20260523B8"></script>
 </body>
 </html>
