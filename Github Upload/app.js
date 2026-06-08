@@ -2181,14 +2181,28 @@ function openReviewModal(id) {
     if (matchForGST.gst === true) {
       gstShouldTick = true;
       gstSource = 'from Zoho (registered)';
-    } else if (storedGST === true) {
-      // Zoho says no but the invoice explicitly charges GST — tick anyway. The GST-mismatch
-      // warning fires separately so the operator knows to verify.
-      gstShouldTick = true;
-      gstSource = 'invoice charges GST · Zoho says no — verify';
     } else {
-      gstShouldTick = false;
-      gstSource = 'from Zoho (not registered)';
+      // Zoho says NOT registered. The key question: is this invoice actually from the matched
+      // contractor (their personal ABN), or from a different entity (their talent manager /
+      // company invoicing on their behalf)?
+      //   - If invoice ABN matches Zoho's stored ABN → SAME entity, trust Zoho. Even if the
+      //     PDF extractor false-positived GST (Ian Maddick: "GST" appears as a table label
+      //     with no value), Zoho is the authority for this contractor's actual GST status.
+      //   - If invoice ABN differs from Zoho's stored ABN → DIFFERENT entity (Ellie / talent
+      //     manager case). Respect what the invoice itself says: extracted GST takes priority.
+      const invoiceAbn = (g('rv-abn')?.value || '').replace(/\s/g,'');
+      const zohoAbnNorm = (matchForGST.abn || '').replace(/\s/g,'');
+      const abnsMatch = invoiceAbn && zohoAbnNorm && invoiceAbn === zohoAbnNorm;
+      if (abnsMatch) {
+        gstShouldTick = false;
+        gstSource = 'from Zoho (not registered) · ABN matches';
+      } else if (storedGST === true) {
+        gstShouldTick = true;
+        gstSource = 'invoice has different ABN · charges GST — verify';
+      } else {
+        gstShouldTick = false;
+        gstSource = 'from Zoho (not registered)';
+      }
     }
   } else if (storedGST !== undefined) {
     gstShouldTick = !!storedGST;
@@ -4511,7 +4525,15 @@ function rvBuildSyntheticP_() {
   if (typeof contractors !== 'undefined' && Array.isArray(contractors) && name) {
     ctc = contractors.find(c => (c.name || '').toLowerCase() === name.toLowerCase()) || null;
   }
-  const superRate = (ctc && ctc.superRate) || 12;
+  // BUG FIX: contractor objects store the rate as superPercentage (not superRate). The
+  // Step 3 path uses superRateFor(c) which reads superPercentage correctly; Step 2's synthetic
+  // p was reading the wrong field and silently falling back to 12% — causing Step 2 popover to
+  // show 12% super while Step 3 used Zoho's actual 15% (Ian Maddick). Mirror superRateFor here.
+  const superRate = (() => {
+    if (!ctc) return 12;
+    const n = parseFloat(ctc.superPercentage);
+    return (isFinite(n) && n > 0) ? n : 12;
+  })();
   const fundName  = (ctc && ctc.fundName) || '—';
   return {
     id: '__rv_preview__',
@@ -5106,17 +5128,19 @@ function buildXeroFeeDescription_(opts) {
   const divisor  = (100 + rate) / 100;     // 1.12 at 12%
   const superAmt = opts.superAmt || 0;
 
-  // Performance fee breakdown — label clarifies "inc super" / "(inc GST & super)" when super applies.
+  // Performance fee breakdown.
+  //   - When super applies: "Gross Super Inclusive Performance Fee" makes it unambiguous
+  //     that the headline figure already includes the super carve-out.
+  //   - When no super: stays plain "Performance fee".
   const incSuperTag = superAmt > 0;
+  const perfFeeLabel = incSuperTag ? 'Gross Super Inclusive Performance Fee' : 'Performance fee';
   if (opts.isGST) {
     const ex  = perfFee / 1.1;
     const gst = perfFee - ex;
-    const headerSuffix = incSuperTag ? '(inc GST & super)' : '(inc GST)';
-    lines.push(`Performance fee: $${fix(perfFee)} ${headerSuffix}`);
+    lines.push(`${perfFeeLabel} (inc GST): $${fix(perfFee)}`);
     lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
   } else {
-    const headerSuffix = incSuperTag ? ' inc. super' : '';
-    lines.push(`Performance fee: $${fix(perfFee)}${headerSuffix}`);
+    lines.push(`${perfFeeLabel}: $${fix(perfFee)}`);
   }
 
   // Super math (explicit ÷ 1.12 and subtraction). "of" instead of "on" — "on" implies super
@@ -5150,6 +5174,27 @@ function buildXeroFeeDescription_(opts) {
 
 function buildXeroExpenseDescription_(opts) {
   return `${opts.label} · Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
+}
+
+// Multi-line description for a super-bill line item. Replaces the cryptic single-line
+//   "Super 15% on $868.00 | …"
+// with a step-by-step breakdown showing the actual perf-fee base (NOT the invoice total) and
+// the divisor maths so the operator + clearing house can verify at a glance.
+function buildXeroSuperBillDescription_(opts) {
+  // opts: { rate, perfFeeIncGST, isGST, superAmt, cName, eventDates, invNum, fundName }
+  const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const baseEx = opts.isGST ? (opts.perfFeeIncGST / 1.1) : opts.perfFeeIncGST;
+  const divisor = (100 + opts.rate) / 100;
+  const performerShare = baseEx - opts.superAmt;
+  const baseLabel = opts.isGST ? ' ex-GST' : '';
+  const lines = [
+    `${opts.cName} | Event(s): ${opts.eventDates} | INV-${opts.invNum}`,
+    '',
+    `${opts.rate}% super of $${fix(baseEx)} performance fee${baseLabel}:`,
+    `  $${fix(baseEx)} ÷ ${divisor.toFixed(2)} = $${fix(performerShare)} (performer's ex-super share)`,
+    `  $${fix(baseEx)} − $${fix(performerShare)} = $${fix(opts.superAmt)} super${opts.fundName && opts.fundName !== '—' ? ' → paid to ' + opts.fundName : ''}`,
+  ];
+  return lines.join('\n');
 }
 
 function exportXeroCSV() {
@@ -5802,7 +5847,15 @@ function buildXeroSuperInvoicesData() {
     const eventDates = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                      || formatDateReadable(p.perfDate || p.date) || resolveDate(p);
     const rate = p.superRate || 12;
-    const desc = `Super ${rate}% on $${(p.total||0).toFixed(2)} | ${cName} | Event Date(s): ${eventDates} | INV-${invNum} | $${superAmt.toFixed(2)}`;
+    // Use perf fee (= total − reimbursements), NOT the invoice total, as the super-base.
+    const reimbTotal = (p.expenses && ((p.expenses.parking||0) + (p.expenses.accommodation||0) + (p.expenses.other||0))) || 0;
+    const perfFeeIncGST = (p.total || 0) - reimbTotal;
+    const isGSTContractor = ['B','D'].includes(p.type);
+    const desc = buildXeroSuperBillDescription_({
+      rate, perfFeeIncGST, isGST: isGSTContractor,
+      superAmt: r2(superAmt), cName, eventDates, invNum,
+      fundName: p.contractor && p.contractor.fundName
+    });
     return { p, cName, invNum, eventDates, rate, superAmt: r2(superAmt), desc, dateXero: resolveDate(p) };
   }).filter(Boolean);
 
@@ -5957,8 +6010,16 @@ function exportSuperBillsCSV() {
       // number (Sabrina & Jake both "011") no longer merge into one Xero bill — and there's no
       // initials hack to mangle bracketed aliases like "Jake (Jacob) Fehily" into "J(".
       const rate = p.superRate || 12;
-      // "Super" prefix + INV- prefix on the source invoice number, per request.
-      const desc = `Super ${rate}% on $${(p.total||0).toFixed(2)} | ${cName} | Event Date(s): ${eventDates} | INV-${invNum} | $${superAmt.toFixed(2)}`;
+      // Multi-line super-bill description: shows perf fee (NOT invoice total) as the base
+      // and walks the ÷ divisor → subtraction math step-by-step.
+      const reimbTotal_csv = (p.expenses && ((p.expenses.parking||0) + (p.expenses.accommodation||0) + (p.expenses.other||0))) || 0;
+      const perfFeeIncGST_csv = (p.total || 0) - reimbTotal_csv;
+      const isGSTContractor_csv = ['B','D'].includes(p.type);
+      const desc = buildXeroSuperBillDescription_({
+        rate, perfFeeIncGST: perfFeeIncGST_csv, isGST: isGSTContractor_csv,
+        superAmt, cName, eventDates, invNum,
+        fundName: p.contractor && p.contractor.fundName
+      });
       if (consolidate) {
         rows.push(mkRow(CLEARINGHOUSE_NAME, conRef, conRef, dateAll, dateAll,
                         desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
@@ -6095,15 +6156,19 @@ function initSaffPeriodDefaults() {
   const endEl   = document.getElementById('saff-period-end');
   if (!startEl || !endEl) return;
   if (startEl.value && endEl.value) return; // respect any value the user set
+  // Super contributions cover work performed the PREVIOUS week (Mon→Sun), not the week the
+  // pay run actually happens in. A pay run on Mon 8 Jun should default to 1 Jun → 7 Jun.
   const now = new Date();
-  const day = now.getDay();                 // 0=Sun,1=Mon,…
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((day + 6) % 7)); // back to this week's Monday
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
+  const day = now.getDay();                          // 0=Sun, 1=Mon, …
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() - ((day + 6) % 7)); // back to THIS week's Monday
+  const prevMonday = new Date(thisMonday);
+  prevMonday.setDate(thisMonday.getDate() - 7);       // jump back one full week
+  const prevSunday = new Date(prevMonday);
+  prevSunday.setDate(prevMonday.getDate() + 6);
   const iso = d => d.toISOString().split('T')[0];
-  startEl.value = iso(monday);
-  endEl.value   = iso(sunday);
+  startEl.value = iso(prevMonday);
+  endEl.value   = iso(prevSunday);
 }
 
 function exportSAFFCSV() {
@@ -6181,7 +6246,13 @@ function exportSAFFCSV() {
   // Filename = AustralianSuper auto-fills its "Description" from this, so make it clear + readable
   // and use DD-MM-YYYY (not the reversed YYYYMMDD).
   const ddmmyyyy = iso => { const [y,m,d] = iso.slice(0,10).split('-'); return `${d}-${m}-${y}`; };
-  downloadCSV(rows, `MEC Super Contribution ${ddmmyyyy(periodStart)} to ${ddmmyyyy(periodEnd)}.csv`);
+  // Weekday-prefixed filename — easier to spot "wrong week" at a glance when uploading to
+  // AustralianSuper, and matches the conventional pay-run description format Nathan uses.
+  const weekday = iso => {
+    const d = new Date(iso + 'T00:00:00');
+    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
+  };
+  downloadCSV(rows, `MEC Super Contribution ${weekday(periodStart)} ${ddmmyyyy(periodStart)} to ${weekday(periodEnd)} ${ddmmyyyy(periodEnd)}.csv`);
 
   if (warnings.length) {
     alert('⚠ SAFF generated, but ' + warnings.length + ' member(s) are missing mandatory fields. '
