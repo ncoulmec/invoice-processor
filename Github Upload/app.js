@@ -5176,6 +5176,15 @@ function buildXeroExpenseDescription_(opts) {
   return `${opts.label} · Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
 }
 
+// Memo line ("$X super has been remitted to {Fund} on your behalf") added right after the
+// perf-fee line(s) on each contractor bill. Sits between the fee and any reimbursements so the
+// performer can clearly see WHERE their super went without scanning the whole bill.
+function buildXeroSuperMemoDescription_(superAmt, fundName) {
+  const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fundLabel = (fundName && fundName !== '—') ? fundName : 'your super fund';
+  return `✓ $${fix(superAmt)} superannuation has been remitted to ${fundLabel} on your behalf`;
+}
+
 // Multi-line description for a super-bill line item. Replaces the cryptic single-line
 //   "Super 15% on $868.00 | …"
 // with a step-by-step breakdown showing the actual perf-fee base (NOT the invoice total) and
@@ -5324,6 +5333,13 @@ function exportXeroCSV() {
       });
     } else {
       rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
+    }
+
+    // Memo line — sits between perf-fee and reimbursements, tells the performer where their
+    // super was sent. 0 qty + 0 amount so it doesn't affect totals. Only when super withheld.
+    if (superAmt > 0) {
+      const memoDesc = buildXeroSuperMemoDescription_(superAmt, c.fundName || (p.contractor && p.contractor.fundName) || null);
+      rows.push(mkRow(billContact, billRef, eventRef, '', '', memoDesc, 0, '0.00', acctCode, 'BAS Excluded'));
     }
 
     // Lines 2+ — expense splits (parking / accommodation / travel). Same billRef so Xero keeps
@@ -5508,6 +5524,19 @@ function buildXeroInvoicesData() {
         UnitAmount: r2(feeAmount),
         AccountCode: acctCode,
         TaxType: taxType
+      });
+    }
+
+    // Memo line — sits between the perf-fee line(s) and any reimbursements, telling the
+    // performer where their super went. 0 qty + 0 unit amount so it doesn't affect the bill
+    // total. Only added when super was actually withheld.
+    if (superAmt > 0) {
+      lineItems.push({
+        Description: buildXeroSuperMemoDescription_(superAmt, (p.contractor && p.contractor.fundName) || null),
+        Quantity: 0,
+        UnitAmount: 0,
+        AccountCode: acctCode,
+        TaxType: 'BASEXCLUDED'
       });
     }
 
