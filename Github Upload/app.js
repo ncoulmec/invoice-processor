@@ -4451,7 +4451,7 @@ function ensureBreakdownPopover() {
   if (!pop) {
     pop = document.createElement('div');
     pop.id = 'row-breakdown-popover';
-    pop.style.cssText = 'position:fixed;display:none;z-index:1500;background:#fff;border:1px solid #CBD5E0;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,0.18);padding:14px 16px;font-size:12px;line-height:1.55;width:470px;max-width:90vw;color:#1B2733;pointer-events:none';
+    pop.style.cssText = 'position:fixed;display:none;z-index:1500;background:#fff;border:1px solid #CBD5E0;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,0.18);padding:14px 16px;font-size:12px;line-height:1.55;width:540px;max-width:92vw;color:#1B2733;pointer-events:none';
     document.body.appendChild(pop);
   }
   return pop;
@@ -4633,38 +4633,57 @@ function buildBreakdownHtml(p) {
     </table>` : '';
 
   // ── Section: WHERE THE MONEY GOES (two-box cash split + sub-breakdown) ──
+  // Performer box is now a top-down table: each component line, dashed separators between rows,
+  // and the headline total sits at the BOTTOM right under a thick green rule. Previously the
+  // total was on top and the operator had to mentally sum the sub-lines back up to verify it.
+  // Now you read top→bottom and the math lands on the same number you'd add up yourself.
   const r2x = n => Math.round((n||0)*100)/100;
   const perfFeeNetIncGST = r2x(perfFeeIncGST - superAmt);
   const performerLines = [
     {
-      // Two-line label: "Perf fee net (inc GST)" then below in a dim sub-line: "$X − $Y super".
-      label: superAmt > 0
-        ? `Perf fee net (inc GST)<br><span style="color:#94A3B8;font-size:10px">${$(perfFeeIncGST)} &minus; ${$(superAmt)} super</span>`
-        : 'Performance fee',
+      label: 'Perf fee net (inc GST)',
+      // Tiny sub-line shows how perf-fee-net was derived (inc-GST minus super). Operator-only,
+      // not visible to the performer. Helps quick verification at a glance.
+      sub: superAmt > 0 ? `${$(perfFeeIncGST)} &minus; ${$(superAmt)} super` : '',
       amt: perfFeeNetIncGST
     },
-    { label: 'Parking',       amt: parking },
-    { label: 'Accommodation', amt: accom   },
-    { label: 'Travel',        amt: travel  },
-    { label: 'Other',         amt: other   },
+    { label: 'Parking',       sub: '', amt: parking },
+    { label: 'Accommodation', sub: '', amt: accom   },
+    { label: 'Travel',        sub: '', amt: travel  },
+    { label: 'Other',         sub: '', amt: other   },
   ].filter(x => x.amt > 0);
-  const performerSubLines = performerLines.length > 1 ? `
-    <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #C6EBD3;font-size:11px;color:#5B6B7B;line-height:1.55">
-      ${performerLines.map(x => `<div style="display:flex;justify-content:space-between"><span>${x.label}</span><span>${$(x.amt)}</span></div>`).join('')}
-    </div>` : '';
+  const perfRows = performerLines.map((x, i) => {
+    const isLast = i === performerLines.length - 1;
+    const sep = isLast ? '' : 'border-bottom:1px dashed #C6EBD3;';
+    return `<tr style="${sep}">
+      <td style="padding:6px 0;vertical-align:top">
+        ${x.label}
+        ${x.sub ? `<div style="font-size:10px;color:#94A3B8;margin-top:1px">${x.sub}</div>` : ''}
+      </td>
+      <td style="text-align:right;padding:6px 0;vertical-align:top;white-space:nowrap">${$(x.amt)}</td>
+    </tr>`;
+  }).join('');
   const moneySplitSection = `
     <div style="font-weight:600;color:#1B2733;margin:12px 0 6px;font-size:12px">Where the ${$(total)} goes</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px">
       <div style="background:#EBF8F0;border:1px solid #9AE6B4;border-radius:8px;padding:9px 11px">
-        <div style="font-size:10px;color:#1F9D63;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Performer</div>
-        <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(cashToPerformer)}</div>
-        ${performerSubLines}
+        <div style="font-size:10px;color:#1F9D63;font-weight:700;letter-spacing:.4px;text-transform:uppercase">» Performer</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+          ${perfRows}
+          <tr style="border-top:2px solid #1F9D63">
+            <td style="padding:7px 0 0;font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.5px;color:#1F9D63">Total received</td>
+            <td style="text-align:right;padding:7px 0 0;font-weight:700;font-size:15px;color:#1F9D63;white-space:nowrap">${$(cashToPerformer)}</td>
+          </tr>
+        </table>
       </div>
       ${superAmt > 0 ? `
-      <div style="background:#EBF4FF;border:1px solid #A3BFFA;border-radius:8px;padding:9px 11px">
-        <div style="font-size:10px;color:#3B5AB8;font-weight:700;letter-spacing:.4px;text-transform:uppercase">→ Super fund</div>
-        <div style="font-size:16px;color:#1B2733;font-weight:700;margin-top:2px">${$(superAmt)}</div>
-        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #BFD0F5;font-size:11px;color:#5B6B7B">→ ${escHtml(fundName)}</div>
+      <div style="background:#EBF4FF;border:1px solid #A3BFFA;border-radius:8px;padding:9px 11px;display:flex;flex-direction:column">
+        <div style="font-size:10px;color:#3B5AB8;font-weight:700;letter-spacing:.4px;text-transform:uppercase">» Super fund</div>
+        <div style="font-size:11px;color:#5B6B7B;margin-top:6px;flex:1">» ${escHtml(fundName)}</div>
+        <div style="border-top:2px solid #3B5AB8;margin-top:7px;padding-top:7px;display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.5px;color:#3B5AB8">Total super</span>
+          <span style="font-weight:700;font-size:15px;color:#3B5AB8;white-space:nowrap">${$(superAmt)}</span>
+        </div>
       </div>` : `
       <div style="background:#F7FAFC;border:1px dashed #CBD5E0;border-radius:8px;padding:9px 11px;color:#94A3B8">
         <div style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase">No super</div>
@@ -5144,22 +5163,25 @@ function buildXeroFeeDescription_(opts) {
   const superAmt = opts.superAmt || 0;
 
   if (superAmt > 0) {
-    // ── GROSS SUPER INCLUSIVE PERFORMANCE FEE block ───────────────────────
+    // ── GROSS SUPER INCLUSIVE FEE block ───────────────────────────────────
+    // Wording note: we DON'T say "Performance Fee" here — Nathan wants the description to read
+    // neutrally so the performer doesn't feel like they're "losing" something from a performance
+    // fee. "FEE" framed as a container of (ex-super amount + super amount) is more accurate.
     if (opts.isGST) {
       const ex  = perfFee / 1.1;
       const gst = perfFee - ex;
-      lines.push('GROSS SUPER INCLUSIVE PERFORMANCE FEE (inc GST):');
+      lines.push('GROSS SUPER INCLUSIVE FEE (inc GST):');
       lines.push(`$${fix(perfFee)}`);
       lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
     } else {
-      lines.push('GROSS SUPER INCLUSIVE PERFORMANCE FEE:');
+      lines.push('GROSS SUPER INCLUSIVE FEE:');
       lines.push(`$${fix(perfFee)}`);
     }
     lines.push('');
 
     // ── SUPER BREAKDOWN block ─────────────────────────────────────────────
     // Two-step verification math:
-    //   1. gross ÷ 1.12 = ex-super performance fee
+    //   1. gross ÷ 1.12 = ex-super fee
     //   2. ex-super + super = gross (proves the carve-out reconciles)
     // Then a separate line names where the super went.
     const baseForSuper = opts.superBaseExGST != null
@@ -5168,8 +5190,8 @@ function buildXeroFeeDescription_(opts) {
     const exSuper = baseForSuper - superAmt;
 
     lines.push('SUPER BREAKDOWN:');
-    lines.push(`$${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super Performance Fee)`);
-    lines.push(`$${fix(exSuper)} (ex-super Performance Fee) + $${fix(superAmt)} (${rate}% Super) = $${fix(baseForSuper)}`);
+    lines.push(`$${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super Fee)`);
+    lines.push(`$${fix(exSuper)} (ex-super Fee) + $${fix(superAmt)} (${rate}% Super) = $${fix(baseForSuper)}`);
     lines.push('');
 
     const fundLabel = opts.fundName && opts.fundName !== '—'
@@ -5179,15 +5201,13 @@ function buildXeroFeeDescription_(opts) {
     lines.push('');
 
     // ── You receive on this line ──────────────────────────────────────────
+    // Nathan removed the "less super" line — frames the takeaway positively: the headline
+    // figure IS your performance fee, super is added on top by us, not deducted from you.
     const netInc = perfFee - superAmt;
-    const invoiceLabel = opts.isGST ? 'invoice inc GST' : 'invoice';
-    lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
-    lines.push(`$${fix(perfFee)} (${invoiceLabel}) less $${fix(superAmt)} (super) =`);
-    lines.push(`$${fix(netInc)} net`);
+    lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''} (your true Performance Fee before super is added)`);
     if (opts.isGST) {
       const netEx = netInc / 1.1;
       const netGst = netInc - netEx;
-      lines.push('');
       lines.push(`  In Xero: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
     }
   } else {
