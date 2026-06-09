@@ -3650,8 +3650,78 @@ function reviewLooksGood() {
   }
 
   closeReviewModal();
+  // Bug fix: if the modal was opened from Step 3 (Review & Export), the Step 3 table is
+  // rendered from the `processed[]` snapshot built at Step 2→3 transition. After saving edits
+  // here, the Stage 1 inputs are up-to-date but `processed[]` is stale, so Step 3 keeps
+  // showing the old values. Detect Step 3 being visible and rebuild + re-render in place.
+  try {
+    const resultsView = document.getElementById('results-view');
+    if (resultsView && resultsView.style.display !== 'none') {
+      // Rebuild processed[] from the now-edited Stage 1 inputs, then redraw Step 3.
+      processInvoices_silent_();
+      buildResultsView();
+    }
+  } catch (e) {
+    console.warn('[reviewLooksGood] Step 3 refresh failed:', e);
+  }
   // Auto-save session state so a page refresh can offer to restore
   setTimeout(sessionSave, 200);
+}
+
+// Silent variant of processInvoices() — same data-build logic, no alerts / no view switch.
+// Used by reviewLooksGood() when an edit needs to be reflected in an already-open Step 3.
+function processInvoices_silent_() {
+  const rows = collectRows();
+  if (!rows.length) return;
+  processed = rows.map((row, i) => {
+    const contractor = matchContractor(row.name, row.abn);
+    let type = 'UNKNOWN';
+    let matchSource = 'none';
+    if (contractor) {
+      type = contractor.type || (contractor.gst ? 'B' : 'A');
+      matchSource = 'zoho';
+    } else if (row.abrData) {
+      type = row.hasGST ? 'B' : 'A';
+      matchSource = 'abr';
+    }
+    const typeOverride = window.invoiceTypeData?.['id_' + row.id];
+    if (typeOverride && ['A','B','C','D'].includes(typeOverride)) type = typeOverride;
+    if (!['A','B','C','D'].includes(type)) type = row.hasGST ? 'B' : 'A';
+
+    const expenses = invoiceExpenseData['id_' + row.id] || { parking: 0, accommodation: 0, travel: 0, other: 0 };
+    const reimbTotal = (expenses.parking || 0) + (expenses.accommodation || 0) + (expenses.travel || 0) + (expenses.other || 0);
+    const serviceFee = row.total - reimbTotal;
+    const linkedBookings = invoiceBookingData['id_' + row.id] || [];
+
+    const p = {
+      id:           String(row.id),
+      rowId:        String(row.id),
+      name:         row.name,
+      invoiceNumber: row.inv,
+      date:         row.date,
+      perfDate:     row.perfDate,
+      total:        row.total,
+      abn:          row.abn,
+      type:         type,
+      matchSource:  matchSource,
+      contractor:   contractor,
+      serviceFee:   serviceFee,
+      expenses:     expenses,
+      linkedBookings: linkedBookings,
+      withholdSuper: row.withholdSuper !== false,
+      paidInZoho:   row.paidInZoho || false
+    };
+    p.superRate = superRateFor(p.contractor);
+    p.amounts = calculateAmounts(p.serviceFee, type, p.superRate);
+    // Per-row super share override (duo split) — apply if present.
+    const shareOverride = invoiceSuperShareData['id_' + row.id];
+    if (typeof shareOverride === 'number' && shareOverride > 0) {
+      p.superBase = shareOverride;
+      const baseEx = ['B','D'].includes(type) ? (shareOverride / 1.1) : shareOverride;
+      p.amounts.super = Math.round(baseEx * p.superRate / (100 + p.superRate) * 100) / 100;
+    }
+    return p;
+  });
 }
 
 // ── Extracted-fields modal ──────────────────────────────────────────────────
@@ -4980,11 +5050,13 @@ function buildResultsView() {
         }
       }
       const showSuperCell = rowSuperVal > 0;
-      // Clickable name → re-open the Review modal for a final sense-check (cross-check the PDF
-      // + fields) without going back to Enter Invoice Data.
-      const nameCell = p.rowId
-        ? `<strong><a onclick="openReviewModal('${p.rowId}')" title="Open the Review screen to cross-check this invoice" style="color:var(--navy);cursor:pointer;text-decoration:underline;text-decoration-style:dotted">${escHtml(displayName)}</a></strong>`
-        : `<strong>${escHtml(displayName)}</strong>`;
+      // Name + explicit Review button. Previously the name itself was the clickable target —
+      // not intuitive enough (operators didn't realise it was a link). Now: plain name + a
+      // visible 👁 Review button next to it. Same handler.
+      const reviewBtn = p.rowId
+        ? `<button onclick="openReviewModal('${p.rowId}')" title="Open the Review screen to cross-check or edit this invoice" style="background:#fff;border:1px solid #CBD5E0;color:#5B6B7B;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-left:6px;white-space:nowrap;vertical-align:middle">👁 Review</button>`
+        : '';
+      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}`;
       // Super-details incomplete chip (only when super withholding is ON for this run + this row)
       const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
         ? missingSuperFields(p.contractor) : [];
@@ -5950,43 +6022,25 @@ function openSendRemittancesGate() {
     showBanner('All bills from the last push already had their remittances sent in this session.', 'info');
     return;
   }
-  // Reset checkboxes
-  ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].forEach(id => {
-    const cb = document.getElementById(id);
-    if (cb) cb.checked = false;
-  });
-  // Summary line
+  // Summary line — Nathan's workflow change (Jun 2026): we now send remittances BEFORE
+  // approving the Xero bills, so the 3 confirmation checkboxes ("I've approved / paid /
+  // edited") no longer apply. Replaced by a single pre-flight summary the operator can
+  // scan before clicking "Send now".
   const summary = document.getElementById('remit-gate-summary');
   if (summary) {
     const noEmailCount = remaining.filter(b => !b.recipientEmail).length;
+    const willSend = remaining.length - noEmailCount;
     summary.innerHTML = `
-      <div><strong>${remaining.length} remittance${remaining.length>1?'s':''}</strong> ready to send (from your last push).</div>
-      ${noEmailCount > 0 ? `<div style="margin-top:4px;color:#C0362C">⚠ ${noEmailCount} contractor${noEmailCount>1?'s have':' has'} no email on file in Zoho — those will be skipped. Open the contractor's Zoho profile to add an email and re-run.</div>` : ''}
+      <div><strong>${willSend} remittance${willSend===1?'':'s'}</strong> will be emailed (from your last push of ${remaining.length}).</div>
+      ${noEmailCount > 0 ? `<div style="margin-top:4px;color:#C0362C">⚠ ${noEmailCount} contractor${noEmailCount>1?'s have':' has'} no email on file in Zoho — those will be skipped. Add the email in their Zoho profile, then re-push and re-send.</div>` : ''}
     `;
   }
-  updateRemitGateContinue();
   document.getElementById('remit-gate-overlay').style.display = 'flex';
-  // Wire checkbox change handlers
-  ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].forEach(id => {
-    const cb = document.getElementById(id);
-    if (cb && !cb._wired) {
-      cb.addEventListener('change', updateRemitGateContinue);
-      cb._wired = true;
-    }
-  });
 }
 
-function updateRemitGateContinue() {
-  const all3 = ['remit-gate-cb-approved','remit-gate-cb-paid','remit-gate-cb-final'].every(id => document.getElementById(id)?.checked);
-  const btn = document.getElementById('remit-gate-continue-btn');
-  const status = document.getElementById('remit-gate-status');
-  if (btn) {
-    btn.disabled = !all3;
-    btn.style.opacity = all3 ? '1' : '0.4';
-    btn.style.cursor = all3 ? 'pointer' : 'not-allowed';
-  }
-  if (status) status.textContent = all3 ? 'Ready to send' : 'Tick all three to enable Continue';
-}
+// Kept as a no-op for any stale onchange listeners that might still fire after the
+// 3-checkbox gate was retired. Safe to delete once we're sure nothing references it.
+function updateRemitGateContinue() { /* deprecated — see openSendRemittancesGate */ }
 
 function closeRemitGate() {
   const overlay = document.getElementById('remit-gate-overlay');
@@ -6028,30 +6082,50 @@ async function runSendRemittances() {
         continue;
       }
       // 2. Compose + send via Gmail
-      const subject = `Remittance Advice — ${bill.reference || 'INV-' + bill.invoiceNumber} — paid ${new Date().toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' })}`;
+      // Workflow change (Jun 2026): remittances are now sent BEFORE Xero approval, as a
+      // preview, so the performer can flag issues before super is lodged. Wording shifts
+      // from past-tense ("was sent") to future-tense ("will be sent"), and we explicitly
+      // ask for a reply within 24h if anything is off.
+      const subject = `Payment Preview — ${bill.reference || 'INV-' + bill.invoiceNumber} (please review)`;
       const greeting = (bill.contactName || '').split(/\s+/)[0] || 'there';
       const cashAmt = (bill.amount || 0);
       const superAmt = (bill.superAmount || 0);
       const fundName = (bill.superFund || '').trim();
-      // Super line is conditional — only show it if super was actually deducted on this bill.
-      // Fund-name fallback: if Zoho didn't have the fund recorded, say "your nominated super fund"
-      // rather than printing a confusing dash. The PDF will show the full breakdown either way.
       const superLineText = superAmt > 0
-        ? `Superannuation of $${superAmt.toFixed(2)} was sent to ${fundName || 'your nominated super fund'}.\n\n`
+        ? `Superannuation of $${superAmt.toFixed(2)} will be remitted to ${fundName || 'your nominated super fund'}.\n\n`
         : '';
       const superLineHtml = superAmt > 0
-        ? `<p>Superannuation of <strong>$${superAmt.toFixed(2)}</strong> was sent to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
+        ? `<p>Superannuation of <strong>$${superAmt.toFixed(2)}</strong> will be remitted to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
         : '';
-      const bodyText = `Hi ${greeting},\n\nYour remittance for ${bill.reference || 'invoice ' + bill.invoiceNumber} has been processed.\n\nPayment of $${cashAmt.toFixed(2)} was sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super deducted, and any reimbursements.\n\nAny questions, just reply to this email.\n\nThanks,\nMelbourne Entertainment Co`;
+      const bodyText = `Hi ${greeting},\n\nPlease review the attached payment breakdown for ${bill.reference || 'invoice ' + bill.invoiceNumber} before we process it.\n\nPayment of $${cashAmt.toFixed(2)} will be sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super, and any reimbursements.\n\nIf anything doesn't look right, please reply within 24 hours so we can adjust before lodging. If everything checks out, no action needed.\n\nThanks,\nMelbourne Entertainment Co`;
       const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1B2733;line-height:1.6">
         <p>Hi ${escHtml(greeting)},</p>
-        <p>Your remittance for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> has been processed.</p>
-        <p>Payment of <strong>$${cashAmt.toFixed(2)}</strong> was sent to your bank.</p>
+        <p>Please review the attached payment breakdown for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> before we process it.</p>
+        <p>Payment of <strong>$${cashAmt.toFixed(2)}</strong> will be sent to your bank.</p>
         ${superLineHtml}
-        <p>The <strong>full breakdown is attached as a PDF</strong> — performance fee, any super deducted, and any reimbursements.</p>
-        <p>Any questions, just reply.</p>
+        <p>The <strong>full breakdown is attached as a PDF</strong> — performance fee, any super, and any reimbursements.</p>
+        <p>If anything doesn't look right, please <strong>reply within 24 hours</strong> so we can adjust before lodging. If everything checks out, no action needed.</p>
         <p>Thanks,<br>Melbourne Entertainment Co</p>
       </div>`;
+
+      // Filename: mirror the contractor invoice PDF naming convention so attachments are
+      // self-describing in the performer's inbox. Pattern: "Remittance - {Name} - Event {Dates} - Inv {Number}.pdf"
+      // ASCII hyphens only (em-dash gets mangled in some mail clients — Nathan saw "?" placeholders).
+      // Strip the "Event Date(s):" / "Event(s):" prefix and the "| INV-…" suffix from the reference
+      // to isolate just the date string for the filename.
+      const refStr = bill.reference || '';
+      const dateMatch = refStr.match(/Event Date\(s\):\s*([^|]+?)(\s*\||$)/i)
+                     || refStr.match(/Event\(s\):\s*([^|]+?)(\s*\||$)/i);
+      const eventDateStr = dateMatch ? dateMatch[1].trim() : '';
+      const filenameParts = [
+        'Remittance',
+        bill.contactName || 'Performer',
+        eventDateStr ? `Event ${eventDateStr}` : '',
+        bill.invoiceNumber ? `Inv ${bill.invoiceNumber}` : ''
+      ].filter(Boolean);
+      // Sanitise: replace OS-reserved chars with hyphen, collapse repeats, trim.
+      const safeFilename = filenameParts.join(' - ').replace(/[\\/:*?"<>|]/g, '-').replace(/-{2,}/g, '-').trim() + '.pdf';
+
       const sendRes = await fetch(`${proxyUrl}?action=sendRemittance&key=${encodeURIComponent(accessKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -6061,9 +6135,9 @@ async function runSendRemittances() {
           bodyText,
           bodyHtml,
           pdfBase64: pdfData.pdfBase64,
-          pdfFilename: `Remittance — ${(bill.reference || bill.invoiceNumber || 'bill').replace(/[\\/:*?"<>|]/g,'-')}.pdf`,
+          pdfFilename: safeFilename,
           fromName: 'Melbourne Entertainment Co',
-          replyTo: 'bookings@melbentco.com.au'
+          replyTo: 'pay.melbentco@gmail.com'
         })
       });
       const sendData = await sendRes.json();
