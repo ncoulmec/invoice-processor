@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260609E">
+<link rel="stylesheet" href="styles.css?v=20260609I">
 </head>
 <body>
 
@@ -938,19 +938,25 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
               <div>
                 <label style="color:#5B6B7B;font-size:11px;display:block;margin-bottom:3px">🚗 Parking $</label>
-                <input type="number" id="rv-exp-parking" tabindex="6" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
+                <input type="number" id="rv-exp-parking" tabindex="6" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee(); rvRenderReceiptUI('parking');"
                   style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none">
+                <input type="file" id="rv-rec-file-parking" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="rvReceiptFileSelected('parking', this)">
+                <div id="rv-rec-ui-parking" style="margin-top:5px;font-size:10px;line-height:1.45;min-height:14px"></div>
               </div>
               <div>
                 <label style="color:#5B6B7B;font-size:11px;display:block;margin-bottom:3px">🏨 Accom $</label>
-                <input type="number" id="rv-exp-accommodation" tabindex="7" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
+                <input type="number" id="rv-exp-accommodation" tabindex="7" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee(); rvRenderReceiptUI('accommodation');"
                   style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none">
+                <input type="file" id="rv-rec-file-accommodation" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="rvReceiptFileSelected('accommodation', this)">
+                <div id="rv-rec-ui-accommodation" style="margin-top:5px;font-size:10px;line-height:1.45;min-height:14px"></div>
               </div>
               <div>
                 <label style="color:#5B6B7B;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:3px">📦 Other $
                   <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Other (no super)</strong>A straight reimbursement for anything that isn't labour — e.g. buying a table, an extra cord, consumables they bought for the job. <strong style="display:inline;color:#8A5B12">No super is deducted on this amount.</strong> Use it when the contractor has attached a receipt/invoice for an out-of-pocket purchase.</span></span></label>
-                <input type="number" id="rv-exp-other" tabindex="8" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee()"
+                <input type="number" id="rv-exp-other" tabindex="8" step="0.01" min="0" placeholder="0" oninput="rvUpdateServiceFee(); rvRenderReceiptUI('other');"
                   style="font-size:12px;padding:6px 8px;width:100%;border:1px solid #CBD5E0;border-radius:5px;background:#FFFFFF;color:#1B2733;outline:none">
+                <input type="file" id="rv-rec-file-other" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="rvReceiptFileSelected('other', this)">
+                <div id="rv-rec-ui-other" style="margin-top:5px;font-size:10px;line-height:1.45;min-height:14px"></div>
               </div>
             </div>
             <div id="rv-parking-warn" style="display:none;margin-top:8px;font-size:10px;line-height:1.5;color:#8A5B12;background:#FBF1DE;border:1px solid #E6D3A8;border-radius:6px;padding:7px 9px"></div>
@@ -1155,6 +1161,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260609E"></script>
+<script src="app.js?v=20260609I"></script>
 </body>
 </html>

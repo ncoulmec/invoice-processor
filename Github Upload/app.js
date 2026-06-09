@@ -103,6 +103,16 @@ let invoiceSuperModeData  = {}; // keyed by row id, the user-picked super decisi
 let invoicePaidData = {};      // keyed by row id, stores alreadyPaid from PDF extraction
 let invoiceBookingData = {};   // keyed by row id, stores [{bookingId,bookingName,eventDate,cost}] — selected booking matches
 let invoiceExpenseData = {};   // keyed by row id, stores {parking:0, accommodation:0, travel:0, other:0}
+// Receipt attachments for reimbursements. Keyed by row id, then by expense type. Each entry is
+// either { base64, fileName, mimeType, noReceipt:false } when a receipt is attached, or
+// { noReceipt: true } when the operator has acknowledged "no receipt for this one". Missing
+// entry means undecided — which becomes a Step 3 ⚠ chip when the matching amount is > 0.
+//   invoiceReceiptData['id_5'] = {
+//     parking: { base64, fileName: 'IMG_2451.jpg', mimeType: 'image/jpeg' },
+//     accommodation: { noReceipt: true },
+//     // 'other' absent → undecided
+//   }
+let invoiceReceiptData = {};
 let invoicePerfGuess = {};     // keyed by row id, true if the perf date was a best-guess (not an explicit event-date label) — surfaced in Review, not Stage 1
 let invoiceTypeData = {};      // keyed by row id, stores 'event' | 'ap' | 'unknown'
 let invoiceFileData = {};      // keyed by row id, stores object URL for PDF preview
@@ -2240,6 +2250,11 @@ function openReviewModal(id) {
   if (g('rv-exp-travel')) g('rv-exp-travel').value = storedExp.travel || '';
   if (g('rv-exp-other')) g('rv-exp-other').value = storedExp.other || '';
 
+  // Hydrate the receipt UI for each reimbursement type — picks up any previously attached
+  // files or "No receipt" acknowledgements from invoiceReceiptData. Safe to call even when
+  // the row has no receipt data yet (renders State 1/2 based on the amount field).
+  if (typeof rvHydrateReceiptUI === 'function') rvHydrateReceiptUI();
+
   // Duo / group super panel — shown when this invoice is flagged as a possible multi-performer act.
   // Restore the share input first so rvUpdateServiceFee()/the mode picker see the saved value.
   const storedShare = invoiceSuperShareData['id_' + id];
@@ -3113,6 +3128,132 @@ function rvUpdateTotalBreakdown() {
   totEl.textContent = total ? money(total) : '—';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Receipt attachments for reimbursements
+// ───────────────────────────────────────────────────────────────────────────
+// Three small UI states per receipt slot (Parking / Accommodation / Other):
+//   1. Hidden  — when the matching amount is 0 (no reimbursement, no receipt needed)
+//   2. Prompt  — when amount > 0 and nothing is decided yet: "📎 Attach receipt" + "No receipt"
+//   3. Attached — when a file is selected: chip showing filename + ✕ to remove
+//   4. Acknowledged — when "No receipt" is ticked: dim "No receipt — change" link
+// ═══════════════════════════════════════════════════════════════════════════
+const RV_RECEIPT_TYPES = ['parking', 'accommodation', 'other'];
+const RV_RECEIPT_AMOUNT_FIELD = { parking: 'rv-exp-parking', accommodation: 'rv-exp-accommodation', other: 'rv-exp-other' };
+const RV_RECEIPT_LABEL = { parking: '🚗 parking', accommodation: '🏨 accom', other: '📦 other' };
+
+function rvReceiptCurrentData_() {
+  const id = reviewModalRowId;
+  if (!id) return null;
+  if (!invoiceReceiptData['id_' + id]) invoiceReceiptData['id_' + id] = {};
+  return invoiceReceiptData['id_' + id];
+}
+
+function rvRenderReceiptUI(type) {
+  const ui = document.getElementById('rv-rec-ui-' + type);
+  if (!ui) return;
+  const amt = parseFloat(document.getElementById(RV_RECEIPT_AMOUNT_FIELD[type])?.value || '0') || 0;
+  // State 1 — hidden when no amount entered
+  if (amt <= 0) { ui.innerHTML = ''; return; }
+  const data = rvReceiptCurrentData_();
+  const entry = (data && data[type]) || null;
+  // State 3 — file attached
+  if (entry && entry.fileName && entry.base64) {
+    const safeName = escHtml(entry.fileName);
+    ui.innerHTML = `
+      <span style="display:inline-flex;align-items:center;gap:4px;background:#EDFAF3;border:1px solid #9AE6B4;color:#1F9D63;padding:2px 7px;border-radius:11px;max-width:100%;overflow:hidden">
+        <span style="flex:0 0 auto">📄</span>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600" title="${safeName}">${safeName}</span>
+        <button onclick="rvReceiptRemove('${type}')" title="Remove this receipt" style="background:transparent;border:0;color:#1F9D63;cursor:pointer;font-weight:700;padding:0 0 0 2px;font-size:11px;line-height:1">✕</button>
+      </span>`;
+    return;
+  }
+  // State 4 — explicitly acknowledged as no receipt
+  if (entry && entry.noReceipt === true) {
+    ui.innerHTML = `
+      <span style="color:#94A3B8;font-style:italic">No receipt</span>
+      <a onclick="rvReceiptResetEntry('${type}')" style="cursor:pointer;color:#3182CE;text-decoration:underline;margin-left:6px">change</a>`;
+    return;
+  }
+  // State 2 — prompt
+  ui.innerHTML = `
+    <button onclick="document.getElementById('rv-rec-file-${type}').click()" title="Upload a PDF/JPG/PNG receipt — will be attached to the Xero bill"
+            style="background:#F7FAFC;border:1px dashed #CBD5E0;color:#5B6B7B;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer">
+      📎 Attach receipt
+    </button>
+    <label style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;color:#94A3B8;cursor:pointer">
+      <input type="checkbox" onchange="rvReceiptMarkNoReceipt('${type}', this.checked)" style="margin:0;width:11px;height:11px">
+      <span>No receipt</span>
+    </label>`;
+}
+
+function rvReceiptFileSelected(type, inputEl) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+  // Type guard — Xero doesn't render HEIC, save users from a confusing failed-push later.
+  const okTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+  const lcName = file.name.toLowerCase();
+  const okByExt = /\.(pdf|jpe?g|png)$/i.test(lcName);
+  if (!okTypes.includes(file.type) && !okByExt) {
+    alert(`Receipt format not supported.\n\nXero accepts: PDF, JPG, PNG.\n\nYour file is ${file.type || 'an unknown type'}${lcName.endsWith('.heic') ? ' (HEIC — please save as JPG and re-attach).' : '.'}`);
+    inputEl.value = '';
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    alert(`Receipt is too large (${(file.size/1024/1024).toFixed(1)} MB). Please keep it under 10 MB — re-save the photo at lower resolution or compress the PDF.`);
+    inputEl.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const result = ev.target.result || '';
+    // FileReader.readAsDataURL gives us "data:image/jpeg;base64,…" — split off the prefix.
+    const commaAt = result.indexOf(',');
+    const base64 = commaAt >= 0 ? result.slice(commaAt + 1) : result;
+    const data = rvReceiptCurrentData_();
+    if (!data) return;
+    data[type] = {
+      base64,
+      fileName: file.name,
+      mimeType: file.type || (lcName.endsWith('.pdf') ? 'application/pdf' : lcName.endsWith('.png') ? 'image/png' : 'image/jpeg'),
+      noReceipt: false
+    };
+    rvRenderReceiptUI(type);
+  };
+  reader.onerror = () => alert('Could not read the receipt file. Try a different file.');
+  reader.readAsDataURL(file);
+  inputEl.value = ''; // allow same file to be re-selected later
+}
+
+function rvReceiptRemove(type) {
+  const data = rvReceiptCurrentData_();
+  if (!data) return;
+  delete data[type];
+  rvRenderReceiptUI(type);
+}
+
+function rvReceiptMarkNoReceipt(type, checked) {
+  const data = rvReceiptCurrentData_();
+  if (!data) return;
+  if (checked) {
+    data[type] = { noReceipt: true };
+  } else {
+    delete data[type];
+  }
+  rvRenderReceiptUI(type);
+}
+
+function rvReceiptResetEntry(type) {
+  const data = rvReceiptCurrentData_();
+  if (!data) return;
+  delete data[type];
+  rvRenderReceiptUI(type);
+}
+
+// Called from openReviewModal to populate the receipt UI when the modal opens for an invoice.
+function rvHydrateReceiptUI() {
+  RV_RECEIPT_TYPES.forEach(t => rvRenderReceiptUI(t));
+}
+
 function rvUpdateServiceFee() {
   rvUpdateTotalBreakdown();
   const num = id => parseFloat(document.getElementById(id)?.value || '0') || 0;
@@ -3654,10 +3795,17 @@ function reviewLooksGood() {
   // rendered from the `processed[]` snapshot built at Step 2→3 transition. After saving edits
   // here, the Stage 1 inputs are up-to-date but `processed[]` is stale, so Step 3 keeps
   // showing the old values. Detect Step 3 being visible and rebuild + re-render in place.
+  //
+  // Step 3's container is <div id="view-3" class="hidden">, toggled by adding/removing the
+  // "hidden" class (NOT by setting inline style.display). Previous version checked
+  // style.display which is empty when the class is being used → falsely matched as "visible"
+  // on every save, OR (after Nathan's report) — falsely matched as "hidden" so the refresh
+  // never fired. Use classList.contains('hidden') as the source of truth.
   try {
-    const resultsView = document.getElementById('results-view');
-    if (resultsView && resultsView.style.display !== 'none') {
-      // Rebuild processed[] from the now-edited Stage 1 inputs, then redraw Step 3.
+    const view3 = document.getElementById('view-3');
+    const onStep3 = view3 && !view3.classList.contains('hidden');
+    if (onStep3) {
+      // Rebuild processed[] from the now-edited Stage 1 inputs, then redraw Step 3 in place.
       processInvoices_silent_();
       buildResultsView();
     }
@@ -5056,7 +5204,21 @@ function buildResultsView() {
       const reviewBtn = p.rowId
         ? `<button onclick="openReviewModal('${p.rowId}')" title="Open the Review screen to cross-check or edit this invoice" style="background:#fff;border:1px solid #CBD5E0;color:#5B6B7B;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-left:6px;white-space:nowrap;vertical-align:middle">👁 Review</button>`
         : '';
-      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}`;
+      // Missing-receipt warning chip — soft nudge, doesn't block export. Fires when any
+      // reimbursement has an amount > 0 AND no receipt file AND the "No receipt" box wasn't
+      // ticked in Step 4 of the Review modal. Click → opens the modal so it can be addressed.
+      let missingReceiptChip = '';
+      if (p.rowId && p.expenses) {
+        const recs = (typeof invoiceReceiptData !== 'undefined') ? (invoiceReceiptData['id_' + p.rowId] || {}) : {};
+        const missing = [];
+        if ((p.expenses.parking||0)       > 0 && !(recs.parking       && (recs.parking.base64       || recs.parking.noReceipt       === true))) missing.push('parking');
+        if ((p.expenses.accommodation||0) > 0 && !(recs.accommodation && (recs.accommodation.base64 || recs.accommodation.noReceipt === true))) missing.push('accom');
+        if ((p.expenses.other||0)         > 0 && !(recs.other         && (recs.other.base64         || recs.other.noReceipt         === true))) missing.push('other');
+        if (missing.length) {
+          missingReceiptChip = ` <span onclick="openReviewModal('${p.rowId}')" title="Click to attach receipts (or tick 'No receipt' if there isn't one)" style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:#FFF8E1;color:#8A5B12;border:1px solid #E6D3A8;border-radius:4px;padding:1px 6px;cursor:pointer;vertical-align:middle">⚠ ${missing.join(' + ')} receipt${missing.length>1?'s':''} missing</span>`;
+        }
+      }
+      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}`;
       // Super-details incomplete chip (only when super withholding is ON for this run + this row)
       const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
         ? missingSuperFields(p.contractor) : [];
@@ -5298,7 +5460,20 @@ function buildXeroFeeDescription_(opts) {
 }
 
 function buildXeroExpenseDescription_(opts) {
-  return `${opts.label} · Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
+  // opts: { label, invNum, dateReadable, incGST?, exGST? }
+  // When the expense line attracts GST (parking, accom, OR a GST contractor's travel/other),
+  // append a second line showing ex-GST + GST = inc-GST math. Xero's UnitAmount on the bill
+  // line is ex-GST (Xero auto-adds the 10%), so without this breakdown the performer just
+  // sees "$16.36" against a "Parking" line and wonders why they were only reimbursed $16.36
+  // instead of the $18.00 they actually paid. The extra line makes the full reimbursement
+  // visible to them: "$16.36 + $1.64 GST = $18.00 inc. GST".
+  const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const headLine = `${opts.label} · Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
+  if (opts.incGST != null && opts.exGST != null && (opts.incGST - opts.exGST) > 0.005) {
+    const gst = opts.incGST - opts.exGST;
+    return `${headLine}\n$${fix(opts.exGST)} + $${fix(gst)} GST = $${fix(opts.incGST)} inc. GST`;
+  }
+  return headLine;
 }
 
 // Memo line ("$X super has been remitted to {Fund} on your behalf") added right after the
@@ -5485,7 +5660,11 @@ function exportXeroCSV() {
         const itemHasGST = x.alwaysGST || isGSTContractor;
         const itemTaxType = itemHasGST ? 'GST on Expenses' : 'GST Free Expenses';
         const exGSTAmt = itemHasGST ? (x.amount / 1.1) : x.amount;
-        const expDesc = buildXeroExpenseDescription_({ label: x.label, invNum, dateReadable });
+        const expDesc = buildXeroExpenseDescription_({
+          label: x.label, invNum, dateReadable,
+          incGST: itemHasGST ? x.amount : null,
+          exGST:  itemHasGST ? exGSTAmt : null
+        });
         rows.push(mkRow(billContact, billRef, eventRef, '', '', expDesc, 1, exGSTAmt.toFixed(2), x.account, itemTaxType));
       });
     }
@@ -5683,7 +5862,11 @@ function buildXeroInvoicesData() {
         const itemHasGST = x.alwaysGST || isGSTContractor;
         const itemTaxType = itemHasGST ? 'INPUT' : 'EXEMPTEXPENSES';
         const exGSTAmt = itemHasGST ? (x.amount / 1.1) : x.amount;
-        const expDesc = buildXeroExpenseDescription_({ label: x.label, invNum, dateReadable });
+        const expDesc = buildXeroExpenseDescription_({
+          label: x.label, invNum, dateReadable,
+          incGST: itemHasGST ? x.amount : null,
+          exGST:  itemHasGST ? exGSTAmt : null
+        });
         lineItems.push({
           Description: expDesc,
           Quantity: 1,
@@ -5805,21 +5988,52 @@ async function pushToXero() {
   showBanner(`Preparing ${invoices.length} bill${invoices.length>1?'s':''} for Xero…`, 'info');
 
   // Fetch PDFs as base64 and attach. Skip silently if a PDF isn't available.
+  // Now also bundles any reimbursement receipts (parking/accom/other) the operator attached
+  // in Step 4 of the Review modal — they ride along to Xero as additional attachments on
+  // the same bill, with descriptive filenames so the bookkeeper sees them grouped:
+  //   "Receipt - Parking - Nathan Coul - Inv MEC260037.jpg"
   let attachedCount = 0;
   for (const inv of invoices) {
     const rowId = inv._rowId;
+    const attachments = [];
+
+    // 1. The contractor's invoice PDF — first attachment, same name convention as the ZIP.
     const pdfUrl = rowId && (typeof invoiceFileData !== 'undefined') && invoiceFileData['id_' + rowId];
     if (pdfUrl) {
       try {
         const blob = await (await fetch(pdfUrl)).blob();
         const base64 = await blobToBase64(blob);
-        // Filename comes from buildXeroInvoicesData using the same convention as the
-        // Invoice PDFs ZIP — "Name - Event 26.05.26 - Inv 1016.pdf" — so Xero's attachment
-        // list matches what's on your computer when you'd previously downloaded the ZIP.
         const filename = inv._pdfFilename || `${(inv._contactName||'Invoice').replace(/[^a-zA-Z0-9 \-_.]/g,'_')} - ${(inv.InvoiceNumber||'Bill').replace(/[^a-zA-Z0-9 \-_.]/g,'_')}.pdf`;
-        inv._attachment = { filename, base64 };
-        attachedCount++;
+        attachments.push({ filename, base64, mimeType: 'application/pdf' });
       } catch (e) { /* PDF unavailable — skip silently, bill still pushes */ }
+    }
+
+    // 2. Reimbursement receipts — bundle any attached files for parking/accommodation/other.
+    // Filename pattern: "Receipt - {Type} - {ContractorName} - Inv {Number}.{ext}" — keeps
+    // them grouped at the top of the Xero attachment list and obvious at a glance.
+    const recs = rowId && (typeof invoiceReceiptData !== 'undefined') && invoiceReceiptData['id_' + rowId];
+    if (recs) {
+      const safe = s => String(s||'').replace(/[^a-zA-Z0-9 \-_.]/g, '_');
+      ['parking', 'accommodation', 'other'].forEach(type => {
+        const entry = recs[type];
+        if (entry && entry.base64 && entry.fileName) {
+          const typeLabel = { parking: 'Parking', accommodation: 'Accommodation', other: 'Other' }[type];
+          // Preserve the original extension from the user-uploaded file.
+          const extMatch = /\.([a-z0-9]+)$/i.exec(entry.fileName);
+          const ext = extMatch ? extMatch[1].toLowerCase() : (entry.mimeType === 'application/pdf' ? 'pdf' : entry.mimeType === 'image/png' ? 'png' : 'jpg');
+          const recFilename = `Receipt - ${typeLabel} - ${safe(inv._contactName||'Performer')} - Inv ${safe(inv.InvoiceNumber||'Bill')}.${ext}`;
+          attachments.push({ filename: recFilename, base64: entry.base64, mimeType: entry.mimeType || 'application/pdf' });
+        }
+      });
+    }
+
+    // Backwards compatibility: keep `_attachment` (singular) populated with the first
+    // attachment so an older Apps Script version (without the array handling) still
+    // attaches at least the invoice PDF. `_attachments` (plural) is the new full list.
+    if (attachments.length) {
+      inv._attachment = attachments[0];
+      inv._attachments = attachments;
+      attachedCount += attachments.length;
     }
   }
 
@@ -5852,6 +6066,17 @@ async function pushToXero() {
           ? processed.find(x => String(x.rowId) === String(src._rowId) || String(x.id) === String(src._rowId))
           : null;
         const recipientEmail = (p && p.contractor && p.contractor.email) || '';
+        // Effective super (post-gate) — must mirror the same logic Step 3 and the Xero bill
+        // build use, otherwise the email body shows a super line that contradicts what was
+        // actually pushed. Three gates must ALL pass for super to be remitted:
+        //   1. p.withholdSuper — per-row "Withhold super?" toggle (off for ineligible contractors)
+        //   2. superDeductionsEnabled() — the global "Include super contributions" switch
+        //   3. p.amounts.super > 0 — there's a non-zero amount to begin with (Type C = 0)
+        // If any gate fails, captured super is 0 → email skips the super sentence entirely.
+        const _superOn = (typeof superDeductionsEnabled === 'function') ? superDeductionsEnabled() : true;
+        const _rawSuper = (p && p.amounts && typeof p.amounts.super === 'number') ? p.amounts.super : 0;
+        const _willWithholdSuper = (p && p.withholdSuper) && _superOn && _rawSuper > 0;
+        const _effectiveSuper = _willWithholdSuper ? _rawSuper : 0;
         _lastPushedInvoices.push({
           invoiceId: inv.InvoiceID,
           reference: inv.InvoiceNumber || src.InvoiceNumber || '',
@@ -5861,8 +6086,11 @@ async function pushToXero() {
           amount: (inv.AmountDue || inv.Total || 0),
           // Captured for the remittance email body so performers see the super
           // breakdown up-front (the full math stays in the attached PDF).
-          superAmount: (p && p.amounts && typeof p.amounts.super === 'number') ? p.amounts.super : 0,
-          superFund: (p && p.contractor && p.contractor.fundName) || ''
+          superAmount: _effectiveSuper,
+          // Only carry the fund name if super was actually withheld — otherwise the email
+          // composer would fall back to "your nominated super fund" wording with $0, which
+          // makes no sense to the performer.
+          superFund: _effectiveSuper > 0 ? ((p && p.contractor && p.contractor.fundName) || '') : ''
         });
       });
     } catch (mapErr) {
