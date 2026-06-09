@@ -5113,65 +5113,92 @@ function xeroReference(name, invNum) {
 // Xero remittance) can follow every calculation: invoice → GST split → super divide →
 // what they receive net. Designed to pre-empt "wait, how did you get $X?" questions.
 function buildXeroFeeDescription_(opts) {
-  // opts: { invNum, dateReadable, perfFeeIncGST, isGST, superAmt, superRate, superBaseExGST? }
+  // opts: { invNum, dateReadable, perfFeeIncGST, isGST, superAmt, superRate, superBaseExGST?, fundName, cName }
+  //   cName: contractor's Xero entity name — appears on header line so the bill is identifiable
+  //          when read in isolation (no need to scroll up to the bill contact).
   //   superBaseExGST: ex-GST base on which super was calculated (defaults to perfFee/1.1 for
-  //   GST contractors, perfFee for non-GST). Pass explicitly for duo-override cases.
+  //          GST contractors, perfFee for non-GST). Pass explicitly for duo-override cases.
   // AU-style number formatter — adds thousands separators ($1,000.00 not $1000.00).
   const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  // Header is just "Inv X · Date" — the "Performance fee" label appears on the content line below
-  // so there's no duplication. Blank line between header and content for readability.
-  const head = `Inv ${opts.invNum || '—'}${opts.dateReadable ? ' · ' + opts.dateReadable : ''}`;
-  const lines = [head, ''];
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // XERO CHARACTER QUIRK: When a bill transitions DRAFT → AWAITING PAYMENT,
+  // Xero strips non-Latin-1 Unicode characters from description text. Confirmed
+  // casualties: → (U+2192 right arrow), − (U+2212 minus), ✓ (U+2713 check).
+  // Confirmed survivors: ÷ × » « ° (all U+00B0–U+00FF, Latin-1 supplement).
+  // So we use » (right guillemet) anywhere we'd previously have used → or ✓,
+  // and the word "less" anywhere we'd have used the minus character.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Two-line header: "Inv X · Contractor Name" then " Event Date(s): Date".
+  // Leading space on line 2 visually inset-aligns it under the inv number.
+  const headLine1 = `Inv ${opts.invNum || '—'}${opts.cName ? ' · ' + opts.cName : ''}`;
+  const headLine2 = opts.dateReadable ? ` Event Date(s): ${opts.dateReadable}` : '';
+  const lines = [headLine1];
+  if (headLine2) lines.push(headLine2);
+  lines.push('');
 
   const perfFee  = opts.perfFeeIncGST || 0;
   const rate     = opts.superRate || 12;
   const divisor  = (100 + rate) / 100;     // 1.12 at 12%
   const superAmt = opts.superAmt || 0;
 
-  // Performance fee breakdown.
-  //   - When super applies: "Gross Super Inclusive Performance Fee" makes it unambiguous
-  //     that the headline figure already includes the super carve-out.
-  //   - When no super: stays plain "Performance fee".
-  const incSuperTag = superAmt > 0;
-  const perfFeeLabel = incSuperTag ? 'Gross Super Inclusive Performance Fee' : 'Performance fee';
-  if (opts.isGST) {
-    const ex  = perfFee / 1.1;
-    const gst = perfFee - ex;
-    lines.push(`${perfFeeLabel} (inc GST): $${fix(perfFee)}`);
-    lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
-  } else {
-    lines.push(`${perfFeeLabel}: $${fix(perfFee)}`);
-  }
-
-  // Super math (explicit ÷ 1.12 and subtraction). "of" instead of "on" — "on" implies super
-  // is added on top, but it's actually carved out of the performance fee.
   if (superAmt > 0) {
+    // ── GROSS SUPER INCLUSIVE PERFORMANCE FEE block ───────────────────────
+    if (opts.isGST) {
+      const ex  = perfFee / 1.1;
+      const gst = perfFee - ex;
+      lines.push('GROSS SUPER INCLUSIVE PERFORMANCE FEE (inc GST):');
+      lines.push(`$${fix(perfFee)}`);
+      lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
+    } else {
+      lines.push('GROSS SUPER INCLUSIVE PERFORMANCE FEE:');
+      lines.push(`$${fix(perfFee)}`);
+    }
+    lines.push('');
+
+    // ── SUPER BREAKDOWN block ─────────────────────────────────────────────
+    // Two-step verification math:
+    //   1. gross ÷ 1.12 = ex-super performance fee
+    //   2. ex-super + super = gross (proves the carve-out reconciles)
+    // Then a separate line names where the super went.
     const baseForSuper = opts.superBaseExGST != null
       ? opts.superBaseExGST
       : (opts.isGST ? (perfFee / 1.1) : perfFee);
     const exSuper = baseForSuper - superAmt;
-    const baseLabel = opts.isGST ? ' ex-GST' : '';
-    lines.push('');
-    lines.push(`${rate}% super of $${fix(baseForSuper)}${baseLabel}:`);
-    lines.push(`  $${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super portion)`);
-    const fundLabel = opts.fundName && opts.fundName !== '—' ? `paid to ${opts.fundName}` : 'paid to your super fund';
-    // NOTE: Xero strips the Unicode minus character (U+2212) when an invoice transitions from
-    // DRAFT → APPROVED. Math like "$850 − $565 = $84.78" becomes "$850 $565 = $84.78" which is
-    // unreadable. Use the word "less" instead — safe across all states + clearer for performers.
-    lines.push(`  $${fix(baseForSuper)} less $${fix(exSuper)} = $${fix(superAmt)} super → ${fundLabel}`);
 
+    lines.push('SUPER BREAKDOWN:');
+    lines.push(`$${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super Performance Fee)`);
+    lines.push(`$${fix(exSuper)} (ex-super Performance Fee) + $${fix(superAmt)} (${rate}% Super) = $${fix(baseForSuper)}`);
+    lines.push('');
+
+    const fundLabel = opts.fundName && opts.fundName !== '—'
+      ? `paid to ${opts.fundName}`
+      : 'paid to your super fund';
+    lines.push(`$${fix(superAmt)} super » ${fundLabel}`);
+    lines.push('');
+
+    // ── You receive on this line ──────────────────────────────────────────
     const netInc = perfFee - superAmt;
     const invoiceLabel = opts.isGST ? 'invoice inc GST' : 'invoice';
-    // Extra blank lines provide a clear section break before "You receive" so it doesn't blur
-    // into the super math above when read in the Xero bill.
-    lines.push('');
-    lines.push('');
     lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''}`);
-    lines.push(`  $${fix(perfFee)} (${invoiceLabel}) less $${fix(superAmt)} (super) = $${fix(netInc)} net`);
+    lines.push(`$${fix(perfFee)} (${invoiceLabel}) less $${fix(superAmt)} (super) =`);
+    lines.push(`$${fix(netInc)} net`);
     if (opts.isGST) {
       const netEx = netInc / 1.1;
       const netGst = netInc - netEx;
+      lines.push('');
       lines.push(`  In Xero: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
+    }
+  } else {
+    // No super case — plain performance fee.
+    if (opts.isGST) {
+      const ex  = perfFee / 1.1;
+      const gst = perfFee - ex;
+      lines.push(`Performance fee (inc GST): $${fix(perfFee)}`);
+      lines.push(`  = $${fix(ex)} (ex-GST) + $${fix(gst)} (10% GST)`);
+    } else {
+      lines.push(`Performance fee: $${fix(perfFee)}`);
     }
   }
 
@@ -5188,7 +5215,8 @@ function buildXeroExpenseDescription_(opts) {
 function buildXeroSuperMemoDescription_(superAmt, fundName) {
   const fix = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fundLabel = (fundName && fundName !== '—') ? fundName : 'your super fund';
-  return `✓ $${fix(superAmt)} superannuation has been remitted to ${fundLabel} on your behalf`;
+  // » (U+00BB, Latin-1) instead of ✓ (U+2713) — Xero strips the tick on approval but » survives.
+  return `» $${fix(superAmt)} superannuation has been remitted to ${fundLabel} on your behalf`;
 }
 
 // Multi-line description for a super-bill line item. Replaces the cryptic single-line
@@ -5207,7 +5235,7 @@ function buildXeroSuperBillDescription_(opts) {
     '',
     `${opts.rate}% super of $${fix(baseEx)} performance fee${baseLabel}:`,
     `  $${fix(baseEx)} ÷ ${divisor.toFixed(2)} = $${fix(performerShare)} (performer's ex-super share)`,
-    `  $${fix(baseEx)} less $${fix(performerShare)} = $${fix(opts.superAmt)} super${opts.fundName && opts.fundName !== '—' ? ' → paid to ' + opts.fundName : ''}`,
+    `  $${fix(baseEx)} less $${fix(performerShare)} = $${fix(opts.superAmt)} super${opts.fundName && opts.fundName !== '—' ? ' » paid to ' + opts.fundName : ''}`,
   ];
   return lines.join('\n');
 }
@@ -5287,7 +5315,8 @@ function exportXeroCSV() {
     const feeDesc = buildXeroFeeDescription_({
       invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_csv, isGST: isGSTContractor,
       superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_csv,
-      fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
+      fundName: c.fundName || (p.contractor && p.contractor.fundName) || null,
+      cName: billContact
     });
 
     // Bill 1 pays the contractor NET as a single fee line — NO negative super line on the bill.
@@ -5333,7 +5362,8 @@ function exportXeroCSV() {
           isGST: isGSTContractor, superAmt: lineSuperAmt,
           superRate: p.superRate || 12,
           superBaseExGST: lineSuperBaseExGST,
-          fundName: c.fundName || (p.contractor && p.contractor.fundName) || null
+          fundName: c.fundName || (p.contractor && p.contractor.fundName) || null,
+          cName: billContact
         });
         rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), lineDesc, 1, amt.toFixed(2), acctCode, taxType));
       });
@@ -5505,7 +5535,8 @@ function buildXeroInvoicesData() {
           isGST: isGSTContractor, superAmt: lineSuperAmt,
           superRate: p.superRate || 12,
           superBaseExGST: lineSuperBaseExGST,
-          fundName: (p.contractor && p.contractor.fundName) || null
+          fundName: (p.contractor && p.contractor.fundName) || null,
+          cName: billContact
         });
         lineItems.push({
           Description: desc,
@@ -5522,7 +5553,8 @@ function buildXeroInvoicesData() {
       const desc = buildXeroFeeDescription_({
         invNum, dateReadable, perfFeeIncGST: perfFeeIncGST_push, isGST: isGSTContractor,
         superAmt, superRate: p.superRate || 12, superBaseExGST: superBaseExGST_push,
-        fundName: (p.contractor && p.contractor.fundName) || null
+        fundName: (p.contractor && p.contractor.fundName) || null,
+        cName: billContact
       });
       lineItems.push({
         Description: desc,
@@ -5734,7 +5766,11 @@ async function pushToXero() {
           invoiceNumber: src.InvoiceNumber || '',
           contactName: (inv.Contact && inv.Contact.Name) || src._contactName || '',
           recipientEmail,
-          amount: (inv.AmountDue || inv.Total || 0)
+          amount: (inv.AmountDue || inv.Total || 0),
+          // Captured for the remittance email body so performers see the super
+          // breakdown up-front (the full math stays in the attached PDF).
+          superAmount: (p && p.amounts && typeof p.amounts.super === 'number') ? p.amounts.super : 0,
+          superFund: (p && p.contractor && p.contractor.fundName) || ''
         });
       });
     } catch (mapErr) {
@@ -5974,12 +6010,25 @@ async function runSendRemittances() {
       // 2. Compose + send via Gmail
       const subject = `Remittance Advice — ${bill.reference || 'INV-' + bill.invoiceNumber} — paid ${new Date().toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' })}`;
       const greeting = (bill.contactName || '').split(/\s+/)[0] || 'there';
-      const bodyText = `Hi ${greeting},\n\nYour remittance for ${bill.reference || 'invoice ' + bill.invoiceNumber} has been processed.\n\nPayment of $${(bill.amount||0).toFixed(2)} was sent to your bank.\n\nFull breakdown is attached as a PDF — it shows the performance fee, any super deducted (and which fund it went to), and any reimbursements.\n\nAny questions, just reply to this email.\n\nThanks,\nMelbourne Entertainment Co`;
+      const cashAmt = (bill.amount || 0);
+      const superAmt = (bill.superAmount || 0);
+      const fundName = (bill.superFund || '').trim();
+      // Super line is conditional — only show it if super was actually deducted on this bill.
+      // Fund-name fallback: if Zoho didn't have the fund recorded, say "your nominated super fund"
+      // rather than printing a confusing dash. The PDF will show the full breakdown either way.
+      const superLineText = superAmt > 0
+        ? `Superannuation of $${superAmt.toFixed(2)} was sent to ${fundName || 'your nominated super fund'}.\n\n`
+        : '';
+      const superLineHtml = superAmt > 0
+        ? `<p>Superannuation of <strong>$${superAmt.toFixed(2)}</strong> was sent to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
+        : '';
+      const bodyText = `Hi ${greeting},\n\nYour remittance for ${bill.reference || 'invoice ' + bill.invoiceNumber} has been processed.\n\nPayment of $${cashAmt.toFixed(2)} was sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super deducted, and any reimbursements.\n\nAny questions, just reply to this email.\n\nThanks,\nMelbourne Entertainment Co`;
       const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1B2733;line-height:1.6">
         <p>Hi ${escHtml(greeting)},</p>
         <p>Your remittance for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> has been processed.</p>
-        <p>Payment of <strong>$${(bill.amount||0).toFixed(2)}</strong> was sent to your bank.</p>
-        <p>The <strong>full breakdown is attached as a PDF</strong> — it shows the performance fee, any super deducted (and which fund it went to), and any reimbursements.</p>
+        <p>Payment of <strong>$${cashAmt.toFixed(2)}</strong> was sent to your bank.</p>
+        ${superLineHtml}
+        <p>The <strong>full breakdown is attached as a PDF</strong> — performance fee, any super deducted, and any reimbursements.</p>
         <p>Any questions, just reply.</p>
         <p>Thanks,<br>Melbourne Entertainment Co</p>
       </div>`;
