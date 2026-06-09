@@ -6097,7 +6097,7 @@ async function runSendRemittances() {
       const superLineHtml = superAmt > 0
         ? `<p>Superannuation of <strong>$${superAmt.toFixed(2)}</strong> will be remitted to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
         : '';
-      const bodyText = `Hi ${greeting},\n\nPlease review the attached payment breakdown for ${bill.reference || 'invoice ' + bill.invoiceNumber} before we process it.\n\nPayment of $${cashAmt.toFixed(2)} will be sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super, and any reimbursements.\n\nIf anything doesn't look right, please reply within 24 hours so we can adjust before lodging. If everything checks out, no action needed.\n\nThanks,\nMelbourne Entertainment Co`;
+      const bodyText = `Hi ${greeting},\n\nPlease review the attached payment breakdown for ${bill.reference || 'invoice ' + bill.invoiceNumber} before we process it.\n\nPayment of $${cashAmt.toFixed(2)} will be sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super, and any reimbursements.\n\nIf anything doesn't look right, please reply within 24 hours so we can adjust before lodging. If everything checks out, no action needed.\n\nThanks\nAccounts Team\nMelbourne Entertainment Company`;
       const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1B2733;line-height:1.6">
         <p>Hi ${escHtml(greeting)},</p>
         <p>Please review the attached payment breakdown for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> before we process it.</p>
@@ -6105,7 +6105,7 @@ async function runSendRemittances() {
         ${superLineHtml}
         <p>The <strong>full breakdown is attached as a PDF</strong> — performance fee, any super, and any reimbursements.</p>
         <p>If anything doesn't look right, please <strong>reply within 24 hours</strong> so we can adjust before lodging. If everything checks out, no action needed.</p>
-        <p>Thanks,<br>Melbourne Entertainment Co</p>
+        <p>Thanks<br>Accounts Team<br>Melbourne Entertainment Company</p>
       </div>`;
 
       // Filename: mirror the contractor invoice PDF naming convention so attachments are
