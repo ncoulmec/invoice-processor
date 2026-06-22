@@ -3528,12 +3528,32 @@ function rvGroupSyncRows() {
           <div><label style="display:block;margin-bottom:2px">📦 Other $</label><input type="number" placeholder="0" min="0" step="0.01" style="${inp}"></div>
         </div>
         ${isLead
-          ? '<div style="margin-top:9px;font-size:10px;color:#7A8896;font-style:italic">Lead performer — no separate upload needed (this invoice IS the lead\'s).</div>'
+          ? `<div style="margin-top:9px;padding:7px 10px;background:#EAF7EF;border:1px solid #BCE3CE;border-radius:5px;font-size:10.5px;color:#1F6E48;line-height:1.5">
+               <strong>This invoice IS the lead's.</strong> No separate upload needed — the source PDF you saw at the top of the Review modal IS the band lead's invoice and will be attached to every band member's Xero bill once group splitting is live.
+               <button type="button" onclick="rvGroupPeekLeadInvoice()" title="Open the source invoice PDF in a new tab" style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #BCE3CE;color:#1F6E48;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;margin-left:6px;vertical-align:middle">📄 View source invoice</button>
+             </div>`
           : '<div style="margin-top:9px"><label style="font-size:10px;color:#5B6B7B;font-weight:600;display:block;margin-bottom:3px">📎 This performer\'s own invoice (split evidence)</label><input type="file" accept="application/pdf" style="font-size:10px"><div style="font-size:10px;color:#7A8896;margin-top:2px">Required so MEC can split the bills and apply super correctly per performer.</div></div>'}
       </div>`;
     container.appendChild(row);
   }
   rvGroupUpdateSum();
+}
+
+// Opens the lead's source invoice PDF in a new tab. Used by Card 6's "View source invoice"
+// peek button so the operator can confirm at a glance what the lead's PDF actually shows
+// without having to scroll back up to the PDF panel of the Review modal.
+function rvGroupPeekLeadInvoice() {
+  const id = reviewModalRowId;
+  if (!id) return;
+  const pdfUrl = (typeof invoiceFileData !== 'undefined') && invoiceFileData['id_' + id];
+  if (!pdfUrl) {
+    alert('Source invoice PDF not available for this row — it may have been a manual entry without an attached PDF.');
+    return;
+  }
+  // Open in a new tab. The PDF URL is an object URL backed by the original File blob,
+  // so the browser will render it inline. Falls back to download if the popup is blocked.
+  const win = window.open(pdfUrl, '_blank');
+  if (!win) alert('Popup was blocked. Allow popups for this page and try again.');
 }
 
 function rvGroupUpdateSum() {
@@ -3818,6 +3838,13 @@ function reviewLooksGood() {
 
 // Silent variant of processInvoices() — same data-build logic, no alerts / no view switch.
 // Used by reviewLooksGood() when an edit needs to be reflected in an already-open Step 3.
+//
+// MUST stay byte-identical to processInvoices's row.map(...) body (sans the alert + the
+// gotoStep transition + the unmatched confirm dialog). Previously this version was a
+// hand-rolled stripped-down build that DIDN'T set fields like `matched`, `matchSource`,
+// `gstMismatch`, `bookingMatch`, missed the ABR fallback, and missed the GST type override.
+// Result: editing an invoice from inside Step 3 silently un-linked its Zoho contractor.
+// Now we mirror the real function exactly so Step 3 looks correct after an in-place edit.
 function processInvoices_silent_() {
   const rows = collectRows();
   if (!rows.length) return;
@@ -3828,47 +3855,50 @@ function processInvoices_silent_() {
     if (contractor) {
       type = contractor.type || (contractor.gst ? 'B' : 'A');
       matchSource = 'zoho';
-    } else if (row.abrData) {
-      type = row.hasGST ? 'B' : 'A';
+    } else if (row.abrData && row.abrData.isActive) {
+      const isCompany = row.abrData.isCompany;
+      const isGST = row.abrData.isGST;
+      type = isCompany ? (isGST ? 'D' : 'C') : (isGST ? 'B' : 'A');
       matchSource = 'abr';
     }
-    const typeOverride = window.invoiceTypeData?.['id_' + row.id];
-    if (typeOverride && ['A','B','C','D'].includes(typeOverride)) type = typeOverride;
-    if (!['A','B','C','D'].includes(type)) type = row.hasGST ? 'B' : 'A';
-
-    const expenses = invoiceExpenseData['id_' + row.id] || { parking: 0, accommodation: 0, travel: 0, other: 0 };
-    const reimbTotal = (expenses.parking || 0) + (expenses.accommodation || 0) + (expenses.travel || 0) + (expenses.other || 0);
-    const serviceFee = row.total - reimbTotal;
-    const linkedBookings = invoiceBookingData['id_' + row.id] || [];
-
-    const p = {
-      id:           String(row.id),
-      rowId:        String(row.id),
-      name:         row.name,
-      invoiceNumber: row.inv,
-      date:         row.date,
-      perfDate:     row.perfDate,
-      total:        row.total,
-      abn:          row.abn,
-      type:         type,
-      matchSource:  matchSource,
-      contractor:   contractor,
-      serviceFee:   serviceFee,
-      expenses:     expenses,
-      linkedBookings: linkedBookings,
-      withholdSuper: row.withholdSuper !== false,
-      paidInZoho:   row.paidInZoho || false
-    };
-    p.superRate = superRateFor(p.contractor);
-    p.amounts = calculateAmounts(p.serviceFee, type, p.superRate);
-    // Per-row super share override (duo split) — apply if present.
-    const shareOverride = invoiceSuperShareData['id_' + row.id];
-    if (typeof shareOverride === 'number' && shareOverride > 0) {
-      p.superBase = shareOverride;
-      const baseEx = ['B','D'].includes(type) ? (shareOverride / 1.1) : shareOverride;
-      p.amounts.super = Math.round(baseEx * p.superRate / (100 + p.superRate) * 100) / 100;
+    // GST override: invoice is the legal document — if it charges GST, use the GST-inclusive type.
+    if (type !== 'UNKNOWN' && row.hasGST && contractor && !contractor.gst) {
+      type = type === 'A' ? 'B' : type === 'C' ? 'D' : type;
     }
-    return p;
+    const superRate = superRateFor(contractor);
+    const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type, superRate) : null;
+    const gstMismatch = contractor && row.hasGST && !contractor.gst
+      ? { contractorId: contractor.id, contractorName: contractor.name, invoiceGST: true, zohoGST: false }
+      : null;
+    const bookingMatch = getBookingMatchForRow(row.name, row.total, row.date, row.linkedBookings);
+    const hasLinkedBooking = !!(row.linkedBookings && row.linkedBookings.length);
+    const alreadyPaidInZoho = hasLinkedBooking && !!(bookingMatch?.alreadyPaid);
+    const superByType = ['A','B'].includes(type);
+    const withholdSuper = (row.withholdSuper != null) ? (row.withholdSuper && superByType) : superByType;
+    return {
+      ...row,
+      contractor,
+      type,
+      amounts,
+      matched: type !== 'UNKNOWN',
+      matchSource,
+      gstMismatch,
+      alreadyPaid: false,
+      alreadyPaidInZoho,
+      manuallyExcluded: false,
+      withholdSuper,
+      superRate,
+      bookingMatch,
+      id: i,
+    };
+  });
+  // Same sort as processInvoices() so Step 3 ordering doesn't reshuffle on edit.
+  processed.sort((a, b) => {
+    if (a.invoiceType === 'ap' && b.invoiceType !== 'ap') return 1;
+    if (a.invoiceType !== 'ap' && b.invoiceType === 'ap') return -1;
+    const na = (a.contractor?.name || a.name || '').toLowerCase();
+    const nb = (b.contractor?.name || b.name || '').toLowerCase();
+    return na < nb ? -1 : na > nb ? 1 : 0;
   });
 }
 
@@ -4857,12 +4887,22 @@ function buildBreakdownHtml(p) {
   // Now you read top→bottom and the math lands on the same number you'd add up yourself.
   const r2x = n => Math.round((n||0)*100)/100;
   const perfFeeNetIncGST = r2x(perfFeeIncGST - superAmt);
+  // ex-GST cash share for GST contractors: perf-fee ex-GST after super carve-out. The
+  // performer receives this PLUS the original perf-fee GST = perfFeeNetIncGST above.
+  const perfFeeNetExGST  = r2x(perfFeeExGST - superAmt);
   const performerLines = [
     {
       label: 'Perf fee net (inc GST)',
-      // Tiny sub-line shows how perf-fee-net was derived (inc-GST minus super). Operator-only,
-      // not visible to the performer. Helps quick verification at a glance.
-      sub: superAmt > 0 ? `${$(perfFeeIncGST)} &minus; ${$(superAmt)} super` : '',
+      // Tiny sub-line shows how the inc-GST figure was assembled. Operator-only — helps
+      // quick verification at a glance.
+      //   - GST contractor: split into "$X ex-GST + $Y GST" so the GST portion is visible.
+      //     Admin staff don't have to mentally derive what fraction is the performer's
+      //     true earning vs the GST they'll remit themselves.
+      //   - Non-GST contractor with super: show "$gross − $super super" (existing behaviour).
+      //   - Non-GST contractor no super: no sub.
+      sub: isGST
+        ? `${$(perfFeeNetExGST)} ex-GST + ${$(perfFeeGST)} GST`
+        : (superAmt > 0 ? `${$(perfFeeIncGST)} &minus; ${$(superAmt)} super` : ''),
       amt: perfFeeNetIncGST
     },
     { label: 'Parking',       sub: '', amt: parking },
@@ -5124,6 +5164,32 @@ function buildResultsView() {
     </tr>`;
   }).join('');
 
+  // ── Group clustering ────────────────────────────────────────────────────────
+  // Detect rows linked to the same Zoho booking. When 2+ event rows share a bookingId
+  // (e.g. five band members of "The Wedding Band" each invoicing the same gig), we add a
+  // small "↳ X of Y from [Booking Name]" chip and a coloured left-border to each grouped
+  // row so the operator can see at a glance which bills belong together. This is the
+  // Phase 1 visual cue — actual data-model linking (one source PDF → N bills) comes later.
+  const groupByBooking = {};
+  eventProcessed.forEach(p => {
+    if (!Array.isArray(p.linkedBookings)) return;
+    p.linkedBookings.forEach(lb => {
+      if (!lb || !lb.bookingId) return;
+      if (!groupByBooking[lb.bookingId]) groupByBooking[lb.bookingId] = { name: lb.bookingName || 'Booking', rows: [] };
+      groupByBooking[lb.bookingId].rows.push(p.id);
+    });
+  });
+  // Stable colour per booking so the same group keeps the same accent across re-renders.
+  // 6 colours cycled; matches the muted palette the rest of Step 3 uses. Booking IDs are
+  // strings, so we hash to a small int and modulo into the palette.
+  const groupPalette = ['#9F7AEA','#3B82F6','#0EA5E9','#10B981','#F59E0B','#EC4899'];
+  const groupColour = bid => {
+    let h = 0;
+    const s = String(bid);
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return groupPalette[Math.abs(h) % groupPalette.length];
+  };
+
   const tbody = document.getElementById('results-tbody');
   tbody.innerHTML = eventProcessed.map(p => {
     // Wrap each row in its own try-catch so one bad row can't blank the whole table
@@ -5218,7 +5284,24 @@ function buildResultsView() {
           missingReceiptChip = ` <span onclick="openReviewModal('${p.rowId}')" title="Click to attach receipts (or tick 'No receipt' if there isn't one)" style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:#FFF8E1;color:#8A5B12;border:1px solid #E6D3A8;border-radius:4px;padding:1px 6px;cursor:pointer;vertical-align:middle">⚠ ${missing.join(' + ')} receipt${missing.length>1?'s':''} missing</span>`;
         }
       }
-      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}`;
+      // Group cluster chip — only when this row shares its booking with at least one other row.
+      // Shows "↳ 3 of 5 from The Wedding Band" so it's obvious this is part of a multi-bill group.
+      // Index within the cluster (1-based) is determined by the row's position in groupRows[].
+      let groupClusterChip = '';
+      if (Array.isArray(p.linkedBookings)) {
+        for (const lb of p.linkedBookings) {
+          if (!lb || !lb.bookingId) continue;
+          const grp = groupByBooking[lb.bookingId];
+          if (grp && grp.rows.length >= 2) {
+            const idxInCluster = grp.rows.indexOf(p.id);
+            const memberNum = idxInCluster >= 0 ? idxInCluster + 1 : 1;
+            const colour = groupColour(lb.bookingId);
+            groupClusterChip = ` <span title="Linked to the same Zoho booking as ${grp.rows.length - 1} other invoice${grp.rows.length>2?'s':''} in this run" style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:${colour}15;color:${colour};border:1px solid ${colour}50;border-radius:4px;padding:1px 7px;vertical-align:middle">↳ ${memberNum} of ${grp.rows.length} · ${escHtml(grp.name)}</span>`;
+            break; // only show one cluster chip per row even if linked to multiple bookings
+          }
+        }
+      }
+      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}${groupClusterChip}`;
       // Super-details incomplete chip (only when super withholding is ON for this run + this row)
       const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
         ? missingSuperFields(p.contractor) : [];
@@ -5258,7 +5341,21 @@ function buildResultsView() {
             onmouseover="this.style.background='#FEF2F2';this.style.color='#C53030';this.style.borderColor='#FEB2B2'"
             onmouseout="this.style.background='transparent';this.style.color='#94A3B8';this.style.borderColor='#E2E8F0'">✕</button>`
         : '<span style="color:#CBD5E0">—</span>';
-      return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default">
+      // If this row is part of a multi-bill group, paint a coloured left-border on the row
+      // matching the chip colour. Makes clusters scannable at a glance — operator can see
+      // all 5 Wedding Band rows share the same purple stripe even when other rows interleave.
+      let groupBorderStyle = '';
+      if (Array.isArray(p.linkedBookings)) {
+        for (const lb of p.linkedBookings) {
+          if (!lb || !lb.bookingId) continue;
+          const grp = groupByBooking[lb.bookingId];
+          if (grp && grp.rows.length >= 2) {
+            groupBorderStyle = `box-shadow:inset 3px 0 0 0 ${groupColour(lb.bookingId)};`;
+            break;
+          }
+        }
+      }
+      return `<tr onmouseenter="showRowBreakdown(event, '${p.id}')" onmouseleave="hideRowBreakdown()" onmousemove="moveRowBreakdown(event)" style="cursor:default;${groupBorderStyle}">
         <td>${nameCell}${superGapWarn}${paidWarn}${gstWarn}${abrSuperNote}${zohoBtn}</td>
         <td>${p.invoiceNumber||'—'}</td>
         <td>${p.date||'—'}</td>
@@ -5437,12 +5534,18 @@ function buildXeroFeeDescription_(opts) {
     // ── You receive on this line ──────────────────────────────────────────
     // Nathan removed the "less super" line — frames the takeaway positively: the headline
     // figure IS your performance fee, super is added on top by us, not deducted from you.
+    // For GST contractors, the ex-GST + GST math is folded INTO this line (instead of a
+    // separate "In Xero:" line below) so the math lives next to the headline figure.
     const netInc = perfFee - superAmt;
-    lines.push(`You receive on this line: $${fix(netInc)}${opts.isGST ? ' (inc GST)' : ''} (your true Performance Fee before super is added)`);
     if (opts.isGST) {
-      const netEx = netInc / 1.1;
-      const netGst = netInc - netEx;
-      lines.push(`  In Xero: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
+      // Round-end so the breakdown matches what Xero actually computes on the bill line:
+      // ex-GST × 1.1 must reconcile to the inc-GST figure.
+      const netEx = Math.round((netInc / 1.1) * 100) / 100;
+      const netGst = Math.round((netInc - netEx) * 100) / 100;
+      lines.push(`You receive on this line: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)} (inc GST)`);
+      lines.push(`(your true Performance Fee before super is added)`);
+    } else {
+      lines.push(`You receive on this line: $${fix(netInc)} (your true Performance Fee before super is added)`);
     }
   } else {
     // No super case — plain performance fee.
@@ -5591,9 +5694,17 @@ function exportXeroCSV() {
     // is net-of-super ex-GST (Xero re-adds 10% via "GST on Expenses").
     // NOTE (accountant): claiming GST on the net slightly reduces the GST credit vs the gross
     // invoice — kept this way per the requested clean two-bill split (no in-bill deduction line).
+    //
+    // ── Rounding fix (Jun 2026) ─────────────────────────────────────────────────
+    // For GST contractors, the old formula was `grossFee - superAmt/1.1`, which rounded both
+    // operands BEFORE subtracting (e.g. $590.91 − $57.55 = $533.36). The description shown to
+    // the performer derives the same number a different way: $(perfFeeIncGST − superAmt) / 1.1
+    // (= $586.69 ÷ 1.1 = $533.35). Algebraically identical, but rounding at different points
+    // gave a 1-cent discrepancy between the Xero bill total ($586.70) and the popover claim
+    // ($586.69). Switched to the description's formula so Xero matches the popover exactly.
     const grossFee = a.unitAmount + a.super;   // ex-GST service fee (B) / full service fee (A)
     const feeAmount = isGSTContractor
-      ? (grossFee - superAmt / 1.1)
+      ? Math.round(((perfFeeIncGST_csv - superAmt) / 1.1) * 100) / 100
       : (grossFee - superAmt);
     // One fee line per EVENT DATE when an invoice covers multiple bookings — split by each
     // booking's cost, with the LAST line absorbing rounding so the lines always sum to the net
@@ -5771,9 +5882,13 @@ function buildXeroInvoicesData() {
       ? ` | $${assessable.toFixed(2)} Total Assessable - $${superAmt.toFixed(2)} superannuation (12%) deducted and remitted to your super fund on your behalf`
       : '';
 
+    // Same rounding fix as the CSV path above — use the description's formula so the Xero
+    // bill total matches the popover ($586.69, not $586.70). The legacy formula compounded
+    // a 1-cent rounding gap when both grossFee and superAmt/1.1 were rounded separately.
     const grossFee = (a.unitAmount || 0) + (a.super || 0);
+    const perfFeeIncGST_feeCalc = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
     const feeAmount = isGSTContractor
-      ? (grossFee - superAmt / 1.1)
+      ? Math.round(((perfFeeIncGST_feeCalc - superAmt) / 1.1) * 100) / 100
       : (grossFee - superAmt);
 
     const lineItems = [];
@@ -6319,17 +6434,20 @@ async function runSendRemittances() {
       const cashAmt = (bill.amount || 0);
       const superAmt = (bill.superAmount || 0);
       const fundName = (bill.superFund || '').trim();
+      // AU-style dollar formatter — adds thousands separators ($2,696.57 not $2696.57).
+      // Same convention used in the Xero bill descriptions for visual consistency.
+      const $fmt = n => (Math.round((n||0)*100)/100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const superLineText = superAmt > 0
-        ? `Superannuation of $${superAmt.toFixed(2)} will be remitted to ${fundName || 'your nominated super fund'}.\n\n`
+        ? `Superannuation of $${$fmt(superAmt)} will be remitted to ${fundName || 'your nominated super fund'}.\n\n`
         : '';
       const superLineHtml = superAmt > 0
-        ? `<p>Superannuation of <strong>$${superAmt.toFixed(2)}</strong> will be remitted to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
+        ? `<p>Superannuation of <strong>$${$fmt(superAmt)}</strong> will be remitted to <strong>${escHtml(fundName || 'your nominated super fund')}</strong>.</p>`
         : '';
-      const bodyText = `Hi ${greeting},\n\nPlease review the attached payment breakdown for ${bill.reference || 'invoice ' + bill.invoiceNumber} before we process it.\n\nPayment of $${cashAmt.toFixed(2)} will be sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super, and any reimbursements.\n\nIf anything doesn't look right, please reply within 24 hours so we can adjust before lodging. If everything checks out, no action needed.\n\nThanks\nAccounts Team\nMelbourne Entertainment Company`;
+      const bodyText = `Hi ${greeting},\n\nPlease review the attached payment breakdown for ${bill.reference || 'invoice ' + bill.invoiceNumber} before we process it.\n\nPayment of $${$fmt(cashAmt)} will be sent to your bank.\n\n${superLineText}The full breakdown is attached as a PDF — performance fee, any super, and any reimbursements.\n\nIf anything doesn't look right, please reply within 24 hours so we can adjust before lodging. If everything checks out, no action needed.\n\nThanks\nAccounts Team\nMelbourne Entertainment Company`;
       const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1B2733;line-height:1.6">
         <p>Hi ${escHtml(greeting)},</p>
         <p>Please review the attached payment breakdown for <strong>${escHtml(bill.reference || 'invoice ' + bill.invoiceNumber)}</strong> before we process it.</p>
-        <p>Payment of <strong>$${cashAmt.toFixed(2)}</strong> will be sent to your bank.</p>
+        <p>Payment of <strong>$${$fmt(cashAmt)}</strong> will be sent to your bank.</p>
         ${superLineHtml}
         <p>The <strong>full breakdown is attached as a PDF</strong> — performance fee, any super, and any reimbursements.</p>
         <p>If anything doesn't look right, please <strong>reply within 24 hours</strong> so we can adjust before lodging. If everything checks out, no action needed.</p>
@@ -7788,34 +7906,48 @@ function gmailRenderStaging() {
   summary.innerHTML = s;
 
   tbody.innerHTML = '';
-  // Render in THREE stacked sections: due-for-submission, already-fetched, other.
-  // "Other" is the catch-all for emails q5 returned that didn't match any invoice heuristic —
-  // so the operator can still spot something the tool missed (Jaaz/Joel-style edge cases).
+  // Render in FOUR stacked sections (added "LINK-ONLY" in Jun 2026):
+  //   1. DUE FOR SUBMISSION  — PDF attached, normal auto-import path
+  //   2. LINK-ONLY INVOICES  — body has a known invoice-platform URL but no PDF attached.
+  //      Square (Pattern A) supports auto-fetch via the proxy; others fall back to manual
+  //      "Open ↗" + upload. Grouped so Abby/Hamilton can bulk-handle them.
+  //   3. ALREADY FETCHED     — previously imported in this session
+  //   4. OTHER RECENT EMAILS — q5 catch-all for edge cases the tool didn't classify
   const anyFetched = gmailStagingItems.some(i => i.fetched);
   const anyOther = gmailStagingItems.some(i => i.type === 'other');
-  const sortFn = (a, b) => {
-    if (a.it.fetched !== b.it.fetched) return a.it.fetched ? 1 : -1;
-    const aOther = a.it.type === 'other', bOther = b.it.type === 'other';
-    if (aOther !== bOther) return aOther ? 1 : -1;
-    return 0; // preserve relative order within sections
+  const anyLink = gmailStagingItems.some(i => i.type === 'link' && !i.fetched);
+  // Rank determines section order. Items within the same rank preserve their original order.
+  const sectionRank = it => {
+    if (it.type === 'other') return 3;
+    if (it.fetched) return 2;
+    if (it.type === 'link') return 1;
+    return 0; // attachment / unknown — main "due" section
   };
-  const order = gmailStagingItems.map((it, i) => ({ it, i })).sort(sortFn);
-  const sectionDone = { due: false, fetched: false, other: false };
+  const order = gmailStagingItems
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => sectionRank(a.it) - sectionRank(b.it));
+  const sectionDone = { due: false, link: false, fetched: false, other: false };
   order.forEach(({ it: item, i: idx }) => {
-    const isOther = item.type === 'other';
-    if (!item.fetched && !isOther && (anyFetched || anyOther) && !sectionDone.due) {
+    const rank = sectionRank(item);
+    if (rank === 0 && (anyFetched || anyOther || anyLink) && !sectionDone.due) {
       const dh = document.createElement('tr');
       dh.innerHTML = `<td colspan="10" style="background:#E8F4F7;color:#1D7A8C;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">📥 DUE FOR SUBMISSION</td>`;
       tbody.appendChild(dh);
       sectionDone.due = true;
     }
-    if (item.fetched && !sectionDone.fetched) {
+    if (rank === 1 && !sectionDone.link) {
+      const lh = document.createElement('tr');
+      lh.innerHTML = `<td colspan="10" style="background:#FFF8E1;color:#8A5B12;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">🔗 LINK-ONLY INVOICES (no PDF attached — click 🔄 Auto-fetch to try grabbing it via the proxy, or Open ↗ to view in browser)</td>`;
+      tbody.appendChild(lh);
+      sectionDone.link = true;
+    }
+    if (rank === 2 && !sectionDone.fetched) {
       const fh = document.createElement('tr');
       fh.innerHTML = `<td colspan="10" style="background:#EDF2F7;color:#5A7A86;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.5px">✓ ALREADY FETCHED (previously imported) · tick a row to re-import for testing</td>`;
       tbody.appendChild(fh);
       sectionDone.fetched = true;
     }
-    if (isOther && !sectionDone.other) {
+    if (rank === 3 && !sectionDone.other) {
       const oh = document.createElement('tr');
       oh.innerHTML = `<td colspan="10" style="background:#1B2A4A;color:#E2E8F0;font-size:11px;font-weight:700;padding:8px 12px;letter-spacing:.5px">📭 OTHER RECENT EMAILS (not classified as invoices — manually check if anything was missed)</td>`;
       tbody.appendChild(oh);
@@ -7839,8 +7971,15 @@ function gmailRenderStaging() {
       ? `<span style="color:#5B6B7B;font-size:11px">Not an invoice?</span>`
       : `<span style="color:#aaa;font-size:11px">No PDF</span>`;
     const fromClean = item.from.replace(/<[^>]+>/g,'').replace(/"/g,'').trim();
-    const actionCell = item.type === 'link'
-      ? `<button onclick="window.open('${item.linkUrl.replace(/'/g,"\\'")}','_blank')" style="font-size:11px;padding:3px 8px;cursor:pointer;background:#E8A020;color:#fff;border:none;border-radius:4px" title="${item.linkUrl}">Open ↗</button>`
+    // Action cell for link-only rows: Auto-fetch (Pattern A — proxy → direct PDF) + Open ↗
+    // (fallback for HTML wrappers / SPAs that auto-fetch can't handle yet).
+    const actionCell = item.type === 'link' && !item.fetched
+      ? `<div style="display:flex;gap:4px;flex-wrap:wrap">
+           ${item.autoFetching
+              ? '<span style="font-size:11px;color:#1D7A8C;padding:3px 8px">⏳ Fetching…</span>'
+              : `<button onclick="gmailAutoFetchLink(${idx})" style="font-size:11px;padding:3px 8px;cursor:pointer;background:#1D7A8C;color:#fff;border:none;border-radius:4px;font-weight:600" title="Try to fetch the PDF directly via the proxy (works for Square / direct-PDF links; falls back to Open ↗ on HTML wrappers)">🔄 Auto-fetch</button>`}
+           <button onclick="window.open('${item.linkUrl.replace(/'/g,"\\'")}','_blank')" style="font-size:11px;padding:3px 8px;cursor:pointer;background:#E8A020;color:#fff;border:none;border-radius:4px" title="${item.linkUrl}">Open ↗</button>
+         </div>`
       : '';
 
     // Zoho booking badge — click to open popover listing past/future bookings
@@ -7928,6 +8067,71 @@ function gmailUpdateImportCount() {
 function gmailToggleAll(checked) {
   gmailStagingItems.forEach(item => { if (item.type === 'attachment') item.selected = checked; });
   gmailRenderStaging();
+}
+
+// Auto-fetch a PDF from a "link-only" email by routing the URL through the Apps Script proxy.
+// Pattern A only for now: the URL must respond with Content-Type: application/pdf. Works for
+// Square's "Download Invoice PDF" links (and other platforms with direct-PDF endpoints).
+// Pattern B (HTML wrappers — Stripe, etc.) and Pattern C (JS-rendered SPAs) will surface as
+// errors here and need to be handled via "Open ↗" until those patterns are implemented.
+async function gmailAutoFetchLink(idx) {
+  const item = gmailStagingItems[idx];
+  if (!item || item.type !== 'link' || !item.linkUrl) return;
+  if (item.fetched || item.autoFetching) return;
+
+  const proxyUrl = (localStorage.getItem('xeroProxyUrl') || '').trim();
+  const accessKey = (localStorage.getItem('xeroAccessKey') || '').trim();
+  if (!proxyUrl || !accessKey) {
+    alert('Auto-fetch needs the Xero proxy URL and Access Key set in Settings — those\'re what route the URL through Google Apps Script and back. Configure Settings first, then retry.');
+    return;
+  }
+
+  item.autoFetching = true;
+  gmailRenderStaging();
+
+  try {
+    const res = await fetch(`${proxyUrl}?action=fetchInvoiceFromUrl&key=${encodeURIComponent(accessKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ url: item.linkUrl })
+    });
+    const data = await res.json().catch(() => ({ ok: false, error: 'non-JSON response' }));
+    if (!data.ok) {
+      const detail = data.error || ('status ' + (data.status || '?'));
+      throw new Error(detail);
+    }
+    // Convert base64 → Uint8Array → Blob → File so it slots into the same gmailIngestPDF flow
+    // that Gmail attachments use.
+    const binary = atob(data.pdfBase64);
+    const buf = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+    const blob = new Blob([buf], { type: 'application/pdf' });
+
+    const fromClean = (item.from || '').replace(/<[^>]+>/g, '').replace(/"/g, '').trim() || 'Auto-fetched';
+    const safeName = fromClean.replace(/[^a-zA-Z0-9 \-_.]/g, '_').slice(0, 80);
+    const filename = `${safeName} — auto-fetched.pdf`;
+    const file = new File([blob], filename, { type: 'application/pdf' });
+
+    // Reuse the same ingest path as Gmail attachments — extract → row → file URL → match.
+    await gmailIngestPDF(file, { ...item, filename });
+    // Label the source email so it won't reappear in the next scan.
+    if (item.messageId && typeof gmailEnsureLabel === 'function' && typeof gmailApplyLabel === 'function') {
+      try {
+        if (!gmailInvoiceFetchedLabelId) await gmailEnsureLabel();
+        await gmailApplyLabel(item.messageId);
+      } catch (e) { console.warn('Could not label auto-fetched email:', e); }
+    }
+    item.fetched = true;
+    item.autoFetched = true;
+    item.status = 'imported';
+  } catch (err) {
+    console.error('[gmailAutoFetchLink]', err);
+    item.autoFetchError = String(err.message || err);
+    alert(`Auto-fetch failed for this link:\n\n${err.message || err}\n\nThis URL may need HTML-wrapper handling (Pattern B) — open it manually via the "Open ↗" button and upload the PDF the usual way.`);
+  } finally {
+    item.autoFetching = false;
+    gmailRenderStaging();
+  }
 }
 
 async function gmailImportSelected() {
