@@ -5435,8 +5435,8 @@ function updateSuperToggleUI() {
   if (status) {
     status.style.color = on ? '#27AE60' : '#C05621';
     status.textContent = on
-      ? '✓ Super deductions ON (default from 1 July)'
-      : '⚠ Super deductions OFF — deduction lines excluded from Xero CSV; Super CSV disabled';
+      ? '✓ Super contributions ON'
+      : '⚠ Super contributions OFF — deduction lines excluded from Xero CSV; Super CSV disabled';
   }
   // Dim the Super CSV card when disabled
   if (superCard) superCard.style.opacity = on ? '' : '0.45';
