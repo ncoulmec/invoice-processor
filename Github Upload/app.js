@@ -2187,7 +2187,19 @@ function openReviewModal(id) {
   const abrGSTFlag = abrRowData && abrRowData['id_' + id] && abrRowData['id_' + id].isGST;
   let gstShouldTick;
   let gstSource = '';
-  if (matchForGST) {
+
+  // Bug fix (Jun 2026): if the operator has already reviewed & confirmed this row (via
+  // reviewedRows), their stored GST tick IS the source of truth — don't re-derive from
+  // Zoho on modal reopen. Glavier is Zoho-registered as GST-registered but her specific
+  // invoice was submitted as $0 GST; the operator unticks the yellow box, and the next
+  // reopen would previously force it back to ticked because Zoho took priority.
+  const operatorAlreadyReviewed = (typeof reviewedRows !== 'undefined')
+    && reviewedRows && typeof reviewedRows.has === 'function'
+    && reviewedRows.has(String(id));
+  if (operatorAlreadyReviewed && storedGST !== undefined) {
+    gstShouldTick = !!storedGST;
+    gstSource = storedGST ? 'operator confirmed: charges GST' : 'operator confirmed: no GST on this invoice';
+  } else if (matchForGST) {
     if (matchForGST.gst === true) {
       gstShouldTick = true;
       gstSource = 'from Zoho (registered)';
@@ -3861,9 +3873,16 @@ function processInvoices_silent_() {
       type = isCompany ? (isGST ? 'D' : 'C') : (isGST ? 'B' : 'A');
       matchSource = 'abr';
     }
-    // GST override: invoice is the legal document — if it charges GST, use the GST-inclusive type.
+    // GST override: invoice is the legal document — the operator's yellow-box tick on Step 2
+    // is authoritative because they've cross-checked the actual PDF. Two directions:
+    //   • Zoho says NO but tick IS on  → bump A→B / C→D (invoice charges GST anyway)
+    //   • Zoho says YES but tick IS off → bump B→A / D→C (this specific invoice charges $0 GST,
+    //     even though the contractor is GST-registered. Glavier's case Jun 2026.)
     if (type !== 'UNKNOWN' && row.hasGST && contractor && !contractor.gst) {
       type = type === 'A' ? 'B' : type === 'C' ? 'D' : type;
+    }
+    if (type !== 'UNKNOWN' && !row.hasGST && contractor && contractor.gst) {
+      type = type === 'B' ? 'A' : type === 'D' ? 'C' : type;
     }
     const superRate = superRateFor(contractor);
     const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type, superRate) : null;
@@ -4404,11 +4423,16 @@ function processInvoices() {
       matchSource = 'abr';
     }
 
-    // GST override: invoice is the legal document — if it charges GST, use the GST-inclusive type
-    // regardless of what Zoho says. The gstMismatch flag still alerts the user to investigate.
-    // A (no GST, super) → B (GST, super) | C (no GST, no super) → D (GST, no super)
+    // GST override: invoice is the legal document — the operator's yellow-box tick on Step 2
+    // is authoritative because they've cross-checked the actual PDF. Two directions:
+    //   • Zoho says NO but tick IS on  → bump A→B / C→D (invoice charges GST anyway)
+    //   • Zoho says YES but tick IS off → bump B→A / D→C (this specific invoice charges $0 GST,
+    //     even though the contractor is GST-registered. Glavier's case Jun 2026.)
     if (type !== 'UNKNOWN' && row.hasGST && contractor && !contractor.gst) {
       type = type === 'A' ? 'B' : type === 'C' ? 'D' : type;
+    }
+    if (type !== 'UNKNOWN' && !row.hasGST && contractor && contractor.gst) {
+      type = type === 'B' ? 'A' : type === 'D' ? 'C' : type;
     }
 
     const superRate = superRateFor(contractor);
