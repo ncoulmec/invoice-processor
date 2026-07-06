@@ -6608,7 +6608,14 @@ function buildXeroSuperInvoicesData() {
   const consolidate = !!document.getElementById('super-consolidate')?.checked;
   const todayIso = todayISO();
   const todayReadable = formatDateReadable(todayIso) || todayIso;
-  const conRef = `MEC Super ${todayReadable}`;
+  // Batch fix (Jun 2026): append HH:MM to the reference so each batch push creates a NEW
+  // Xero bill instead of overwriting the previous batch's draft. Xero's Invoices API treats
+  // POSTs with the same InvoiceNumber on the same contact as an upsert — without the time
+  // suffix, Nathan's team's 5-at-a-time batching kept collapsing into one super bill.
+  // Same-minute re-pushes still overwrite (correct — likely an accidental double-click).
+  const nowForBatch = new Date();
+  const batchSuffix = String(nowForBatch.getHours()).padStart(2,'0') + ':' + String(nowForBatch.getMinutes()).padStart(2,'0');
+  const conRef = `MEC Super ${todayReadable} · Batch ${batchSuffix}`;
 
   const superRows = processed.filter(p => p && p.matched && p.invoiceType !== 'ap'
                                        && !p.alreadyPaid && p.withholdSuper)
@@ -6763,7 +6770,11 @@ function exportSuperBillsCSV() {
   // same *InvoiceNumber + dates, so Xero groups them). Otherwise one bill per invoice (default).
   const consolidate = document.getElementById('super-consolidate')?.checked;
   const dateAll = formatDateXero(todayISO());
-  const conRef  = `MEC Super ${formatDateReadable(todayISO())}`;
+  // Same batch fix as pushSuperBillsToXero — HH:MM suffix so consecutive CSV exports don't
+  // collide when re-imported to Xero. Keeps the two paths consistent.
+  const _now = new Date();
+  const _batch = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
+  const conRef  = `MEC Super ${formatDateReadable(todayISO())} · Batch ${_batch}`;
 
   processed.filter(p => p.matched && p.invoiceType !== 'ap' && !p.alreadyPaid
                      && p.withholdSuper && p.amounts?.super > 0)
