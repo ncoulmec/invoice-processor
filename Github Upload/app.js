@@ -2267,6 +2267,13 @@ function openReviewModal(id) {
   // the row has no receipt data yet (renders State 1/2 based on the amount field).
   if (typeof rvHydrateReceiptUI === 'function') rvHydrateReceiptUI();
 
+  // Render the multi-event reimbursement attribution UI if there are 2+ bookings restored.
+  // Deferred until the booking selection is restored (rvSyncMultiPerfPanel later triggers
+  // it too when bookings change), but we also call it here so the first paint is correct.
+  if (typeof rvRenderMultiEventReimbUI === 'function') {
+    setTimeout(() => rvRenderMultiEventReimbUI(), 60);
+  }
+
   // Duo / group super panel — shown when this invoice is flagged as a possible multi-performer act.
   // Restore the share input first so rvUpdateServiceFee()/the mode picker see the saved value.
   const storedShare = invoiceSuperShareData['id_' + id];
@@ -3262,6 +3269,134 @@ function rvReceiptResetEntry(type) {
 }
 
 // Called from openReviewModal to populate the receipt UI when the modal opens for an invoice.
+// ═══════════════════════════════════════════════════════════════════════════
+// Multi-event reimbursement attribution (Card 4 · Jul 2026)
+// ───────────────────────────────────────────────────────────────────────────
+// When 2+ bookings are ticked in Card 2, this renders a small table under the
+// reimbursement inputs so the operator can say WHICH event date each parking /
+// accom / other amount belongs to. Attribution is used at push time: the tool
+// subtracts the attributed amount from that specific Zoho booking's cost before
+// computing the split ratio. Prevents the "Bent Team welded parking into the
+// Entertainment_X_Cost field" issue from smearing across events.
+//
+// Data model — added to invoiceExpenseData['id_X']:
+//   parkingByBooking:       { <zohoBookingId>: <amount>, ... }
+//   accommodationByBooking: { <zohoBookingId>: <amount>, ... }
+//   otherByBooking:         { <zohoBookingId>: <amount>, ... }
+// ═══════════════════════════════════════════════════════════════════════════
+function rvRenderMultiEventReimbUI() {
+  const container = document.getElementById('rv-exp-multi-attrib');
+  if (!container) return;
+  const checkedCbs = Array.from(document.querySelectorAll('.rv-booking-cb:checked'));
+  if (checkedCbs.length < 2) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+
+  const id = reviewModalRowId;
+  const stored = (id != null && invoiceExpenseData['id_' + id]) || {};
+  const parkingBB = stored.parkingByBooking || {};
+  const accomBB   = stored.accommodationByBooking || {};
+  const otherBB   = stored.otherByBooking || {};
+
+  const dateShort = d => {
+    const m = String(d || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return d || '—';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return parseInt(m[3],10) + ' ' + months[parseInt(m[2],10)-1];
+  };
+
+  const bookings = checkedCbs.map(cb => ({
+    id: cb.dataset.bid,
+    name: cb.dataset.name || '',
+    date: cb.dataset.date || '',
+    cost: parseFloat(cb.dataset.cost) || 0
+  })).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  const cellInput = (bookingId, type, val) =>
+    `<input type="number" step="0.01" min="0" placeholder="0" value="${val > 0 ? val : ''}" data-attrib="${type}" data-bid="${bookingId}" oninput="rvOnMultiReimbInput()" style="font-size:11px;padding:4px 6px;width:100%;border:1px solid #CBD5E0;border-radius:4px;text-align:right;background:#fff">`;
+
+  const rowsHtml = bookings.map(b => {
+    const nameShort = (b.name || '').split(/\s+/).slice(0, 3).join(' ');
+    return `<tr>
+      <td style="padding:5px 8px;font-size:11px;color:#5B6B7B;border-top:1px solid #E4E8EC">
+        <strong style="color:#1B2733">${escHtml(dateShort(b.date))}</strong>
+        <div style="font-size:9.5px;color:#94A3B8;margin-top:1px">${escHtml(nameShort)}</div>
+      </td>
+      <td style="padding:5px 6px;border-top:1px solid #E4E8EC">${cellInput(b.id, 'parking', parkingBB[b.id] || 0)}</td>
+      <td style="padding:5px 6px;border-top:1px solid #E4E8EC">${cellInput(b.id, 'accommodation', accomBB[b.id] || 0)}</td>
+      <td style="padding:5px 6px;border-top:1px solid #E4E8EC">${cellInput(b.id, 'other', otherBB[b.id] || 0)}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="background:#F4F8FC;border:1px solid #C8DAEC;border-radius:6px;padding:10px 12px">
+      <div style="font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#3B5AB8;margin-bottom:4px">📅 Multi-event · attribute reimbursements to specific dates</div>
+      <div style="font-size:10.5px;color:#5B6B7B;margin-bottom:8px;line-height:1.4">
+        Enter per-event amounts so each reimbursement is subtracted from the RIGHT Zoho booking's cost before splitting. Supports multiple parkings across dates. Leave empty to auto-distribute proportionally (may smear parking across events).
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #E4E8EC;border-radius:4px;overflow:hidden">
+        <thead>
+          <tr style="background:#EBF4FF">
+            <th style="padding:5px 8px;text-align:left;font-size:10px;color:#5B6B7B;font-weight:700">Event</th>
+            <th style="padding:5px 6px;text-align:right;font-size:10px;color:#5B6B7B;font-weight:700">🚗 Parking</th>
+            <th style="padding:5px 6px;text-align:right;font-size:10px;color:#5B6B7B;font-weight:700">🏨 Accom</th>
+            <th style="padding:5px 6px;text-align:right;font-size:10px;color:#5B6B7B;font-weight:700">📦 Other</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr style="background:#F1F5F9;border-top:2px solid #CBD5E0">
+            <td style="padding:5px 8px;font-size:10.5px;color:#5B6B7B;font-weight:700">Total attributed</td>
+            <td style="padding:5px 8px;text-align:right;font-size:10.5px;color:#1B2733;font-weight:700" id="rv-multi-attrib-total-parking">$0.00</td>
+            <td style="padding:5px 8px;text-align:right;font-size:10.5px;color:#1B2733;font-weight:700" id="rv-multi-attrib-total-accommodation">$0.00</td>
+            <td style="padding:5px 8px;text-align:right;font-size:10.5px;color:#1B2733;font-weight:700" id="rv-multi-attrib-total-other">$0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+  rvOnMultiReimbInput();
+}
+
+// Called when any per-event mini-input changes. Recomputes column totals, then
+// mirrors them into the top-level Card 4 inputs so the existing service-fee math
+// (super base, reimb-line rendering, etc.) picks them up without further changes.
+let _rvMultiReimbSyncing = false;
+function rvOnMultiReimbInput() {
+  const container = document.getElementById('rv-exp-multi-attrib');
+  if (!container || container.style.display === 'none') return;
+  const inputs = container.querySelectorAll('input[data-attrib]');
+  const sums = { parking: 0, accommodation: 0, other: 0 };
+  inputs.forEach(inp => {
+    const type = inp.dataset.attrib;
+    const val = parseFloat(inp.value || '0') || 0;
+    if (sums[type] !== undefined) sums[type] += val;
+  });
+  const money = n => '$' + (Math.round(n * 100) / 100).toFixed(2);
+  ['parking','accommodation','other'].forEach(type => {
+    const el = document.getElementById('rv-multi-attrib-total-' + type);
+    if (el) el.textContent = money(sums[type]);
+  });
+  // Mirror into the top-level inputs so downstream math (super base, totals,
+  // receipt UI) sees the sums. Guarded flag prevents an infinite ping-pong with
+  // rvUpdateServiceFee → which we still call for the breakdown-panel updates.
+  _rvMultiReimbSyncing = true;
+  const setTop = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const cur = parseFloat(el.value || '0') || 0;
+      const newVal = Math.round(val * 100) / 100;
+      if (cur !== newVal) el.value = newVal > 0 ? newVal : '';
+    }
+  };
+  setTop('rv-exp-parking', sums.parking);
+  setTop('rv-exp-accommodation', sums.accommodation);
+  setTop('rv-exp-other', sums.other);
+  _rvMultiReimbSyncing = false;
+  if (typeof rvUpdateServiceFee === 'function') rvUpdateServiceFee();
+}
+
 function rvHydrateReceiptUI() {
   RV_RECEIPT_TYPES.forEach(t => rvRenderReceiptUI(t));
 }
@@ -3621,6 +3756,10 @@ function rvBookingSelectionChanged(userInitiated) {
     }));
   }
 
+  // Re-render the multi-event reimbursement attribution UI — appears/disappears based on
+  // whether 2+ bookings are ticked, and picks up freshly-added/-removed bookings.
+  if (typeof rvRenderMultiEventReimbUI === 'function') rvRenderMultiEventReimbUI();
+
   // Auto-fill performance date from the FIRST checked booking's event date.
   // Fill ONLY when the field is empty, OR when the user actively (re)selected a booking
   // (userInitiated). The initial auto-default render passes no flag, so it will NOT overwrite
@@ -3774,13 +3913,37 @@ function reviewLooksGood() {
     delete invoiceSuperShareData['id_' + id];
   }
 
-  // Save expense splits
+  // Save expense splits — plus per-event attribution maps when the multi-event UI is present.
+  // The maps let the push code subtract each reimbursement from the specific Zoho booking's
+  // cost before computing the split ratio (fixes the "parking baked into Entertainment_X_Cost"
+  // problem — see rvRenderMultiEventReimbUI comment).
   const expParking       = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
   const expAccommodation = parseFloat(document.getElementById('rv-exp-accommodation')?.value || '0') || 0;
   const expTravel        = parseFloat(document.getElementById('rv-exp-travel')?.value || '0') || 0;
   const expOther         = parseFloat(document.getElementById('rv-exp-other')?.value || '0') || 0;
+  const collectAttribution = (type) => {
+    const nodes = document.querySelectorAll('#rv-exp-multi-attrib input[data-attrib="' + type + '"]');
+    const map = {};
+    nodes.forEach(inp => {
+      const bid = inp.dataset.bid;
+      const val = parseFloat(inp.value || '0') || 0;
+      if (bid && val > 0) map[bid] = val;
+    });
+    return map;
+  };
+  const parkingByBooking       = collectAttribution('parking');
+  const accommodationByBooking = collectAttribution('accommodation');
+  const otherByBooking         = collectAttribution('other');
   if (expParking > 0 || expAccommodation > 0 || expTravel > 0 || expOther > 0) {
-    invoiceExpenseData['id_' + id] = { parking: expParking, accommodation: expAccommodation, travel: expTravel, other: expOther };
+    invoiceExpenseData['id_' + id] = {
+      parking: expParking,
+      accommodation: expAccommodation,
+      travel: expTravel,
+      other: expOther,
+      parkingByBooking,
+      accommodationByBooking,
+      otherByBooking
+    };
   } else {
     delete invoiceExpenseData['id_' + id];
   }
@@ -5734,15 +5897,30 @@ function exportXeroCSV() {
     // booking's cost, with the LAST line absorbing rounding so the lines always sum to the net
     // fee (bill total unchanged). Same billRef → Xero keeps them on ONE bill. Single-date invoices
     // are unchanged (one line, original description).
+    //
+    // Attribution fix (Jul 2026): the Bent Team includes parking/accom amounts inside Zoho's
+    // Entertainment_X_Cost fields. If we split by raw lb.cost, parking on one date bleeds into
+    // the other date's per-line share. When the operator has attributed reimbursements to
+    // specific bookings via the Card 4 multi-event UI, we subtract those attributions from
+    // that booking's cost BEFORE computing the ratio.
     const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
     if (feeLBs.length > 1) {
-      const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
+      const parkingBB_csv = (p.expenses && p.expenses.parkingByBooking) || {};
+      const accomBB_csv   = (p.expenses && p.expenses.accommodationByBooking) || {};
+      const otherBB_csv   = (p.expenses && p.expenses.otherByBooking) || {};
+      const adjustedFeeLBs = feeLBs.map(lb => {
+        const attrib = (parkingBB_csv[lb.bookingId] || 0)
+                     + (accomBB_csv[lb.bookingId] || 0)
+                     + (otherBB_csv[lb.bookingId] || 0);
+        return Object.assign({}, lb, { adjustedCost: Math.max(0.01, (lb.cost || 0) - attrib) });
+      });
+      const totalCost = adjustedFeeLBs.reduce((sum, b) => sum + (b.adjustedCost || 0), 0);
       let allocated = 0;
       let allocatedSuper = 0;
       let allocatedPerfFee = 0;
-      feeLBs.forEach((lb, i) => {
-        const last = i === feeLBs.length - 1;
-        const ratio = lb.cost / totalCost;
+      adjustedFeeLBs.forEach((lb, i) => {
+        const last = i === adjustedFeeLBs.length - 1;
+        const ratio = lb.adjustedCost / totalCost;
         const amt = last ? (feeAmount - allocated) : Math.round(feeAmount * ratio * 100) / 100;
         allocated += amt;
         // Per-date super math: each event's allocated share gets its own super calc so the
@@ -5918,16 +6096,29 @@ function buildXeroInvoicesData() {
     const lineItems = [];
 
     // Fee — split per event date when multi-event, otherwise single line
+    // Attribution fix (Jul 2026) — see CSV path above for full explanation. Reimbursements
+    // attributed to specific bookings are subtracted from those bookings' Zoho costs before
+    // the split ratio is computed, so parking on one date doesn't leak into the other date's
+    // per-line share.
     const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
     if (feeLBs.length > 1) {
-      const totalCost = feeLBs.reduce((sum, b) => sum + (b.cost || 0), 0);
+      const parkingBB_push = (p.expenses && p.expenses.parkingByBooking) || {};
+      const accomBB_push   = (p.expenses && p.expenses.accommodationByBooking) || {};
+      const otherBB_push   = (p.expenses && p.expenses.otherByBooking) || {};
+      const adjustedFeeLBs = feeLBs.map(lb => {
+        const attrib = (parkingBB_push[lb.bookingId] || 0)
+                     + (accomBB_push[lb.bookingId] || 0)
+                     + (otherBB_push[lb.bookingId] || 0);
+        return Object.assign({}, lb, { adjustedCost: Math.max(0.01, (lb.cost || 0) - attrib) });
+      });
+      const totalCost = adjustedFeeLBs.reduce((sum, b) => sum + (b.adjustedCost || 0), 0);
       let allocated = 0;
       let allocatedSuper = 0;
       let allocatedPerfFee = 0;
       const perfFeeIncGST_pushMulti = (p.total || 0) - ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
-      feeLBs.forEach((lb, i) => {
-        const last = i === feeLBs.length - 1;
-        const ratio = lb.cost / totalCost;
+      adjustedFeeLBs.forEach((lb, i) => {
+        const last = i === adjustedFeeLBs.length - 1;
+        const ratio = lb.adjustedCost / totalCost;
         const amt = last ? r2(feeAmount - allocated) : r2(feeAmount * ratio);
         allocated += amt;
         // Per-date proportional allocations — each line shows its own super math.

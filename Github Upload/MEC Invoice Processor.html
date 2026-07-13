@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260609R">
+<link rel="stylesheet" href="styles.css?v=20260609S">
 </head>
 <body>
 
@@ -966,6 +966,13 @@
               </div>
             </div>
             <div id="rv-parking-warn" style="display:none;margin-top:8px;font-size:10px;line-height:1.5;color:#8A5B12;background:#FBF1DE;border:1px solid #E6D3A8;border-radius:6px;padding:7px 9px"></div>
+            <!-- Multi-event reimbursement attribution — auto-rendered when 2+ bookings ticked in Card 2.
+                 Lets operator say WHICH event date each reimbursement belongs to, so the tool doesn't
+                 smear parking across events via the Zoho-cost ratio (Bent Team includes parking in
+                 Entertainment_X_Cost, which inflates one booking's ratio). Supports MULTIPLE parking
+                 entries — one per event — for cases like a tour where parking happened on multiple
+                 dates. -->
+            <div id="rv-exp-multi-attrib" style="margin-top:10px;display:none"></div>
           </div>
 
           <!-- Card 5 · Super decision (mandatory binary pick: solo vs duo/group) -->
@@ -1167,6 +1174,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260609R"></script>
+<script src="app.js?v=20260609S"></script>
 </body>
 </html>
