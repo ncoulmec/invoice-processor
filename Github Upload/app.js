@@ -5471,6 +5471,26 @@ function buildResultsView() {
           missingReceiptChip = ` <span onclick="openReviewModal('${p.rowId}')" title="Click to attach receipts (or tick 'No receipt' if there isn't one)" style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:#FFF8E1;color:#8A5B12;border:1px solid #E6D3A8;border-radius:4px;padding:1px 6px;cursor:pointer;vertical-align:middle">⚠ ${missing.join(' + ')} receipt${missing.length>1?'s':''} missing</span>`;
         }
       }
+
+      // Unattributed reimbursement warning — fires when the invoice is multi-event AND a
+      // reimbursement amount is entered but no per-event attribution is set. Without attribution,
+      // the per-line perf-fee splits use raw Zoho costs and can bleed parking across events (the
+      // Zach/Ian/Nathan Coutts symptom Nathan reported Jul 2026). Click → jump into the Review
+      // modal so the operator can attribute the parking to a specific event date.
+      let unattribReimbChip = '';
+      if (p.rowId && p.expenses && Array.isArray(p.linkedBookings) && p.linkedBookings.length > 1) {
+        const sumMap = (m) => {
+          if (!m || typeof m !== 'object') return 0;
+          return Object.values(m).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+        };
+        const problems = [];
+        if ((p.expenses.parking       || 0) > 0 && sumMap(p.expenses.parkingByBooking)       <= 0.005) problems.push('parking');
+        if ((p.expenses.accommodation || 0) > 0 && sumMap(p.expenses.accommodationByBooking) <= 0.005) problems.push('accom');
+        if ((p.expenses.other         || 0) > 0 && sumMap(p.expenses.otherByBooking)         <= 0.005) problems.push('other');
+        if (problems.length) {
+          unattribReimbChip = ` <span onclick="openReviewModal('${p.rowId}')" title="Multi-event invoice with unattributed ${problems.join(' + ')} — open the Review modal → Step 4 to pick which event date the reimbursement belongs to. Without attribution, splits may be off." style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:#FEF3C7;color:#7C2D12;border:1px solid #F87171;border-radius:4px;padding:1px 6px;cursor:pointer;vertical-align:middle">⚠ ${problems.join(' + ')} not attributed to event</span>`;
+        }
+      }
       // Group cluster chip — only when this row shares its booking with at least one other row.
       // Shows "↳ 3 of 5 from The Wedding Band" so it's obvious this is part of a multi-bill group.
       // Index within the cluster (1-based) is determined by the row's position in groupRows[].
@@ -5488,7 +5508,7 @@ function buildResultsView() {
           }
         }
       }
-      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}${groupClusterChip}`;
+      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}${unattribReimbChip}${groupClusterChip}`;
       // Super-details incomplete chip (only when super withholding is ON for this run + this row)
       const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
         ? missingSuperFields(p.contractor) : [];
