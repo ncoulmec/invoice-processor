@@ -3330,9 +3330,32 @@ function rvRenderMultiEventReimbUI() {
     </tr>`;
   }).join('');
 
+  // Auto-detect whether Zoho includes parking (sum matches invoice total) or excludes it
+  // (sum matches perf fee). Shown to operator so they know why attribution is or isn't
+  // being applied at push time.
+  const sumZoho_ui = bookings.reduce((s, b) => s + (b.cost || 0), 0);
+  const invTotal_ui = parseFloat(document.getElementById('rv-total')?.value || '0') || 0;
+  const parkingUI = parseFloat(document.getElementById('rv-exp-parking')?.value || '0') || 0;
+  const accomUI   = parseFloat(document.getElementById('rv-exp-accommodation')?.value || '0') || 0;
+  const otherUI   = parseFloat(document.getElementById('rv-exp-other')?.value || '0') || 0;
+  const reimbUI = parkingUI + accomUI + otherUI;
+  const perfFeeUI = invTotal_ui - reimbUI;
+  const money = n => '$' + (Math.round(n * 100) / 100).toFixed(2);
+  let detectBanner = '';
+  if (invTotal_ui > 0 && sumZoho_ui > 0) {
+    if (Math.abs(sumZoho_ui - invTotal_ui) < 2 && reimbUI > 0) {
+      detectBanner = `<div style="margin-bottom:8px;padding:6px 9px;background:#FEF3C7;border:1px solid #F6AD55;border-radius:4px;font-size:10.5px;color:#7C2D12"><strong>⚠ Zoho cost includes parking</strong> — sum of Zoho costs (${money(sumZoho_ui)}) matches invoice total (${money(invTotal_ui)}). Attribution BELOW will be subtracted from each Zoho cost before splitting. Set the per-event parking amount accurately.</div>`;
+    } else if (Math.abs(sumZoho_ui - perfFeeUI) < 2 && reimbUI > 0) {
+      detectBanner = `<div style="margin-bottom:8px;padding:6px 9px;background:#EAF7EF;border:1px solid #9AE6B4;border-radius:4px;font-size:10.5px;color:#1F6E48"><strong>✓ Zoho cost excludes parking</strong> — sum of Zoho costs (${money(sumZoho_ui)}) matches perf fee (${money(perfFeeUI)}). Attribution below is optional — the tool will use Zoho ratios as-is.</div>`;
+    } else if (reimbUI > 0) {
+      detectBanner = `<div style="margin-bottom:8px;padding:6px 9px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:4px;font-size:10.5px;color:#7F1D1D"><strong>⚠ Zoho cost doesn't match either invoice total or perf fee</strong> — sum ${money(sumZoho_ui)}, invoice ${money(invTotal_ui)}, perf fee ${money(perfFeeUI)}. Tool will use Zoho ratios as-is; verify the split looks right on the Xero bill.</div>`;
+    }
+  }
+
   container.innerHTML = `
     <div style="background:#F4F8FC;border:1px solid #C8DAEC;border-radius:6px;padding:10px 12px">
       <div style="font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#3B5AB8;margin-bottom:4px">📅 Multi-event · attribute reimbursements to specific dates</div>
+      ${detectBanner}
       <div style="font-size:10.5px;color:#5B6B7B;margin-bottom:8px;line-height:1.4">
         Enter per-event amounts so each reimbursement is subtracted from the RIGHT Zoho booking's cost before splitting. Supports multiple parkings across dates. Leave empty to auto-distribute proportionally (may smear parking across events).
       </div>
@@ -5923,12 +5946,28 @@ function exportXeroCSV() {
     // the other date's per-line share. When the operator has attributed reimbursements to
     // specific bookings via the Card 4 multi-event UI, we subtract those attributions from
     // that booking's cost BEFORE computing the ratio.
+    //
+    // Auto-detection (Jul 2026 refinement): the team sometimes hasn't added parking to Zoho
+    // yet by the time the operator processes the invoice. In that case Zoho ALREADY excludes
+    // parking and subtracting the attribution would double-count. Detect which state Zoho is
+    // in by comparing sum(lb.cost) against the invoice total vs the perf fee. Only apply the
+    // attribution subtraction when Zoho matches the invoice total (parking IS in Zoho).
     const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
     if (feeLBs.length > 1) {
       const parkingBB_csv = (p.expenses && p.expenses.parkingByBooking) || {};
       const accomBB_csv   = (p.expenses && p.expenses.accommodationByBooking) || {};
       const otherBB_csv   = (p.expenses && p.expenses.otherByBooking) || {};
+      const sumZoho_csv   = feeLBs.reduce((s, b) => s + (b.cost || 0), 0);
+      const invTotal_csv  = p.total || 0;
+      const reimbTotal_csv2 = ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
+      const perfFee_csv2  = invTotal_csv - reimbTotal_csv2;
+      // Within $2 tolerance (rounding, small quote drift). Comparing floats requires slack.
+      const zohoHasParking_csv = Math.abs(sumZoho_csv - invTotal_csv) < 2 && reimbTotal_csv2 > 0;
       const adjustedFeeLBs = feeLBs.map(lb => {
+        if (!zohoHasParking_csv) {
+          // Zoho pre-parking (team hasn't added it yet) OR no reimbursements — use as-is.
+          return Object.assign({}, lb, { adjustedCost: (lb.cost || 0) });
+        }
         const attrib = (parkingBB_csv[lb.bookingId] || 0)
                      + (accomBB_csv[lb.bookingId] || 0)
                      + (otherBB_csv[lb.bookingId] || 0);
@@ -5965,10 +6004,13 @@ function exportXeroCSV() {
           fundName: c.fundName || (p.contractor && p.contractor.fundName) || null,
           cName: billContact
         });
-        rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), lineDesc, 1, amt.toFixed(2), acctCode, taxType));
+        // Bill Date = today (processing date), not PDF invoice date — see Xero push path for rationale.
+        const bill_today_csv_multi = todayISO();
+        rows.push(mkRow(billContact, billRef, eventRef, bill_today_csv_multi, addDaysToXeroCSVDate(bill_today_csv_multi, 7), lineDesc, 1, amt.toFixed(2), acctCode, taxType));
       });
     } else {
-      rows.push(mkRow(billContact, billRef, eventRef, dateXero, addDaysToXeroCSVDate(dateXero, 7), feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
+      const bill_today_csv = todayISO();
+      rows.push(mkRow(billContact, billRef, eventRef, bill_today_csv, addDaysToXeroCSVDate(bill_today_csv, 7), feeDesc, 1, feeAmount.toFixed(2), acctCode, taxType));
     }
 
     // Memo line — sits between perf-fee and reimbursements, tells the performer where their
@@ -6116,16 +6158,22 @@ function buildXeroInvoicesData() {
     const lineItems = [];
 
     // Fee — split per event date when multi-event, otherwise single line
-    // Attribution fix (Jul 2026) — see CSV path above for full explanation. Reimbursements
-    // attributed to specific bookings are subtracted from those bookings' Zoho costs before
-    // the split ratio is computed, so parking on one date doesn't leak into the other date's
-    // per-line share.
+    // Attribution fix (Jul 2026) — see CSV path above for full explanation. Same auto-detect
+    // for "Zoho includes parking" vs "Zoho pre-parking" applies here too: only subtract
+    // attributions when sum(Zoho costs) ≈ invoice total AND reimbursements exist.
     const feeLBs = (p.linkedBookings || []).filter(b => (b.cost || 0) > 0);
     if (feeLBs.length > 1) {
       const parkingBB_push = (p.expenses && p.expenses.parkingByBooking) || {};
       const accomBB_push   = (p.expenses && p.expenses.accommodationByBooking) || {};
       const otherBB_push   = (p.expenses && p.expenses.otherByBooking) || {};
+      const sumZoho_push   = feeLBs.reduce((s, b) => s + (b.cost || 0), 0);
+      const invTotal_push  = p.total || 0;
+      const reimbTotal_push2 = ((p.expenses && (p.expenses.parking||0)+(p.expenses.accommodation||0)+(p.expenses.other||0)) || 0);
+      const zohoHasParking_push = Math.abs(sumZoho_push - invTotal_push) < 2 && reimbTotal_push2 > 0;
       const adjustedFeeLBs = feeLBs.map(lb => {
+        if (!zohoHasParking_push) {
+          return Object.assign({}, lb, { adjustedCost: (lb.cost || 0) });
+        }
         const attrib = (parkingBB_push[lb.bookingId] || 0)
                      + (accomBB_push[lb.bookingId] || 0)
                      + (otherBB_push[lb.bookingId] || 0);
@@ -6239,12 +6287,19 @@ function buildXeroInvoicesData() {
     const eventDatesPush = (eventRef.replace(/^Event\(s\):\s*/, '').trim())
                        || formatDateReadable(p.perfDate || p.date) || dateXero;
     const billRefPush = `Event Date(s): ${eventDatesPush} | INV-${invNum}`;
+    // Bill Date fix (Jul 2026): always use today (processing date) for the bill's Date field.
+    // PDF invoice dates were sometimes drifting weeks or months out because performers date
+    // their invoices from when the gig happened, not when they invoiced. Result: bills would
+    // appear in the wrong bookkeeping period in Xero and get lost (Paloma Soto's 2 Jun bill
+    // pushed on 13 Jul). Event dates + performance dates STAY in descriptions and references
+    // as before — this only affects the ACCPAY Date/DueDate fields Xero uses for bookkeeping.
+    const bill_today_push = todayISO();
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',
       Contact: { Name: billContact },
-      Date: dateXero,
-      DueDate: addDaysISO(dateXero, 7),
+      Date: bill_today_push,
+      DueDate: addDaysISO(bill_today_push, 7),
       InvoiceNumber: billRefPush,
       Reference: eventRef,
       LineAmountTypes: 'Exclusive',
@@ -6880,12 +6935,14 @@ function buildXeroSuperInvoicesData() {
     superRows.forEach(r => {
       // Reference starts with "Super" + uses INV- prefix on the source invoice number.
       const billRef = `Super | ${r.cName} | Event Date(s): ${r.eventDates} | INV-${r.invNum}`;
+      // Bill Date = today (processing date), not PDF date. Same rationale as contractor bill push.
+      const bill_today_super = todayISO();
       out.push({
         Type: 'ACCPAY',
         Status: 'DRAFT',
         Contact: { Name: CLEARINGHOUSE_NAME },
-        Date: r.dateXero,
-        DueDate: addDaysISO(r.dateXero, 7),
+        Date: bill_today_super,
+        DueDate: addDaysISO(bill_today_super, 7),
         InvoiceNumber: billRef,
         Reference: `Super · Event(s): ${r.eventDates}`,
         LineAmountTypes: 'Exclusive',
@@ -7023,7 +7080,8 @@ function exportSuperBillsCSV() {
                         desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       } else {
         const ref = `Super | ${cName} | Event Date(s): ${eventDates} | INV-${invNum}`;
-        rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateXero, dateXero,
+        // Bill Date = today, same rationale as contractor bill push.
+        rows.push(mkRow(CLEARINGHOUSE_NAME, ref, ref, dateAll, dateAll,
                         desc, 1, superAmt.toFixed(2), SUPER_ACCOUNT, 'BAS Excluded'));
       }
     });
