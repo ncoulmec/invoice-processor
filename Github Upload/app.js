@@ -6055,7 +6055,10 @@ function exportXeroCSV() {
     const apAcctCode = '310';
     const apDesc = [supplierName, p.invoiceNumber ? `Inv: ${p.invoiceNumber}` : null, dateReadable].filter(Boolean).join(' | ');
     const apAmount = p.hasGST ? (p.total / 1.1).toFixed(2) : p.total.toFixed(2);
-    rows.push(mkRow(supplierName, invNum, '', dateXero, addDaysToXeroCSVDate(dateXero, 7), apDesc, 1, apAmount, apAcctCode, apTaxType));
+    // Bill Date = today, matching the push path. Supplier's real invoice date is preserved
+    // in the description (dateReadable) for reconciliation.
+    const bill_today_ap_csv = todayISO();
+    rows.push(mkRow(supplierName, invNum, '', bill_today_ap_csv, addDaysToXeroCSVDate(bill_today_ap_csv, 7), apDesc, 1, apAmount, apAcctCode, apTaxType));
   });
 
   downloadCSV(rows, `MEC_Xero_Bills_Contractor_${today()}.csv`);
@@ -6322,12 +6325,16 @@ function buildXeroInvoicesData() {
     const apAmount = p.hasGST ? ((p.total || 0) / 1.1) : (p.total || 0);
     const apSafeName = s => String(s||'').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g,' ').trim();
     const apPdfFilename = apSafeName(`${supplierName} - Inv ${invNum}`) + '.pdf';
+    // Bill Date = today (processing date), per Nathan's Jul 2026 policy — applies to AP
+    // supplier bills too. Supplier's real invoice date is preserved in the description via
+    // `dateReadable` so accounting can still see it if needed for tax reconciliation.
+    const bill_today_ap = todayISO();
     out.push({
       Type: 'ACCPAY',
       Status: 'DRAFT',
       Contact: { Name: supplierName },
-      Date: dateXero,
-      DueDate: addDaysISO(dateXero, 7),
+      Date: bill_today_ap,
+      DueDate: addDaysISO(bill_today_ap, 7),
       InvoiceNumber: invNum,
       LineAmountTypes: 'Exclusive',
       LineItems: [{
