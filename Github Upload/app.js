@@ -5750,9 +5750,35 @@ function buildXeroFeeDescription_(opts) {
       : (opts.isGST ? (perfFee / 1.1) : perfFee);
     const exSuper = baseForSuper - superAmt;
 
-    lines.push('SUPER BREAKDOWN:');
-    lines.push(`$${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} (ex-super Fee)`);
-    lines.push(`$${fix(exSuper)} (ex-super Fee) + $${fix(superAmt)} (${rate}% Super) = $${fix(baseForSuper)}`);
+    // ── SUPER BREAKDOWN block (Jul 2026 rewrite) ────────────────────────
+    // Old wording had two problems Nathan flagged:
+    //   1. The "You receive on this line: $X ex-GST + $Y GST" line was showing a Xero
+    //      GST-split of the NET cash amount, but the accompanying label called it
+    //      "your true Performance Fee before super is added" — a direct contradiction
+    //      with the $580.36 figure on the earlier line. Contractors read the ex-GST
+    //      number ($586.69) and thought THAT was their true fee, then couldn't
+    //      reconcile it against the $580.36 math above.
+    //   2. The "True Performance Fee" label belongs on the $580.36 (the actual
+    //      ex-super, ex-GST value), because Nathan uses that label defensively —
+    //      "your Performance Fee is X, super is added" — so it needs to attach to
+    //      the correct number.
+    //
+    // New structure (math unchanged — bill totals, GST claimed, cash paid all same):
+    //   SUPER BREAKDOWN (calculated on ex-GST fee):
+    //   $650.00 ÷ 1.12 = $580.36 » your True Performance Fee (ex-super, ex-GST)
+    //   + $69.64 » 12% Super, added and remitted to {Fund} on your behalf
+    //   = $650.00 (ex-GST subtotal)
+    //
+    //   $69.64 super » paid to {Fund}
+    //
+    //   WHAT WE PAY DIRECTLY TO YOU:
+    //   $715.00 less $69.64 super sent to fund = $645.36 cash
+    //   Shown in Xero as $586.69 ex-GST + $58.67 GST = $645.36
+    lines.push('SUPER BREAKDOWN' + (opts.isGST ? ' (calculated on ex-GST fee)' : '') + ':');
+    const fundInline = (opts.fundName && opts.fundName !== '—') ? opts.fundName : 'your super fund';
+    lines.push(`$${fix(baseForSuper)} ÷ ${divisor.toFixed(2)} = $${fix(exSuper)} » your True Performance Fee (ex-super${opts.isGST ? ', ex-GST' : ''})`);
+    lines.push(`+ $${fix(superAmt)} » ${rate}% Super, added and remitted to ${fundInline} on your behalf`);
+    lines.push(`= $${fix(baseForSuper)}${opts.isGST ? ' (ex-GST subtotal)' : ''}`);
     lines.push('');
 
     const fundLabel = opts.fundName && opts.fundName !== '—'
@@ -5761,21 +5787,22 @@ function buildXeroFeeDescription_(opts) {
     lines.push(`$${fix(superAmt)} super » ${fundLabel}`);
     lines.push('');
 
-    // ── You receive on this line ──────────────────────────────────────────
-    // Nathan removed the "less super" line — frames the takeaway positively: the headline
-    // figure IS your performance fee, super is added on top by us, not deducted from you.
-    // For GST contractors, the ex-GST + GST math is folded INTO this line (instead of a
-    // separate "In Xero:" line below) so the math lives next to the headline figure.
+    // ── WHAT WE PAY DIRECTLY TO YOU ─────────────────────────────────────
+    // Plain arithmetic: this line's inc-GST fee LESS the super remitted to the fund
+    // = cash to contractor. For GST contractors, the Xero ex-GST/GST split of that
+    // cash sits directly underneath — clearly labelled as a Xero accounting split
+    // rather than as "your fee", so it doesn't compete with the True Performance
+    // Fee figure above. Word "less" instead of "−" because Xero strips U+2212 on
+    // bill approval (same reason we use » instead of →).
     const netInc = perfFee - superAmt;
+    lines.push('WHAT WE PAY DIRECTLY TO YOU:');
+    lines.push(`$${fix(perfFee)} less $${fix(superAmt)} super sent to fund = $${fix(netInc)} cash`);
     if (opts.isGST) {
       // Round-end so the breakdown matches what Xero actually computes on the bill line:
       // ex-GST × 1.1 must reconcile to the inc-GST figure.
       const netEx = Math.round((netInc / 1.1) * 100) / 100;
       const netGst = Math.round((netInc - netEx) * 100) / 100;
-      lines.push(`You receive on this line: $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)} (inc GST)`);
-      lines.push(`(your true Performance Fee before super is added)`);
-    } else {
-      lines.push(`You receive on this line: $${fix(netInc)} (your true Performance Fee before super is added)`);
+      lines.push(`Shown in Xero as $${fix(netEx)} ex-GST + $${fix(netGst)} GST = $${fix(netInc)}`);
     }
   } else {
     // No super case — plain performance fee.
