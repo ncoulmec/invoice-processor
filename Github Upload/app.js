@@ -3698,7 +3698,7 @@ function rvRenderEntityBlock(ent, override, mode) {
     if (override) {
       chip.style.display = 'block';
       chip.innerHTML = `⚠ <strong>Entity overridden → Sole trader.</strong> Super will be withheld.`
-        + `<div style="margin-top:3px;color:#7A5A12">Reason: ${escHtml(override.reason || '—')}</div>`
+        + `<div style="margin-top:3px;color:#7A5A12">Reason: ${escHtml(override.reason || 'none given')}</div>`
         + `<a href="#" onclick="rvUndoEntityOverride();return false" style="color:#8A5B12;font-weight:600;text-decoration:underline;font-size:11px">Undo override</a>`;
     } else chip.style.display = 'none';
   }
@@ -3740,10 +3740,9 @@ function rvSetEntity(val) {
 }
 
 // ── Override dialog: Company/Trust/Partnership → Sole trader ─────────────────────────────
-// Strictness depends on ABR:
-//   • ABR says Individual  → soft: tick + reason (Zoho is probably just out of date)
-//   • ABR says entity      → hard: red warning + tick + reason + type OVERRIDE
-//   • ABR unknown          → medium: amber "verify manually" + tick + reason
+// One tickbox to confirm (reason optional, saved for the Step 3 chip). Kept deliberately light —
+// no typed confirmation. The ABR note only changes tone: green when ABR says Individual (Zoho is
+// probably out of date), amber when ABR says entity or couldn't be checked.
 async function rvOpenEntityOverride() {
   const ent = rvCurrentEntityInfo;
   if (!ent) return;
@@ -3765,8 +3764,8 @@ async function rvOpenEntityOverride() {
     ? `ABN on this invoice (<strong>${escHtml(ent.abn)}</strong>) is registered on ABR as: <strong style="color:${hard ? '#B42318' : soft ? '#1F6E48' : '#5B6B7B'}">${escHtml(ent.abrKind || 'could not be looked up')}</strong>`
     : `<span style="color:#B45309">There's no ABN on this invoice — you can't confirm sole-trader status without one.</span>`;
   const statusBox = hard
-    ? `<div style="background:#FEF3F2;border:1px solid #FDA29B;color:#B42318;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
-         <strong>⛔ ABR says this ABN belongs to a ${escHtml(ent.abrKind)}.</strong> Super is not normally payable to a company, trust or partnership — even if the person performs solo. Only continue if you've confirmed they're now invoicing from a <em>different</em>, individual ABN.
+    ? `<div style="background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
+         <strong>⚠ ABR lists this ABN as: ${escHtml(ent.abrKind)}.</strong> Super is not normally payable to a company, trust or partnership — even if the person performs solo. Only continue if you've confirmed they're now invoicing from a <em>different</em>, individual ABN.
        </div>`
     : soft
     ? `<div style="background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
@@ -3787,11 +3786,9 @@ async function rvOpenEntityOverride() {
         <input type="checkbox" id="rv-ent-ov-check" style="margin-top:2px;width:15px;height:15px;accent-color:#1F9D63">
         <span>I've checked the ABN on this invoice and it belongs to an <strong>individual / sole trader</strong> — not a Pty Ltd, trust or partnership.</span>
       </label>
-      <div style="margin-top:10px;font-size:11px;font-weight:600;color:#5B6B7B">Reason (required)</div>
+      <div style="margin-top:10px;font-size:11px;font-weight:600;color:#5B6B7B">Reason <span style="font-weight:400;color:#94A3B8">(optional)</span></div>
       <textarea id="rv-ent-ov-reason" rows="2" placeholder="e.g. Moved from Pty Ltd to a sole trader ABN in Oct 2026 — Zoho not yet updated"
         style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid #CBD5E0;border-radius:5px;margin-top:3px;font-family:inherit;resize:vertical"></textarea>
-      ${hard ? `<div style="margin-top:8px;font-size:11px;font-weight:600;color:#B42318">Type OVERRIDE to confirm</div>
-        <input id="rv-ent-ov-type" type="text" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid #FDA29B;border-radius:5px;margin-top:3px">` : ''}
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button type="button" onclick="document.getElementById('rv-ent-ov').remove()" style="padding:7px 14px;border:1px solid #CBD5E0;background:#FFFFFF;border-radius:6px;cursor:pointer;font-size:12px">Cancel</button>
         <button type="button" id="rv-ent-ov-go" disabled onclick="rvConfirmEntityOverride()" style="padding:7px 14px;border:none;background:#1F9D63;color:#FFFFFF;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:.45">Confirm: treat as sole trader &amp; withhold super</button>
@@ -3800,13 +3797,11 @@ async function rvOpenEntityOverride() {
   document.body.appendChild(wrap);
   const validate = () => {
     const ok = document.getElementById('rv-ent-ov-check').checked
-      && (document.getElementById('rv-ent-ov-reason').value || '').trim().length >= 5
-      && (!hard || (document.getElementById('rv-ent-ov-type').value || '').trim().toUpperCase() === 'OVERRIDE')
       && !!ent.abn;
     const btn = document.getElementById('rv-ent-ov-go');
     btn.disabled = !ok; btn.style.opacity = ok ? '1' : '.45';
   };
-  ['rv-ent-ov-check','rv-ent-ov-reason','rv-ent-ov-type'].forEach(i => {
+  ['rv-ent-ov-check'].forEach(i => {
     const el = document.getElementById(i);
     if (el) { el.addEventListener('input', validate); el.addEventListener('change', validate); }
   });

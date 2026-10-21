@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20261021A">
+<link rel="stylesheet" href="styles.css?v=20261021C">
 </head>
 <body>
 
@@ -1010,7 +1010,7 @@
             </div>
 
             <div id="rv-super-auto-na" style="display:none;background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:7px 10px;font-size:11px;margin-top:8px;line-height:1.5">
-              ✓ <strong>No super, entity structure.</strong> This invoice is from a <span id="rv-super-auto-na-kind">Company / Trust / Partnership</span>, so super isn't withheld, even if they perform solo.
+              ✓ <strong>No super, entity structure.</strong> Invoicing entity: <strong id="rv-super-auto-na-kind">Company / Trust / Partnership</strong>. Super isn't withheld, even if they perform solo.
               <span id="rv-entity-override-link" style="display:inline-flex;align-items:center;gap:5px;margin-top:4px">
                 <a href="#" onclick="rvOpenEntityOverride();return false" style="color:#8A5B12;font-weight:600;text-decoration:underline">Override → treat as sole trader</a>
                 <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Only override when the ABN on this invoice belongs to an individual.</strong>Typical reason: they've moved from a Pty Ltd to a sole trader ABN and Zoho hasn't been updated yet.<br><br>You'll be asked to confirm the ABN and give a reason. The override is flagged in Step 3.</span></span>
@@ -1205,6 +1205,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20261021A"></script>
+<script src="app.js?v=20261021C"></script>
 </body>
 </html>
