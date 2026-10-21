@@ -99,6 +99,12 @@ let abrRowData = {};      // keyed by row id, stores ABR lookup result
 let invoiceGSTData = {};        // keyed by row id, stores hasGST from PDF extraction
 let invoiceSuperData = {};      // keyed by row id, stores superWithhold override
 let invoiceSuperShareData = {}; // keyed by row id, duo/group: this performer's own super-assessable share ($). When set, super is calculated on this amount instead of the full service fee. Payment is unchanged.
+// Entity override (Oct 2026): keyed by row id. Set when the operator confirms that an invoice
+// from an entity Zoho/ABR flags as Company/Trust/Partnership is actually from a SOLE TRADER ABN.
+// Shape: { to:'sole', reason, zohoKind, abrKind, abrSaysCompany, at }. When present, the row's
+// type is swapped C→A / D→B at process time so super is genuinely calculated (previously the
+// "Solo performer" pick was silently ignored for C/D types — Hamilton's Monica Casaselli case).
+let invoiceEntityOverrideData = {};
 let invoiceSuperModeData  = {}; // keyed by row id, the user-picked super decision per invoice: 'solo' | 'group'.
 let invoicePaidData = {};      // keyed by row id, stores alreadyPaid from PDF extraction
 let invoiceBookingData = {};   // keyed by row id, stores [{bookingId,bookingName,eventDate,cost}] — selected booking matches
@@ -2071,6 +2077,7 @@ function clearAllInvoices() {
   });
   if (window.invoiceSuperData) Object.keys(invoiceSuperData).forEach(k => delete invoiceSuperData[k]);
   Object.keys(invoiceSuperShareData).forEach(k => delete invoiceSuperShareData[k]);
+  Object.keys(invoiceEntityOverrideData).forEach(k => delete invoiceEntityOverrideData[k]);
   if (window.invoicePaidData)  Object.keys(invoicePaidData).forEach(k => delete invoicePaidData[k]);
   if (window.invoiceTypeData)  Object.keys(invoiceTypeData).forEach(k => delete invoiceTypeData[k]);
   Object.keys(invoicePerfGuess).forEach(k => delete invoicePerfGuess[k]);
@@ -2491,7 +2498,7 @@ function rvValidateBeforeConfirm() {
   if (!total) missingFields.push({ key:'total', label:'Total (inc. GST)', targetId:'rv-total', type:'number', placeholder:'0.00' });
   // Mandatory super decision: the user MUST pick Solo or Duo/Group in Step 5.
   const superMode = document.querySelector('input[name="rv-mp-mode"]:checked')?.value;
-  if (!superMode) missingFields.push({ key:'super', label:'Solo / Duo-group decision (Step 5)', targetId:'rv-mp-solo-row', type:'note', placeholder:'Pick one in Step 5' });
+  if (!superMode) missingFields.push({ key:'super', label:'Entity + solo / duo-group decision (Step 5)', targetId:'rv-mp-solo-row', type:'note', placeholder:'Pick one in Step 5' });
 
   // Already-paid check — driven ONLY by the booking(s) the user TICKED in the Zoho picker
   // (a red dot = paid). Reads the live checkboxes (invoiceBookingData isn't saved until Confirm),
@@ -2642,7 +2649,7 @@ function reviewRemoveInvoice() {
 
   // Clear every per-invoice data store keyed by this id (mirrors clearAllInvoices).
   [invoiceGSTData, invoiceExpenseData, invoiceBookingData, invoiceRawText, invoiceSuperShareData, invoiceSuperModeData,
-   window.invoiceSuperData, window.invoicePaidData, window.invoiceTypeData].forEach(store => {
+   invoiceEntityOverrideData, window.invoiceSuperData, window.invoicePaidData, window.invoiceTypeData].forEach(store => {
     if (store) delete store['id_' + id];
   });
   delete invoicePerfGuess['id_' + id];
@@ -3533,7 +3540,7 @@ function rvUpdateInlineIdentity() {
     ? `<div style="margin-top:6px;padding:7px 10px;background:#FFFBEA;border:1px solid #FDE68A;border-radius:5px;color:#7A5A12;font-size:11px;line-height:1.5">
          ⚠ <strong>${abnsDiffer ? 'Invoice ABN differs from Zoho record' : 'ABR says company/trust but Zoho has this as an individual'}${abrIsCompany ? ' — entity is a company/trust' : ''}.</strong>
          ${abnsDiffer ? `<div style="margin-top:4px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;color:#5B4117">Invoice: <strong>${escHtml(abn)}</strong> · Zoho: <strong>${escHtml(zohoAbn0 || '(none)')}</strong></div>` : ''}
-         ${abrIsCompany ? `<div style="margin-top:4px">Pick <em>Not applicable — entity structure</em> below so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to ' + escHtml((abrData && abrData.entityName) || 'this company') + ', not ' + escHtml(zohoRec.name) + ' personally)' : ''}.</div>` : '<div style="margin-top:4px">Verify which ABN is correct before approving.</div>'}
+         ${abrIsCompany ? `<div style="margin-top:4px">Step 5a is set to <em>Company / Trust / Partnership</em> so super isn't withheld${zohoRec && zohoRec.name ? ' (the bill goes to ' + escHtml((abrData && abrData.entityName) || 'this company') + ', not ' + escHtml(zohoRec.name) + ' personally)' : ''}.</div>` : '<div style="margin-top:4px">Verify which ABN is correct before approving.</div>'}
        </div>`
     : '';
 
@@ -3574,21 +3581,15 @@ function rvSyncMultiPerfPanel(id) {
     }
   }
 
-  // Detect a non-individual entity (Zoho structure or type, plus ABR fallback). For these, super
-  // isn't withheld at all, so we auto-pick 'na' instead of prompting the operator for solo/duo.
-  const nonIndividualByZoho = !!(match && (
-    ['C','D'].includes(match.type) ||
-    /pty|company|trust|ltd|corp|partner/i.test(match.structure || '')
-  ));
-  const nonIndividualByABR  = !!(typeof abrCache !== 'undefined' && abrCache[abn] && abrCache[abn].isCompany);
-  const isNonIndividual = nonIndividualByZoho || nonIndividualByABR;
-  // Friendly label for the auto-na banner
-  let entityKind = 'Company / Trust / Partnership';
-  if (match) {
-    if (/partner/i.test(match.structure || '')) entityKind = 'Partnership';
-    else if (/trust/i.test(match.structure || '')) entityKind = 'Trust';
-    else if (/pty|company|ltd|corp/i.test(match.structure || '')) entityKind = 'Company';
-  }
+  // ── Step 5a · Who is invoicing us? (Oct 2026 rewrite) ─────────────────────────────────
+  // Super depends on the ENTITY on the invoice (sole trader vs Company/Trust/Partnership),
+  // NOT on whether the person performs solo. A solo performer invoicing via a Pty Ltd gets
+  // no super. So Card 5 now asks 5a (entity) first, and only asks 5b (solo vs duo/group)
+  // for sole traders. Entity is auto-detected from Zoho + ABR; the operator can override
+  // Company → Sole trader only through a confirmation dialog (rvOpenEntityOverride).
+  const ent = rvEntityInfo(id, match, abn);
+  rvCurrentEntityInfo = ent;
+  const override = invoiceEntityOverrideData['id_' + id] || null;
 
   // Restore the picked mode: stored mode wins; on a previously-reviewed row infer from rv-super
   // (legacy migration); on a non-individual entity auto-pick 'na'; otherwise leave unpicked.
@@ -3597,18 +3598,13 @@ function rvSyncMultiPerfPanel(id) {
   if (!mode && typeof reviewedRows !== 'undefined' && reviewedRows.has(String(id))) {
     mode = g('rv-super')?.checked ? 'solo' : 'group';
   }
-  if (!mode && isNonIndividual) mode = 'na';
+  // An entity WITHOUT a confirmed override can never be solo/group — force 'na'. This is the
+  // exact hole Hamilton hit: "Solo performer" picked on a Pty Ltd, silently ignored by the maths.
+  if (ent.isNonIndividual && !override) mode = 'na';
+  // An override exists but the stored mode is still 'na' → make them pick solo vs group.
+  if (override && mode === 'na') mode = null;
 
-  // Show the auto-na banner only when 'na' applies AND the entity is genuinely non-individual.
-  const autoNaBanner = g('rv-super-auto-na');
-  if (autoNaBanner) {
-    if (mode === 'na' && isNonIndividual) {
-      autoNaBanner.style.display = 'block';
-      const kindEl = g('rv-super-auto-na-kind'); if (kindEl) kindEl.textContent = entityKind;
-    } else {
-      autoNaBanner.style.display = 'none';
-    }
-  }
+  rvRenderEntityBlock(ent, override, mode);
 
   if (mode) {
     rvSetSuperMode(mode, /*persist*/ false);
@@ -3618,6 +3614,224 @@ function rvSyncMultiPerfPanel(id) {
     if (typeof rvUpdateRail === 'function') rvUpdateRail();
     if (typeof rvUpdateGroupSection === 'function') rvUpdateGroupSection();
   }
+}
+
+let rvCurrentEntityInfo = null;
+
+// Gather the entity evidence for the current invoice: what Zoho says, what ABR says about the
+// ABN printed on the invoice, and whether either flags a non-individual.
+function rvEntityInfo(id, match, abn) {
+  const abr = (typeof abrRowData !== 'undefined' && abrRowData['id_' + id])
+           || (typeof abrCache !== 'undefined' && abn && abrCache[abn]) || null;
+  const zohoNonInd = !!(match && (
+    ['C','D'].includes(match.type) ||
+    /pty|company|trust|ltd|corp|partner/i.test(match.structure || '')
+  ));
+  const abrNonInd = !!(abr && abr.isCompany === true);
+  const abrInd    = !!(abr && abr.isCompany === false);
+  let zohoKind = '';
+  if (match) {
+    if (/partner/i.test(match.structure || '')) zohoKind = 'Partnership';
+    else if (/trust/i.test(match.structure || '')) zohoKind = 'Trust';
+    else if (/pty|company|ltd|corp/i.test(match.structure || '')) zohoKind = 'Company';
+    else if (['C','D'].includes(match.type)) zohoKind = 'Company / Trust / Partnership';
+    else zohoKind = 'Sole trader';
+  }
+  const abrKind = abr ? (abr.entityTypeDesc || (abr.isCompany ? 'Company / Trust / Partnership' : 'Individual / Sole Trader')) : '';
+  let kind = 'Company / Trust / Partnership';
+  if (abrNonInd && abrKind) kind = abrKind;
+  else if (zohoNonInd && zohoKind) kind = zohoKind;
+  return {
+    abn, abr, match,
+    name: (match && match.name) || (document.getElementById('rv-name')?.value || '').trim(),
+    zohoKind, abrKind, zohoNonInd, abrNonInd, abrInd,
+    isNonIndividual: zohoNonInd || abrNonInd,
+    kind
+  };
+}
+
+// Paint Step 5a (entity radios + evidence + auto/override notes) and show/hide Step 5b.
+function rvRenderEntityBlock(ent, override, mode) {
+  const g = el => document.getElementById(el);
+  // Entity if auto-flagged (and not overridden) OR the operator has already chosen Company ('na').
+  const isEntity = (ent.isNonIndividual && !override) || mode === 'na';
+  document.querySelectorAll('input[name="rv-entity"]').forEach(r => {
+    r.checked = (r.value === (isEntity ? 'entity' : (mode || override ? 'sole' : '')));
+  });
+  // If nothing is auto-flagged and nothing picked yet, default 5a to Sole trader (the common case)
+  // so the operator only has to answer 5b. They can still flip it to Company.
+  if (!isEntity && !document.querySelector('input[name="rv-entity"]:checked')) {
+    const soleR = document.querySelector('input[name="rv-entity"][value="sole"]');
+    if (soleR) soleR.checked = true;
+  }
+  const entityPicked = document.querySelector('input[name="rv-entity"]:checked')?.value;
+
+  // Evidence line — always visible so the operator sees WHY the tool decided what it did.
+  const ev = g('rv-entity-evidence');
+  if (ev) {
+    const bits = [];
+    bits.push(`Zoho: <strong>${escHtml(ent.zohoKind || 'no record')}</strong>`);
+    if (ent.abn) {
+      bits.push(`ABN on invoice ${escHtml(ent.abn)} on ABR: <strong style="color:${ent.abrNonInd ? '#B42318' : (ent.abrInd ? '#1F6E48' : '#5B6B7B')}">${escHtml(ent.abrKind || 'not looked up')}</strong>`);
+    } else {
+      bits.push('<span style="color:#B45309">No ABN on invoice</span>');
+    }
+    ev.innerHTML = bits.join(' &nbsp;·&nbsp; ');
+  }
+
+  // Auto-detected entity note (with override link)
+  const auto = g('rv-super-auto-na');
+  if (auto) {
+    if (isEntity) {
+      auto.style.display = 'block';
+      const kindEl = g('rv-super-auto-na-kind'); if (kindEl) kindEl.textContent = ent.kind;
+      // The override link only makes sense when the TOOL flagged the entity. If the operator
+      // picked Company themselves, they can just click "Sole trader" again.
+      const ovLink = g('rv-entity-override-link');
+      if (ovLink) ovLink.style.display = (ent.isNonIndividual && !override) ? '' : 'none';
+    } else auto.style.display = 'none';
+  }
+
+  // Override chip
+  const chip = g('rv-entity-override-chip');
+  if (chip) {
+    if (override) {
+      chip.style.display = 'block';
+      chip.innerHTML = `⚠ <strong>Entity overridden → Sole trader.</strong> Super will be withheld.`
+        + `<div style="margin-top:3px;color:#7A5A12">Reason: ${escHtml(override.reason || '—')}</div>`
+        + `<a href="#" onclick="rvUndoEntityOverride();return false" style="color:#8A5B12;font-weight:600;text-decoration:underline;font-size:11px">Undo override</a>`;
+    } else chip.style.display = 'none';
+  }
+
+  // 5b only for sole traders
+  const q5b = g('rv-q-5b');
+  if (q5b) q5b.style.display = (entityPicked === 'sole') ? '' : 'none';
+}
+
+// Operator clicks a 5a radio.
+function rvSetEntity(val) {
+  const id = reviewModalRowId;
+  const ent = rvCurrentEntityInfo || { isNonIndividual: false };
+  const override = invoiceEntityOverrideData['id_' + id] || null;
+  if (val === 'sole' && ent.isNonIndividual && !override) {
+    // Can't just flip it — route through the confirmation dialog. Revert the radio meanwhile.
+    document.querySelectorAll('input[name="rv-entity"]').forEach(r => r.checked = (r.value === 'entity'));
+    rvOpenEntityOverride();
+    return;
+  }
+  if (val === 'entity') {
+    // Operator says this is an entity (e.g. Zoho says sole trader but invoice is from a Pty Ltd).
+    if (override) delete invoiceEntityOverrideData['id_' + id];
+    rvRenderEntityBlock(ent, null, 'na');
+    rvSetSuperMode('na');
+    return;
+  }
+  // val === 'sole', no auto-flag (or already overridden) → ask 5b
+  const cur = document.querySelector('input[name="rv-mp-mode"]:checked')?.value;
+  if (cur === 'na') {
+    document.querySelectorAll('input[name="rv-mp-mode"]').forEach(r => r.checked = false);
+    delete invoiceSuperModeData['id_' + id];
+    const superCb = document.getElementById('rv-super'); if (superCb) superCb.checked = false;
+    const unset = document.getElementById('rv-super-unset'); if (unset) unset.style.display = 'block';
+  }
+  rvRenderEntityBlock(Object.assign({}, ent, { isNonIndividual: false }), override, cur === 'na' ? null : cur);
+  if (typeof rvUpdateServiceFee === 'function') rvUpdateServiceFee();
+  if (typeof rvUpdateRail === 'function') rvUpdateRail();
+}
+
+// ── Override dialog: Company/Trust/Partnership → Sole trader ─────────────────────────────
+// Strictness depends on ABR:
+//   • ABR says Individual  → soft: tick + reason (Zoho is probably just out of date)
+//   • ABR says entity      → hard: red warning + tick + reason + type OVERRIDE
+//   • ABR unknown          → medium: amber "verify manually" + tick + reason
+async function rvOpenEntityOverride() {
+  const ent = rvCurrentEntityInfo;
+  if (!ent) return;
+  // Try to get ABR data for the invoice ABN if we don't have it yet.
+  if (!ent.abr && ent.abn && ent.abn.length === 11 && typeof lookupABN === 'function') {
+    try {
+      const r = await lookupABN(ent.abn);
+      if (r) { ent.abr = r; ent.abrNonInd = r.isCompany === true; ent.abrInd = r.isCompany === false;
+               ent.abrKind = r.entityTypeDesc || (r.isCompany ? 'Company / Trust / Partnership' : 'Individual / Sole Trader'); }
+    } catch (e) {}
+  }
+  const hard = ent.abrNonInd;
+  const soft = ent.abrInd;
+  const old = document.getElementById('rv-ent-ov'); if (old) old.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'rv-ent-ov';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;font-family:inherit';
+  const abrLine = ent.abn
+    ? `ABN on this invoice (<strong>${escHtml(ent.abn)}</strong>) is registered on ABR as: <strong style="color:${hard ? '#B42318' : soft ? '#1F6E48' : '#5B6B7B'}">${escHtml(ent.abrKind || 'could not be looked up')}</strong>`
+    : `<span style="color:#B45309">There's no ABN on this invoice — you can't confirm sole-trader status without one.</span>`;
+  const statusBox = hard
+    ? `<div style="background:#FEF3F2;border:1px solid #FDA29B;color:#B42318;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
+         <strong>⛔ ABR says this ABN belongs to a ${escHtml(ent.abrKind)}.</strong> Super is not normally payable to a company, trust or partnership — even if the person performs solo. Only continue if you've confirmed they're now invoicing from a <em>different</em>, individual ABN.
+       </div>`
+    : soft
+    ? `<div style="background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
+         ✓ ABR shows this ABN as an <strong>individual</strong>. Zoho is probably out of date — after processing, update their Zoho structure to <strong>Sole Trader</strong>.
+       </div>`
+    : `<div style="background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.5;margin-top:10px">
+         ⚠ Couldn't verify on ABR. Check the ABN manually at <strong>abr.business.gov.au</strong> before overriding.
+       </div>`;
+  wrap.innerHTML = `
+    <div style="background:#FFFFFF;border-radius:10px;width:480px;max-width:92vw;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.3);color:#1B2733">
+      <div style="font-size:15px;font-weight:700;margin-bottom:8px">Are you sure you want to override this?</div>
+      <div style="font-size:12px;line-height:1.6;color:#34495E">
+        Zoho records <strong>${escHtml(ent.name || 'this performer')}</strong> as: <strong>${escHtml(ent.zohoKind || 'no record')}</strong><br>
+        ${abrLine}
+      </div>
+      ${statusBox}
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;line-height:1.5;cursor:pointer">
+        <input type="checkbox" id="rv-ent-ov-check" style="margin-top:2px;width:15px;height:15px;accent-color:#1F9D63">
+        <span>I've checked the ABN on this invoice and it belongs to an <strong>individual / sole trader</strong> — not a Pty Ltd, trust or partnership.</span>
+      </label>
+      <div style="margin-top:10px;font-size:11px;font-weight:600;color:#5B6B7B">Reason (required)</div>
+      <textarea id="rv-ent-ov-reason" rows="2" placeholder="e.g. Moved from Pty Ltd to a sole trader ABN in Oct 2026 — Zoho not yet updated"
+        style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid #CBD5E0;border-radius:5px;margin-top:3px;font-family:inherit;resize:vertical"></textarea>
+      ${hard ? `<div style="margin-top:8px;font-size:11px;font-weight:600;color:#B42318">Type OVERRIDE to confirm</div>
+        <input id="rv-ent-ov-type" type="text" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid #FDA29B;border-radius:5px;margin-top:3px">` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" onclick="document.getElementById('rv-ent-ov').remove()" style="padding:7px 14px;border:1px solid #CBD5E0;background:#FFFFFF;border-radius:6px;cursor:pointer;font-size:12px">Cancel</button>
+        <button type="button" id="rv-ent-ov-go" disabled onclick="rvConfirmEntityOverride()" style="padding:7px 14px;border:none;background:#1F9D63;color:#FFFFFF;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:.45">Confirm: treat as sole trader &amp; withhold super</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const validate = () => {
+    const ok = document.getElementById('rv-ent-ov-check').checked
+      && (document.getElementById('rv-ent-ov-reason').value || '').trim().length >= 5
+      && (!hard || (document.getElementById('rv-ent-ov-type').value || '').trim().toUpperCase() === 'OVERRIDE')
+      && !!ent.abn;
+    const btn = document.getElementById('rv-ent-ov-go');
+    btn.disabled = !ok; btn.style.opacity = ok ? '1' : '.45';
+  };
+  ['rv-ent-ov-check','rv-ent-ov-reason','rv-ent-ov-type'].forEach(i => {
+    const el = document.getElementById(i);
+    if (el) { el.addEventListener('input', validate); el.addEventListener('change', validate); }
+  });
+  wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+}
+
+function rvConfirmEntityOverride() {
+  const id = reviewModalRowId;
+  const ent = rvCurrentEntityInfo || {};
+  const reason = (document.getElementById('rv-ent-ov-reason')?.value || '').trim();
+  invoiceEntityOverrideData['id_' + id] = {
+    to: 'sole', reason,
+    zohoKind: ent.zohoKind || '', abrKind: ent.abrKind || '',
+    abrSaysCompany: !!ent.abrNonInd, at: new Date().toISOString()
+  };
+  delete invoiceSuperModeData['id_' + id];   // force an explicit solo vs duo/group pick
+  const ov = document.getElementById('rv-ent-ov'); if (ov) ov.remove();
+  rvSyncMultiPerfPanel(id);
+}
+
+function rvUndoEntityOverride() {
+  const id = reviewModalRowId;
+  delete invoiceEntityOverrideData['id_' + id];
+  delete invoiceSuperModeData['id_' + id];
+  rvSyncMultiPerfPanel(id);
 }
 
 // Apply a super mode. 'solo' → super withheld; 'group' → no super. Drives the canonical rv-super
@@ -4069,6 +4283,13 @@ function processInvoices_silent_() {
     }
     if (type !== 'UNKNOWN' && !row.hasGST && contractor && contractor.gst) {
       type = type === 'B' ? 'A' : type === 'D' ? 'C' : type;
+    }
+    // Entity override (Oct 2026): operator confirmed in Review Step 5a that this invoice's ABN
+    // belongs to a SOLE TRADER even though Zoho/ABR flagged an entity. Swap C→A / D→B so super
+    // is actually calculated — without this, calculateAmounts returns super:0 for C/D and the
+    // "solo" pick is silently ignored.
+    if (type !== 'UNKNOWN' && row.entityOverride && row.entityOverride.to === 'sole') {
+      type = type === 'C' ? 'A' : type === 'D' ? 'B' : type;
     }
     const superRate = superRateFor(contractor);
     const amounts = (type !== 'UNKNOWN') ? calculateAmounts(row.serviceFee ?? row.total, type, superRate) : null;
@@ -4551,7 +4772,8 @@ function collectRows() {
     const superBase = hasShareOverride ? parseFloat(shareOverride) : (total - superExcluded);
     // Explicitly-linked bookings from the Review modal (takes precedence over fuzzy match for paid check)
     const linkedBookings = invoiceBookingData['id_'+id] || null;
-    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, withholdSuper, invoiceType, source, rowId: id, linkedBookings};
+    const entityOverride = invoiceEntityOverrideData['id_'+id] || null;
+    return {name, invoiceNumber:inv, date, perfDate, total, serviceFee, superBase, expenses, abn, abrData, hasGST, alreadyPaid, withholdSuper, invoiceType, source, rowId: id, linkedBookings, entityOverride};
   }
   // PDF event rows
   document.querySelectorAll('#pdf-tbody tr[id]').forEach(tr => {
@@ -4619,6 +4841,13 @@ function processInvoices() {
     }
     if (type !== 'UNKNOWN' && !row.hasGST && contractor && contractor.gst) {
       type = type === 'B' ? 'A' : type === 'D' ? 'C' : type;
+    }
+    // Entity override (Oct 2026): operator confirmed in Review Step 5a that this invoice's ABN
+    // belongs to a SOLE TRADER even though Zoho/ABR flagged an entity. Swap C→A / D→B so super
+    // is actually calculated — without this, calculateAmounts returns super:0 for C/D and the
+    // "solo" pick is silently ignored.
+    if (type !== 'UNKNOWN' && row.entityOverride && row.entityOverride.to === 'sole') {
+      type = type === 'C' ? 'A' : type === 'D' ? 'B' : type;
     }
 
     const superRate = superRateFor(contractor);
@@ -5531,7 +5760,15 @@ function buildResultsView() {
           }
         }
       }
-      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}${unattribReimbChip}${groupClusterChip}`;
+      // Entity-override chip (Oct 2026) — visible audit trail whenever an operator forced a
+      // Company/Trust/Partnership to be treated as a sole trader (so super is withheld).
+      let entityOverrideChip = '';
+      if (p.entityOverride && p.entityOverride.to === 'sole') {
+        const ov = p.entityOverride;
+        const tip = `Entity overridden → Sole trader. Zoho: ${ov.zohoKind || '—'} · ABR: ${ov.abrKind || 'not checked'}. Reason: ${ov.reason || '—'}`;
+        entityOverrideChip = ` <span onclick="openReviewModal('${p.rowId}')" title="${escHtml(tip)}" style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;background:#FEF3C7;color:#8A5B12;border:1px solid ${ov.abrSaysCompany ? '#F87171' : '#E6D3A8'};border-radius:4px;padding:1px 6px;cursor:pointer;vertical-align:middle">⚠ Entity overridden → sole trader</span>`;
+      }
+      const nameCell = `<strong>${escHtml(displayName)}</strong>${reviewBtn}${missingReceiptChip}${unattribReimbChip}${entityOverrideChip}${groupClusterChip}`;
       // Super-details incomplete chip (only when super withholding is ON for this run + this row)
       const superGap = (superDeductionsEnabled() && p.withholdSuper && p.contractor && (a.super||0) > 0)
         ? missingSuperFields(p.contractor) : [];

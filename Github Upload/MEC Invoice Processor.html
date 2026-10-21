@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="styles.css?v=20260609X">
+<link rel="stylesheet" href="styles.css?v=20261021A">
 </head>
 <body>
 
@@ -975,7 +975,7 @@
             <div id="rv-exp-multi-attrib" style="margin-top:10px;display:none"></div>
           </div>
 
-          <!-- Card 5 · Super decision (mandatory binary pick: solo vs duo/group) -->
+          <!-- Card 5 · Super decision — 5a entity (sole trader vs Company/Trust/Partnership), then 5b solo vs duo/group for sole traders only -->
           <div class="rv-card" id="rv-card-5">
             <div class="rv-card-head"><span class="rv-card-num">5</span>Super decision
               <span class="rv-id-chip" tabindex="-1">🛈 Identity check
@@ -987,34 +987,65 @@
             <!-- Inline identity strip — same info as the hover, visible without mouse movement -->
             <div id="rv-super-identity-inline" style="display:none;background:#F4F8FC;border:1px solid #C8DAEC;border-radius:6px;padding:7px 11px;margin-bottom:9px;font-size:11px;color:#34495E;line-height:1.55"></div>
 
-            <div id="rv-super-hint" style="display:none;background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:9px;line-height:1.5">
-              ⚠ <strong>Possible duo / group booking</strong> — <span id="rv-multiperf-reason"></span> Confirm below; the tool will NOT guess for you.
+            <!-- ── 5a · Who is invoicing us? (Oct 2026) ── Super depends on the ENTITY on the invoice,
+                 not on whether the person performs solo. -->
+            <div style="font-size:12px;font-weight:600;color:#1B2733;margin-bottom:6px;display:flex;align-items:center;gap:7px">
+              <span style="font-size:10px;font-weight:700;color:#5B6B7B;background:#EEF2F6;border-radius:4px;padding:1px 6px">5a</span>
+              Who is invoicing us?
+              <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Sole trader vs entity, not solo vs group.</strong>Super is only withheld when the person invoices us as a <strong>sole trader</strong> (an ABN registered to them as an individual).<br><br>If the invoice comes from a <strong>Pty Ltd, trust or partnership</strong>, we don't withhold super, even if they perform solo.<br><br>Check the <strong>ABN on the invoice</strong>, not just the performer's name.</span></span>
+            </div>
+            <div id="rv-entity-evidence" style="font-size:11px;color:#5B6B7B;margin-bottom:7px;line-height:1.5"></div>
+
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <label id="rv-ent-sole-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
+                <input type="radio" name="rv-entity" value="sole" tabindex="11" onchange="rvSetEntity('sole')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
+                <span style="font-weight:600;color:#1B2733">👤 Sole trader</span>
+                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">ABN registered to an individual</span>
+              </label>
+              <label id="rv-ent-entity-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
+                <input type="radio" name="rv-entity" value="entity" tabindex="12" onchange="rvSetEntity('entity')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
+                <span style="font-weight:600;color:#1B2733">🏛 Company / Trust / Partnership</span>
+                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">Pty Ltd, trust or partnership · no super</span>
+              </label>
             </div>
 
-            <div id="rv-super-auto-na" style="display:none;background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:9px;line-height:1.5">
-              ✓ <strong>Super not applicable</strong> — this entity is a <span id="rv-super-auto-na-kind">Company / Trust / Partnership</span>, so super isn't withheld. Override below if needed.
+            <div id="rv-super-auto-na" style="display:none;background:#EAF7EF;border:1px solid #9FD9BA;color:#1F6E48;border-radius:6px;padding:7px 10px;font-size:11px;margin-top:8px;line-height:1.5">
+              ✓ <strong>No super, entity structure.</strong> This invoice is from a <span id="rv-super-auto-na-kind">Company / Trust / Partnership</span>, so super isn't withheld, even if they perform solo.
+              <span id="rv-entity-override-link" style="display:inline-flex;align-items:center;gap:5px;margin-top:4px">
+                <a href="#" onclick="rvOpenEntityOverride();return false" style="color:#8A5B12;font-weight:600;text-decoration:underline">Override → treat as sole trader</a>
+                <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Only override when the ABN on this invoice belongs to an individual.</strong>Typical reason: they've moved from a Pty Ltd to a sole trader ABN and Zoho hasn't been updated yet.<br><br>You'll be asked to confirm the ABN and give a reason. The override is flagged in Step 3.</span></span>
+              </span>
             </div>
-            <div style="font-size:12px;font-weight:600;color:#1B2733;margin-bottom:8px;display:flex;align-items:center;gap:7px">
-              Is this person performing solo, or as part of a duo / group?
-              <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>How super withholding works</strong>We only withhold super on <strong>solo</strong> performers. If they're part of a duo / group, no super is withheld — the performer splits the fee with their co-performer(s) and any super arrangement is their own.<br><br><strong>Mixed-event invoices:</strong> if one invoice covers multiple events — one solo and another duo / group — ask the performer to split the invoice so each event can be processed correctly. We only withhold super on the solo performance.</span></span>
-            </div>
+            <div id="rv-entity-override-chip" style="display:none;background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:7px 10px;font-size:11px;margin-top:8px;line-height:1.5"></div>
 
-            <div id="rv-multiperf" style="display:flex;flex-direction:column;gap:6px">
-              <label id="rv-mp-solo-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
-                <input type="radio" name="rv-mp-mode" value="solo" tabindex="11" onchange="rvSetSuperMode('solo')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
-                <span style="font-weight:600;color:#1B2733">🎤 Solo performer</span>
-                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">Withhold super (12% default)</span>
-              </label>
-              <label id="rv-mp-group-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
-                <input type="radio" name="rv-mp-mode" value="group" tabindex="12" onchange="rvSetSuperMode('group')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
-                <span style="font-weight:600;color:#1B2733">👥 Duo / group</span>
-                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">No super withheld</span>
-              </label>
-              <label id="rv-mp-na-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
-                <input type="radio" name="rv-mp-mode" value="na" tabindex="13" onchange="rvSetSuperMode('na')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
-                <span style="font-weight:600;color:#1B2733">🏛 Not applicable — entity structure</span>
-                <span style="color:#5B6B7B;font-size:11px;margin-left:auto">Company / Trust / Partnership · no super</span>
-              </label>
+            <!-- ── 5b · Solo vs duo/group — sole traders only ── -->
+            <div id="rv-q-5b" style="margin-top:12px">
+              <div id="rv-super-hint" style="display:none;background:#FBF1DE;border:1px solid #E6D3A8;color:#8A5B12;border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:9px;line-height:1.5">
+                ⚠ <strong>Possible duo / group booking</strong> — <span id="rv-multiperf-reason"></span> Confirm below; the tool will NOT guess for you.
+              </div>
+              <div style="font-size:12px;font-weight:600;color:#1B2733;margin-bottom:8px;display:flex;align-items:center;gap:7px">
+                <span style="font-size:10px;font-weight:700;color:#5B6B7B;background:#EEF2F6;border-radius:4px;padding:1px 6px">5b</span>
+                Performing solo, or as part of a duo / group?
+                <span class="rv-tip">?<span class="rv-tip-box rv-tip-box--right"><strong>Only applies to sole traders.</strong><strong>Solo:</strong> we withhold 12% super and pay it to their fund.<br><strong>Duo / group:</strong> no super. The lead performer splits the fee with the others.<br><br><strong>Mixed-event invoices:</strong> if one invoice covers a solo AND a duo/group event, ask the performer to split the invoice.</span></span>
+              </div>
+
+              <div id="rv-multiperf" style="display:flex;flex-direction:column;gap:6px">
+                <label id="rv-mp-solo-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
+                  <input type="radio" name="rv-mp-mode" value="solo" tabindex="13" onchange="rvSetSuperMode('solo')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
+                  <span style="font-weight:600;color:#1B2733">🎤 Sole trader · performing solo</span>
+                  <span style="color:#5B6B7B;font-size:11px;margin-left:auto">Withhold super (12% default)</span>
+                </label>
+                <label id="rv-mp-group-row" style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:9px 11px;border:1px solid #CBD5E0;border-radius:6px;background:#FFFFFF">
+                  <input type="radio" name="rv-mp-mode" value="group" tabindex="14" onchange="rvSetSuperMode('group')" style="cursor:pointer;width:15px;height:15px;accent-color:#1F9D63">
+                  <span style="font-weight:600;color:#1B2733">👥 Sole trader · part of a duo / group</span>
+                  <span style="color:#5B6B7B;font-size:11px;margin-left:auto">No super withheld</span>
+                </label>
+                <!-- Hidden: 'na' is now set by answering 5a = Company / Trust / Partnership. Kept as a radio
+                     so the existing "is Step 5 answered?" checks (rv-mp-mode:checked) keep working. -->
+                <label id="rv-mp-na-row" style="display:none">
+                  <input type="radio" name="rv-mp-mode" value="na">
+                </label>
+              </div>
             </div>
 
             <div id="rv-super-unset" style="font-size:11px;color:#B45309;margin-top:9px">⚠ Pick one above to complete this invoice.</div>
@@ -1174,6 +1205,6 @@
 </div>
 
 <!-- ?v= cache-buster: bump this whenever app.js/styles.css change so browsers fetch the new file -->
-<script src="app.js?v=20260609X"></script>
+<script src="app.js?v=20261021A"></script>
 </body>
 </html>
